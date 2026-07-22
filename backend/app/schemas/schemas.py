@@ -106,6 +106,7 @@ class EssayOut(BaseModel):
     created_at: datetime
     file_path: str = ""
     has_correction: bool = False
+    file_saved: bool = True
 
     class Config:
         from_attributes = True

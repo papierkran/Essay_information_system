@@ -34,7 +34,9 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username).first()
-    if not user or not verify_password(data.password, user.password_hash):
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="账号已禁用")

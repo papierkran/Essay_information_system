@@ -10,7 +10,7 @@ DB_PASS = os.environ.get("ESSAY_DB_PASS", "040311")
 DB_NAME = os.environ.get("ESSAY_DB_NAME", "essay_system")
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=60)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 导出配置给其他模块（如数据库导出）

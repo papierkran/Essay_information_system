@@ -62,7 +62,7 @@ function goList() { router.push('/essay/list') }
 onMounted(async () => {
   try {
     const res = await api.get('/essays')
-    recentList.value = res.data.slice(0, 10)
+    recentList.value = (res.data.items || res.data).slice(0, 10)
   } catch {}
 })
 </script>

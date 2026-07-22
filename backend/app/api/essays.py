@@ -149,7 +149,7 @@ async def upload_essay(
         from docx.shared import Pt
 
         template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
             "$MMM $DD.docx"
         )
 
@@ -246,27 +246,17 @@ def list_essays(
     else:
         q = q.order_by(order_col.desc())
 
-    # 分页
+    # 只显示文件已保存的记录
+    q = q.filter(Essay.file_saved == True)
+
     from sqlalchemy import func as sa_func
     total = q.count()
     q = q.offset((page - 1) * page_size).limit(page_size)
-
     essays = q.all()
+    result = [_essay_to_out(e, db) for e in essays]
 
-    # 过滤掉文件不存在的记录
-    result = []
-    for e in essays:
-        if e.content_file:
-            from ..utils.file_utils import get_upload_dir
-            import os
-            full = os.path.join(get_upload_dir(), e.content_file)
-            if not os.path.exists(full):
-                continue
-        result.append(_essay_to_out(e, db))
-
-    total_valid = len(result)
-    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "pending").scalar() or 0
-    corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "corrected").scalar() or 0
+    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "pending", Essay.file_saved == True).scalar() or 0
+    corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "corrected", Essay.file_saved == True).scalar() or 0
 
     return {
         "items": result,
@@ -289,17 +279,10 @@ def pending_essays(
 
     essays = db.query(Essay).filter(
         Essay.status == "pending",
+        Essay.file_saved == True,
     ).order_by(Essay.created_at.asc()).all()
 
-    result = []
-    from ..utils.file_utils import get_upload_dir
-    import os
-    for e in essays:
-        if e.content_file:
-            full = os.path.join(get_upload_dir(), e.content_file)
-            if not os.path.exists(full):
-                continue
-        result.append(_essay_to_out(e, db))
+    result = [_essay_to_out(e, db) for e in essays]
     return result
 
 
@@ -728,4 +711,5 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         created_at=essay.created_at,
         file_path=file_path,
         has_correction=corr_exists,
+        file_saved=essay.file_saved if essay.file_saved is not None else True,
     )

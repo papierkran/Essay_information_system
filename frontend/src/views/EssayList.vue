@@ -63,6 +63,7 @@
             <th>备注</th>
             <th class="sortable" @click="toggleSort('created_at')">收集时间 {{ sortIcon('created_at') }}</th>
             <th class="sortable" @click="toggleSort('corrected_at')">批改时间 {{ sortIcon('corrected_at') }}</th>
+            <th>文件</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -79,8 +80,9 @@
             <td>{{ e.remark || '-' }}</td>
             <td>{{ e.created_at?.substring(0, 16) }}</td>
             <td>{{ e.corrected_at?.substring(0, 16) || '-' }}</td>
+            <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
             <td style="white-space:nowrap">
-              <button class="btn" style="font-size:12px;padding:4px 8px" @click="goDetail(e)">详情编辑</button>
+              <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
               <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
             </td>
           </tr>

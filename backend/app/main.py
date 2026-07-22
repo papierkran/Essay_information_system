@@ -24,6 +24,19 @@ app.include_router(essays.router)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    # 启动时同步 file_saved 状态
+    db = SessionLocal()
+    try:
+        essays = db.query(Essay).all()
+        for e in essays:
+            if e.content_file:
+                full = os.path.join(get_upload_dir(), e.content_file)
+                e.file_saved = os.path.exists(full)
+            else:
+                e.file_saved = True
+        db.commit()
+    finally:
+        db.close()
     # 启动时清理文件不存在的记录
     db = SessionLocal()
     try:

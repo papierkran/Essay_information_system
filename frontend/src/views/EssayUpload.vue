@@ -88,7 +88,7 @@ async function onSubmit() {
     await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     showDialog({
       title: '✅ 上传成功',
-      message: `学生：${form.value.student_name}\n年级：${form.value.grade}\n第${form.value.essay_number || 1}次`,
+      message: `学生：${form.value.student_name}\n年级：${form.value.grade}\n第${form.value.essay_number || 1}次\n提交方式：${form.value.teaching_mode}`,
       confirmButtonText: '继续上传',
       className: 'upload-success-dialog',
     })
