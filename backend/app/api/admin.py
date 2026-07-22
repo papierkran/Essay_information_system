@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
 import json
+from datetime import datetime
 
 from ..database import get_db
 from ..models.models import User, Organization, Class, UserClass, Essay
@@ -396,3 +398,64 @@ def update_settings(data: dict, current_user: User = Depends(get_current_user)):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(data, f)
     return data
+
+
+@router.get("/database/export")
+def export_database(current_user: User = Depends(get_current_user)):
+    """导出数据库为 SQL 文件"""
+    require_admin(current_user)
+    import subprocess, tempfile
+    from ..database import DB_CONFIG
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sql", mode="w")
+    tmp_path = tmp.name
+    tmp.close()
+    env = os.environ.copy()
+    env["PGPASSWORD"] = DB_CONFIG["password"]
+    # 使用远程容器内的 pg_dump（保证版本匹配）
+    result = subprocess.run(
+        ["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"],
+         "docker", "exec", "pg", "pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
+         "--no-owner", "--no-acl"],
+        env=env, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"导出失败: {result.stderr}")
+    with open(tmp_path, "w") as f:
+        f.write(result.stdout)
+    return FileResponse(tmp_path, filename=f"essay_system_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql", media_type="application/octet-stream")
+
+
+@router.post("/database/import")
+async def import_database(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """导入 SQL 文件恢复数据库"""
+    require_admin(current_user)
+    import subprocess, tempfile
+    from ..database import DB_CONFIG
+    content = await file.read()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sql", mode="wb")
+    tmp.write(content)
+    tmp_path = tmp.name
+    tmp.close()
+    env = os.environ.copy()
+    env["PGPASSWORD"] = DB_CONFIG["password"]
+    # 通过 SSH 将 SQL 文件传到远程后导入
+    remote_path = "/tmp/essay_import.sql"
+    sp_run = subprocess.run
+    # 上传文件
+    sp_run(["scp", "-o", "StrictHostKeyChecking=no", tmp_path, f"root@{DB_CONFIG['host']}:{remote_path}"],
+           capture_output=True)
+    # 在容器中执行导入
+    result = sp_run(
+        ["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"],
+         "docker", "exec", "-i", "pg", "psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f", remote_path],
+        capture_output=True, text=True
+    )
+    os.unlink(tmp_path)
+    # 清理远程临时文件
+    sp_run(["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"], "rm", "-f", remote_path], capture_output=True)
+    if result.returncode != 0 and "ERROR" in result.stderr:
+        raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
+    return {"message": "导入成功"}
