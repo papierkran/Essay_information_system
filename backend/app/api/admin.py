@@ -275,7 +275,7 @@ def update_user(
         user.nickname = data.nickname
     if data.phone is not None:
         user.phone = data.phone
-    if data.role is not None:
+    if data.role:
         user.role = data.role
     if data.password:
         user.password_hash = hash_password(data.password)

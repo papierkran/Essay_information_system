@@ -29,10 +29,9 @@
     </aside>
 
     <!-- 主内容 -->
-    <main v-if="!isLogin" class="main-content">
+    <main :class="isLogin ? 'login-wrapper' : 'main-content'">
       <router-view />
     </main>
-    <router-view v-if="isLogin" />
   </div>
 </template>
 
@@ -167,6 +166,10 @@ body {
   margin-left: 200px;
   min-height: calc(100vh - 48px);
   padding: 24px 32px;
+}
+
+.login-wrapper {
+  min-height: 100vh;
 }
 
 /* ===== 响应式：手机端 ===== */

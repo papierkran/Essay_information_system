@@ -174,8 +174,13 @@ async function savePassword() {
     } else {
       await api.put(`/admin/users/${pwdUser.value.id}`, { password: pwdForm.value.new_password })
     }
-    showToast('密码修改成功')
+    showToast('密码修改成功，请重新登录')
     showPwd.value = false
+    // 清除当前登录态，跳转登录页
+    setTimeout(() => {
+      localStorage.removeItem(`auth_${localStorage.getItem('activeAuth') || 'default'}`)
+      window.location.hash = '#/login'
+    }, 1500)
   } catch(err) {
     showToast(err.response?.data?.detail || '修改失败')
   }
