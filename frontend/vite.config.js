@@ -15,12 +15,12 @@ export default defineConfig({
     }),
   ],
   server: {
-    host: '0.0.0.0',
+    host: '::',
     port: 5173,
     allowedHosts: ['zuowen.papierkran.top', '.papierkran.top'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:6886',
         changeOrigin: true,
       },
     },
