@@ -642,66 +642,39 @@ def export_docx(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """从 DB 读取 content_text/corrected_text 套用模板生成 docx"""
+    """从 DB 读取 content_text/corrected_text 生成 docx"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
 
     from docx import Document
     from docx.shared import Pt
-    from docx.oxml.ns import qn
-
-    template_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-        "$MMM $DD.docx"
-    )
-    doc = Document(template_path)
 
     content = essay.content_text or ""
     corrected = essay.corrected_text or ""
 
-    # 在"修改前："段落之后插入原文
-    insert_after_idx = None
-    for i, p in enumerate(doc.paragraphs):
-        if p.text.strip() == "修改前：":
-            insert_after_idx = i
-            break
+    doc = Document()
 
-    if insert_after_idx is not None and content:
-        insert_after = doc.paragraphs[insert_after_idx]
-        new_para = doc.add_paragraph()
-        run = new_para.add_run(content)
-        run.font.size = Pt(12)
-        new_p_element = new_para._element
-        target_p_element = insert_after._element
-        target_p_element.addnext(new_p_element)
+    # 修改前
+    doc.add_heading("修改前：", level=1)
+    if content:
+        for para_text in content.split('\n'):
+            if para_text.strip():
+                p = doc.add_paragraph(para_text.strip())
+                for run in p.runs:
+                    run.font.size = Pt(12)
 
-    # 在"修改后："段落之前插入分页符，然后在其之后插入批改文字
-    insert_before_idx2 = None
-    for i, p in enumerate(doc.paragraphs):
-        if p.text.strip() == "修改后：":
-            insert_before_idx2 = i
-            break
+    # 分页符
+    doc.add_page_break()
 
-    if insert_before_idx2 is not None:
-        # 在"修改后："段落前插入分页符段落
-        target_p2 = doc.paragraphs[insert_before_idx2]
-        page_break_para = doc.add_paragraph()
-        run_pb = page_break_para.add_run()
-        run_pb._element.append(qn('w:br'))
-        run_pb._element.find(qn('w:br')).set(qn('w:type'), 'page')
-        pb_element = page_break_para._element
-        target_p2._element.addprevious(pb_element)
-
-        # 在"修改后："段落之后插入批改文字
-        if corrected:
-            insert_after2 = doc.paragraphs[insert_before_idx2]
-            new_para2 = doc.add_paragraph()
-            run2 = new_para2.add_run(corrected)
-            run2.font.size = Pt(12)
-            new_p2_element = new_para2._element
-            target_p2_element = insert_after2._element
-            target_p2_element.addnext(new_p2_element)
+    # 修改后
+    doc.add_heading("修改后：", level=1)
+    if corrected:
+        for para_text in corrected.split('\n'):
+            if para_text.strip():
+                p = doc.add_paragraph(para_text.strip())
+                for run in p.runs:
+                    run.font.size = Pt(12)
 
     dl_name = _build_download_filename(essay)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
