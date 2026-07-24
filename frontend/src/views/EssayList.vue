@@ -4,42 +4,34 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <div class="filter-main">
-        <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
-        <div class="filter-row"><span class="filter-label">状态</span>
-          <select v-model="filters.status" class="filter-input" @change="applyFilter">
-            <option value="">全部</option>
-            <option value="pending">待批</option>
-            <option value="corrected">已批</option>
-          </select>
-        </div>
-        <div class="filter-row"><span class="filter-label">年级</span>
-          <select v-model="filters.grade" class="filter-input" @change="applyFilter">
-            <option value="">全部</option>
-            <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
-        <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-        <button class="btn-collapse" @click="showMoreFilters = !showMoreFilters">
-          更多筛选 {{ showMoreFilters ? '▲' : '▼' }}
-        </button>
+      <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">年级</span>
+        <select v-model="filters.grade" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+        </select>
       </div>
-      <div class="filter-more" v-show="showMoreFilters">
-        <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @input="applyFilter" /></div>
-        <div class="filter-row"><span class="filter-label">提交方式</span>
-          <select v-model="filters.mode" class="filter-input" @change="applyFilter">
-            <option value="">全部</option>
-            <option value="线下">线下</option>
-            <option value="线上">线上</option>
-          </select>
-        </div>
-        <div class="filter-row"><span class="filter-label">收集者</span><input v-model="filters.reviewer" placeholder="搜收集者" class="filter-input" @input="applyFilter" /></div>
-        <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">状态</span>
+        <select v-model="filters.status" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option value="pending">待批</option>
+          <option value="corrected">已批</option>
+        </select>
       </div>
-      <div class="filter-actions">
-        <button class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
+      <div class="filter-row"><span class="filter-label">提交方式</span>
+        <select v-model="filters.mode" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option value="线下">线下</option>
+          <option value="线上">线上</option>
+        </select>
       </div>
+      <div class="filter-row"><span class="filter-label">收集者</span><input v-model="filters.reviewer" placeholder="搜收集者" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
     </div>
 
     <!-- 批量操作栏 -->
@@ -65,11 +57,11 @@
             <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
             <th class="sortable" @click="toggleSort('student_name')">学生 {{ sortIcon('student_name') }}</th>
             <th>年级</th>
-            <th>作文</th>
+            <th>作文标题</th>
             <th class="sortable" @click="toggleSort('essay_number')">第几次 {{ sortIcon('essay_number') }}</th>
             <th>提交方式</th>
             <th class="sortable" @click="toggleSort('status')">状态 {{ sortIcon('status') }}</th>
-            <th>收集者</th>
+            <th class="sortable" @click="toggleSort('collector_name')">收集者 {{ sortIcon('collector_name') }}</th>
             <th>备注</th>
             <th class="sortable" @click="toggleSort('created_at')">收集时间 {{ sortIcon('created_at') }}</th>
             <th class="sortable" @click="toggleSort('corrected_at')">修改时间 {{ sortIcon('corrected_at') }}</th>
@@ -78,7 +70,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
+          <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id), 'row-readonly': !isOwner(e) }">
             <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
             <td>{{ e.student_name }}</td>
             <td>{{ e.grade || '-' }}</td>
@@ -92,8 +84,14 @@
             <td>{{ formatDateTime(e.corrected_at) || '-' }}</td>
             <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
             <td style="white-space:nowrap">
-              <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
-              <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
+              <template v-if="isOwner(e)">
+                <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
+                <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
+              </template>
+              <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
+                <span class="icon-readonly">👁️</span>
+                <span class="text-readonly">仅查看</span>
+              </router-link>
             </td>
           </tr>
         </tbody>
@@ -129,8 +127,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
-import api from '../api'
+import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
+
+const { getAuth } = useAuth()
+const currentUser = computed(() => getAuth()?.user || {})
+const isOwner = (essay) => currentUser.value.role?.includes('admin') || essay.collected_by === currentUser.value.id
 
 const router = useRouter()
 const list = ref([])
@@ -144,10 +146,9 @@ const jumpPage = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
 const selectedIds = ref([])
-const showMoreFilters = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 
-const filters = ref({ name: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' })
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
@@ -164,6 +165,7 @@ function toggleSort(field) {
 function buildParams() {
   const p = { page: page.value, page_size: pageSize.value, sort_by: sortBy.value, sort_order: sortOrder.value }
   if (filters.value.name) p.name = filters.value.name
+  if (filters.value.essayTitle) p.essay_title = filters.value.essayTitle
   if (filters.value.grade) p.grade = filters.value.grade
   if (filters.value.number) p.essay_number = filters.value.number
   if (filters.value.status) p.status = filters.value.status
@@ -199,7 +201,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' }; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' }; applyFilter() }
 
 function toggleSelect(id) {
   const idx = selectedIds.value.indexOf(id)
@@ -303,48 +305,15 @@ onMounted(applyFilter)
 
 .filter-bar {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
   margin-bottom: 12px;
   padding: 12px 16px;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-
-.filter-main {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.filter-more {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  padding-top: 10px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.filter-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.btn-collapse {
-  background: none;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: #666;
-  cursor: pointer;
-}
-.btn-collapse:hover { border-color: #4096ff; color: #4096ff; }
 
 .filter-row { display: flex; align-items: center; gap: 4px; }
 .filter-label { font-size: 13px; color: #666; white-space: nowrap; }
@@ -410,9 +379,26 @@ onMounted(applyFilter)
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 
+.btn-disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.row-readonly { background: #fafafa; }
+.readonly-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #e6f4ff;
+  border-radius: 4px;
+  color: #1677ff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.readonly-hint:hover { background: #bae0ff; }
+.icon-readonly { font-size: 14px; }
+.text-readonly { font-size: 11px; }
+
 @media (max-width: 767px) {
-  .filter-main { flex-direction: column; align-items: stretch; }
-  .filter-more { flex-direction: column; align-items: stretch; }
+  .filter-bar { flex-direction: column; align-items: stretch; }
   .filter-row { width: 100%; }
   .filter-input { flex: 1; }
   .table-wrap { overflow-x: auto; }

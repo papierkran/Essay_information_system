@@ -10,23 +10,33 @@
         <div class="card top-card">
           <div class="card-header">
             <h3>📝 基本信息</h3>
-            <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveEdit">💾 保存</button>
+            <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveEdit" :disabled="!canEdit">💾 保存</button>
           </div>
           <div class="info-grid">
-            <div class="info-item"><span class="info-label">学生</span><input v-model="editForm.student_name" class="edit-input" /></div>
+            <div class="info-item"><span class="info-label">学生</span><input v-model="editForm.student_name" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">年级</span>
-              <select v-model="editForm.grade" class="edit-input">
+              <select v-model="editForm.grade" class="edit-input" :disabled="!canEdit">
                 <option value="">-</option>
                 <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
               </select>
             </div>
-            <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" /></div>
-            <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" /></div>
-            <div class="info-item"><span class="info-label">收集者</span><span>{{ essay.collector_name }}</span></div>
+            <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
+            <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
+            <div class="info-item">
+              <span class="info-label">收集者</span>
+              <template v-if="isAdmin && !isReadonly">
+                <select v-model="editForm.collected_by" class="edit-input">
+                  <option v-for="u in collectorList" :key="u.id" :value="u.id">{{ u.nickname || u.username }}</option>
+                </select>
+              </template>
+              <template v-else>
+                <span>{{ essay.collector_name }}</span>
+              </template>
+            </div>
             <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
-            <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" /></div>
+            <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">提交方式</span>
-              <select v-model="editForm.teaching_mode" class="edit-input">
+              <select v-model="editForm.teaching_mode" class="edit-input" :disabled="!canEdit">
                 <option value="线上">线上</option>
                 <option value="线下">线下</option>
               </select>
@@ -176,7 +186,7 @@
           <van-button round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
           <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载修改结果</van-button>
           <van-button round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
-          <van-button round block @click="saveEdit" :loading="savingEdit">💾 保存修改</van-button>
+          <van-button round block @click="saveEdit" :loading="savingEdit" :disabled="!canEdit">💾 保存修改</van-button>
         </div>
 
         <div v-if="showReupload" style="margin:16px;padding:16px;background:#fff;border-radius:8px">
@@ -274,10 +284,20 @@ const route = useRoute()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
+const isAdmin = computed(() => {
+  const role = currentUser.value.role || ''
+  return role.includes('admin')
+})
+const isOwner = computed(() => {
+  if (isAdmin.value) return true
+  return essay.value?.collected_by === currentUser.value.id
+})
+const isReadonly = computed(() => route.query.readonly === '1')
 const canReview = computed(() => {
   const role = currentUser.value.role || ''
   return role.includes('reviewer') || role.includes('admin')
 })
+const canEdit = computed(() => !isReadonly.value && isOwner.value)
 const essay = ref(null)
 const correctionFile = ref('')
 const correctionText = ref('')
@@ -299,6 +319,7 @@ const showReuploadOriginal = ref(false)
 const showReuploadCorrected = ref(false)
 const editForm = ref({})
 const grades = ['初一','初二','初三','高一','高二','高三']
+const collectorList = ref([])
 const desktopFileList = ref([])
 const fullscreenMode = ref(null) // 'original' | 'corrected' | 'both' | null
 const showWordCount = ref(true)
@@ -391,6 +412,9 @@ async function doReuploadDesktop() {
 
 onMounted(async () => {
   await loadEssay()
+  if (isAdmin.value) {
+    await loadCollectors()
+  }
 })
 
 async function loadEssay() {
@@ -405,6 +429,7 @@ async function loadEssay() {
       essay_number: essay.value.essay_number,
       teaching_mode: essay.value.teaching_mode || '线下',
       remark: essay.value.remark,
+      collected_by: essay.value.collected_by,
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
@@ -415,6 +440,13 @@ async function loadEssay() {
     showToast('加载失败')
     loading.value = false
   }
+}
+
+async function loadCollectors() {
+  try {
+    const res = await api.get('/admin/users')
+    collectorList.value = res.data.filter(u => u.role && (u.role.includes('collector') || u.role.includes('admin')))
+  } catch {}
 }
 
 function previewImage(url) {
@@ -497,6 +529,10 @@ async function uploadCorrection() {
 }
 
 async function saveEdit() {
+  if (!canEdit.value) {
+    showToast('无权修改此作文')
+    return
+  }
   savingEdit.value = true
   try {
     const res = await api.put(`/essays/${route.params.id}`, null, { params: editForm.value })

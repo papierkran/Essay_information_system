@@ -362,6 +362,7 @@ def list_essays(
     teaching_mode: str = None,
     reviewer: str = None,
     remark: str = None,
+    essay_title: str = None,
     sort_by: str = "created_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -371,14 +372,11 @@ def list_essays(
 ):
     q = db.query(Essay)
 
-    # 权限过滤
+    # 权限过滤：收集者可以查看所有作文，但只能操作自己的
     if "admin" not in current_user.role:
-        if "collector" in current_user.role:
-            q = q.filter(Essay.collected_by == current_user.id)
-        elif "reviewer" in current_user.role:
+        if "reviewer" in current_user.role:
             q = q.filter(Essay.reviewer_id == current_user.id)
-        else:
-            q = q.filter(Essay.collected_by == current_user.id)
+        # 收集者可以查看所有作文，不做过滤
 
     if class_id:
         q = q.filter(Essay.class_id == class_id)
@@ -398,14 +396,26 @@ def list_essays(
         q = q.join(User, User.id == Essay.collected_by).filter(
             User.nickname.like(f"%{reviewer}%") | User.username.like(f"%{reviewer}%")
         )
+    if essay_title:
+        q = q.filter(Essay.essay_title.like(f"%{essay_title}%"))
 
-    # 排序
+    # 排序：收集者优先展示自己的作文
+    from sqlalchemy import case
     allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status}
-    order_col = allowed_sort.get(sort_by, Essay.created_at)
-    if sort_order == "asc":
-        q = q.order_by(order_col.asc())
+    
+    # 处理collector_name排序
+    if sort_by == "collector_name":
+        q = q.outerjoin(User, User.id == Essay.collected_by)
+        order_col = User.nickname
     else:
-        q = q.order_by(order_col.desc())
+        order_col = allowed_sort.get(sort_by, Essay.created_at)
+    
+    # 优先排序：自己的作文排在前面
+    is_mine = case((Essay.collected_by == current_user.id, 0), else_=1)
+    if sort_order == "asc":
+        q = q.order_by(is_mine.asc(), order_col.asc())
+    else:
+        q = q.order_by(is_mine.asc(), order_col.desc())
 
     # 只显示文件已保存的记录
     q = q.filter(Essay.file_saved == True)
@@ -868,6 +878,7 @@ def update_essay(
     student_name: str = "",
     teaching_mode: str = "",
     remark: str = "",
+    collected_by: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -889,6 +900,8 @@ def update_essay(
         essay.teaching_mode = teaching_mode
     if remark is not None:
         essay.remark = remark
+    if collected_by is not None and "admin" in current_user.role:
+        essay.collected_by = collected_by
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
