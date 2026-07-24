@@ -37,8 +37,8 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
     from docx.enum.text import WD_LINE_SPACING
     from docx.oxml.ns import qn
 
-    content = essay.content_text or ""
-    corrected = essay.corrected_text or ""
+    content = (essay.content_text or "").replace('\r\n', '\n').replace('\r', '\n')
+    corrected = (essay.corrected_text or "").replace('\r\n', '\n').replace('\r', '\n')
 
     doc = Document()
 
@@ -68,8 +68,8 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
 
         if not text.strip():
             return
-        lines = text.split('\n')
-        non_empty = [l.strip() for l in lines if l.strip()]
+        lines = [l.strip() for l in text.split('\n')]
+        non_empty = [l for l in lines if l]
         for idx, line_text in enumerate(non_empty):
             p = doc.add_paragraph()
             run = p.add_run(line_text)
