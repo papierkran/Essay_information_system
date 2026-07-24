@@ -120,8 +120,13 @@ const dbTestResult = ref('')
 function saveApiUrl() {
   apiSaving.value = true
   apiSaved.value = false
-  if (apiBaseUrl.value) {
-    localStorage.setItem('apiBaseUrl', apiBaseUrl.value)
+  let url = apiBaseUrl.value.trim()
+  if (url) {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://' + url
+    }
+    localStorage.setItem('apiBaseUrl', url)
+    apiBaseUrl.value = url
   } else {
     localStorage.removeItem('apiBaseUrl')
   }

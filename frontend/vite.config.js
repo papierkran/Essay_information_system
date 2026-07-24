@@ -14,6 +14,9 @@ export default defineConfig({
       resolvers: [VantResolver()],
     }),
   ],
+  define: {
+    __API_BASE_URL__: JSON.stringify('https://zwhd.papierkran.top'),
+  },
   server: {
     host: '::',
     port: 5173,

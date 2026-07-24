@@ -34,17 +34,18 @@
       </div>
     </div>
 
-    <van-dialog v-model:show="showServerConfig" title="设置服务器地址" show-cancel-button>
+    <van-dialog v-model:show="showServerConfig" title="设置服务器地址">
       <div style="padding:16px">
         <div style="font-size:13px;color:#666;margin-bottom:12px">
           如果无法连接服务器，请在此设置后端地址。
         </div>
-        <input v-model="serverUrlInput" placeholder="http://192.168.31.158:8000" style="width:100%;padding:10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px" />
+        <input v-model="serverUrlInput" placeholder="https://zwhd.papierkran.top" style="width:100%;padding:10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px" />
         <div style="font-size:12px;color:#999;margin-top:8px">留空则使用默认地址</div>
+        <div style="display:flex;gap:12px;margin-top:16px">
+          <button class="btn" style="flex:1" @click="showServerConfig = false">取消</button>
+          <button class="btn btn-primary" style="flex:1" @click="saveServerUrl">保存</button>
+        </div>
       </div>
-      <template #confirm>
-        <van-button type="primary" @click="saveServerUrl">保存</van-button>
-      </template>
     </van-dialog>
   </div>
 </template>
@@ -69,14 +70,18 @@ const serverUrl = ref(localStorage.getItem('apiBaseUrl') || '')
 const { saveAuth } = useAuth()
 
 function saveServerUrl() {
-  if (serverUrlInput.value) {
-    localStorage.setItem('apiBaseUrl', serverUrlInput.value)
+  let url = (serverUrlInput.value || '').trim()
+  if (url) {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://' + url
+    }
+    localStorage.setItem('apiBaseUrl', url)
   } else {
     localStorage.removeItem('apiBaseUrl')
   }
-  serverUrl.value = serverUrlInput.value
+  serverUrl.value = url
   showServerConfig.value = false
-  showToast('服务器地址已保存，刷新页面生效')
+  showToast('服务器地址已保存，请刷新页面')
 }
 
 // 列出所有已保存的账号

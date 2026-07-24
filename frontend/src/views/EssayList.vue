@@ -89,7 +89,6 @@
                 <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
               </template>
               <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
-                <span class="icon-readonly">👁️</span>
                 <span class="text-readonly">仅查看</span>
               </router-link>
             </td>

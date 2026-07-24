@@ -20,9 +20,14 @@
           <td>{{ roleLabel(u.role) }}</td>
           <td><span :class="u.is_active ? 'tag tag-corrected' : 'tag tag-pending'">{{ u.is_active ? '启用' : '禁用' }}</span></td>
           <td style="white-space:nowrap">
-            <button class="btn" style="font-size:12px;padding:4px 8px" @click="editUser(u)">编辑</button>
-            <button class="btn" style="font-size:12px;padding:4px 8px" @click="changePassword(u)">改密</button>
-            <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(u)">删除</button>
+            <template v-if="u.username === 'admin'">
+              <span style="color:#999;font-size:12px">无法修改</span>
+            </template>
+            <template v-else>
+              <button class="btn" style="font-size:12px;padding:4px 8px" @click="editUser(u)">编辑</button>
+              <button class="btn" style="font-size:12px;padding:4px 8px" @click="changePassword(u)">改密</button>
+              <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(u)">删除</button>
+            </template>
           </td>
         </tr>
       </tbody>
@@ -32,7 +37,10 @@
     <van-list v-if="!isDesktop" v-model:loading="loading" @load="load">
       <van-cell v-for="u in list" :key="u.id" :title="u.nickname || u.username"
         :label="`${u.username} · ${roleLabel(u.role)}`">
-        <template #right-icon><van-icon name="edit" @click="editUser(u)" /></template>
+        <template #right-icon>
+        <van-icon v-if="u.username !== 'admin'" name="edit" @click="editUser(u)" />
+        <span v-else style="color:#999;font-size:12px">无法修改</span>
+      </template>
       </van-cell>
     </van-list>
 

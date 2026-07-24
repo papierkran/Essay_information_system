@@ -1,11 +1,14 @@
 import axios from 'axios'
 
+/* global __API_BASE_URL__ */
+const DEFAULT_BASE = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '').replace(/\/+$/, '')
+
 function getBaseUrl() {
   const saved = localStorage.getItem('apiBaseUrl')
-  if (saved) {
-    return saved.replace(/\/+$/, '') + '/api'
+  if (saved && saved.trim()) {
+    return saved.trim().replace(/\/+$/, '') + '/api'
   }
-  return '/api'
+  return DEFAULT_BASE ? DEFAULT_BASE + '/api' : '/api'
 }
 
 const api = axios.create({
