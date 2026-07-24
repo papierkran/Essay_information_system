@@ -95,6 +95,7 @@ class EssayOut(BaseModel):
     teaching_mode: str = "线下"
     remark: str
     content_text: str
+    corrected_text: str = ""
     content_file: str
     file_type: str
     collected_by: int

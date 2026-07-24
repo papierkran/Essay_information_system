@@ -71,10 +71,10 @@
           <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
             <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
             <td>{{ e.student_name }}</td>
-            <td><select :value="e.grade" @change="inlineEdit(e, 'grade', $event.target.value)" class="inline-select"><option v-for="g in grades" :key="g" :value="g">{{ g }}</option></select></td>
+            <td>{{ e.grade || '-' }}</td>
             <td>{{ e.essay_title || '-' }}</td>
             <td>{{ e.essay_number }}</td>
-            <td><select :value="e.teaching_mode" @change="inlineEdit(e, 'teaching_mode', $event.target.value)" class="inline-select"><option value="线上">线上</option><option value="线下">线下</option></select></td>
+            <td>{{ e.teaching_mode || '-' }}</td>
             <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
             <td>{{ e.collector_name || '-' }}</td>
             <td>{{ e.remark || '-' }}</td>

@@ -102,9 +102,10 @@
 import { ref, onMounted } from 'vue'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
 const list = ref([])
 const loading = ref(false)
 const showAdd = ref(false)
@@ -169,18 +170,22 @@ async function savePassword() {
     return
   }
   try {
-    if (pwdUser.value.id === currentUserId.value) {
+    const isSelf = pwdUser.value.id === currentUserId.value
+    if (isSelf) {
       await api.put('/admin/profile/password', null, { params: pwdForm.value })
     } else {
       await api.put(`/admin/users/${pwdUser.value.id}`, { password: pwdForm.value.new_password })
     }
-    showToast('密码修改成功，请重新登录')
     showPwd.value = false
-    // 清除当前登录态，跳转登录页
-    setTimeout(() => {
-      localStorage.removeItem(`auth_${localStorage.getItem('activeAuth') || 'default'}`)
-      window.location.hash = '#/login'
-    }, 1500)
+    if (isSelf) {
+      showToast('密码修改成功，请重新登录')
+      setTimeout(() => {
+        localStorage.removeItem(`auth_${localStorage.getItem('activeAuth') || 'default'}`)
+        window.location.hash = '#/login'
+      }, 1500)
+    } else {
+      showToast('密码修改成功')
+    }
   } catch(err) {
     showToast(err.response?.data?.detail || '修改失败')
   }
@@ -211,7 +216,11 @@ function confirmDelete(u) {
   }).catch(() => {})
 }
 
-onMounted(load)
+onMounted(() => {
+  const auth = getAuth()
+  currentUserId.value = auth?.user?.id || 0
+  load()
+})
 </script>
 
 <style scoped>

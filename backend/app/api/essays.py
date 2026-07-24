@@ -1,11 +1,12 @@
 import os
 import shutil
-from datetime import datetime
+import tempfile
+import zipfile
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Date
-from datetime import datetime, timedelta
+from sqlalchemy import func
 
 from ..database import get_db
 from ..models.models import User, Essay, Class, UserClass
@@ -17,6 +18,16 @@ from ..utils.file_utils import (
 )
 
 router = APIRouter(prefix="/api/essays", tags=["作文"])
+
+
+def _build_download_filename(essay: Essay) -> str:
+    """构建规范的下载文件名：标题——学生姓名第N次线上/线下补交"""
+    title = essay.essay_title or "无标题"
+    student = essay.student_name or "未知"
+    n = essay.essay_number or 1
+    mode = essay.teaching_mode or "线下"
+    supp = "补交" if essay.is_supplement else ""
+    return f"{title}——{student}第{n}次{mode}{supp}"
 
 
 @router.get("/classes")
@@ -55,6 +66,7 @@ def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
 
 @router.post("/upload", response_model=EssayOut)
 async def upload_essay(
+    essay_id: int = Form(None),
     class_id: int = Form(...),
     grade: str = Form(""),
     essay_number: int = Form(1),
@@ -76,29 +88,44 @@ async def upload_essay(
     file_type = "text"
     content_file = ""
 
-    # 创建数据库记录（先获取 ID）
-    essay = Essay(
-        class_id=class_id,
-        grade=grade,
-        essay_number=essay_number,
-        essay_title=essay_title,
-        student_name=student_name,
-        is_supplement=is_supplement,
-        teaching_mode=teaching_mode,
-        remark=remark,
-        content_text=content_text,
-        file_type=file_type,
-        collected_by=current_user.id,
-        status="pending",
-    )
-    db.add(essay)
+    # 创建或更新数据库记录
+    if essay_id:
+        essay = db.query(Essay).filter(Essay.id == essay_id).first()
+        if not essay:
+            raise HTTPException(status_code=404, detail="作文不存在")
+        if "admin" not in current_user.role and essay.collected_by != current_user.id:
+            raise HTTPException(status_code=403, detail="无权限编辑此作文")
+        essay.class_id = class_id
+        essay.grade = grade
+        essay.essay_number = essay_number
+        essay.essay_title = essay_title
+        essay.student_name = student_name
+        essay.is_supplement = is_supplement
+        essay.teaching_mode = teaching_mode
+        essay.remark = remark
+        essay.content_text = content_text
+    else:
+        essay = Essay(
+            class_id=class_id,
+            grade=grade,
+            essay_number=essay_number,
+            essay_title=essay_title,
+            student_name=student_name,
+            is_supplement=is_supplement,
+            teaching_mode=teaching_mode,
+            remark=remark,
+            content_text=content_text,
+            file_type=file_type,
+            collected_by=current_user.id,
+            status="pending",
+        )
+        db.add(essay)
     db.commit()
     db.refresh(essay)
 
     # 保存文件
     now = datetime.now()
     ts = now.strftime("%H%M%S")
-    cls = db.query(Class).filter(Class.id == class_id).first()
     collector_name = current_user.nickname or current_user.username
 
     dir_path = get_essay_dir(
@@ -110,7 +137,6 @@ async def upload_essay(
     uploaded_files = []
 
     if files:
-        # 按上传顺序重命名图片
         img_index = 1
         for f in files:
             if not f.filename:
@@ -119,7 +145,6 @@ async def upload_essay(
             if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
                 file_type = "image"
                 essay.file_type = file_type
-                # 图片按顺序重命名: 1.ext, 2.ext ...
                 img_name = f"{img_index}{ext}"
                 img_index += 1
                 img_path = os.path.join(dir_path, img_name)
@@ -140,11 +165,9 @@ async def upload_essay(
                     fw.write(content)
                 uploaded_files.append(safe_filename)
 
-        # 主文件路径指向第一个上传的文件
         if uploaded_files:
             essay.content_file = os.path.relpath(os.path.join(dir_path, uploaded_files[0]), get_upload_dir())
     elif content_text.strip():
-        # 只有文字内容 → 用模板生成 docx
         from docx import Document
         from docx.shared import Pt
 
@@ -154,10 +177,6 @@ async def upload_essay(
         )
 
         doc = Document(template_path)
-
-        # 直接编辑模板文档，保留所有格式（包括分页符等）
-        # 在"修改前："段落之后（分页符之前）插入作文内容
-        from docx.shared import Pt
 
         insert_after_idx = None
         for i, p in enumerate(doc.paragraphs):
@@ -171,7 +190,6 @@ async def upload_essay(
             run = new_para.add_run(content_text)
             run.font.size = Pt(12)
 
-            # 把新段落移动到 insert_after 后面
             new_p_element = new_para._element
             target_p_element = insert_after._element
             target_p_element.addnext(new_p_element)
@@ -186,7 +204,6 @@ async def upload_essay(
         essay.file_type = "docx"
 
     db.commit()
-
     db.refresh(essay)
     return _essay_to_out(essay, db)
 
@@ -296,13 +313,11 @@ def essay_stats(
     today = now.date()
     month_start = today.replace(day=1)
 
-    # 基础计数
     total = db.query(func.count(Essay.id)).scalar() or 0
     pending = db.query(func.count(Essay.id)).filter(Essay.status == "pending").scalar() or 0
     corrected = db.query(func.count(Essay.id)).filter(Essay.status == "corrected").scalar() or 0
     this_month = db.query(func.count(Essay.id)).filter(Essay.created_at >= month_start).scalar() or 0
 
-    # 年级分布
     grade_rows = (
         db.query(Essay.grade, func.count(Essay.id))
         .group_by(Essay.grade)
@@ -311,7 +326,6 @@ def essay_stats(
     )
     grade_dist = [{"name": g or "未知", "value": c} for g, c in grade_rows]
 
-    # 班级分布
     class_rows = (
         db.query(Class.name, func.count(Essay.id))
         .join(Class, Class.id == Essay.class_id)
@@ -321,7 +335,6 @@ def essay_stats(
     )
     class_dist = [{"name": n, "value": c} for n, c in class_rows]
 
-    # 助教收集排行（collector 角色用户）
     collector_rows = (
         db.query(User.nickname, User.username, func.count(Essay.id))
         .join(User, User.id == Essay.collected_by)
@@ -333,7 +346,6 @@ def essay_stats(
     )
     collector_rank = [{"name": n or u, "value": c} for n, u, c in collector_rows]
 
-    # 近 14 天每日上传+批改趋势
     trend = []
     for i in range(13, -1, -1):
         d = today - timedelta(days=i)
@@ -379,15 +391,12 @@ def download_by_class(
     if not essays:
         raise HTTPException(status_code=404, detail="没有找到作文")
 
-    # 收集所有相关目录
     dirs = set()
     for e in essays:
         if e.content_file:
             d = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
             dirs.add(d)
 
-    # 创建临时打包目录
-    import tempfile
     tmp_dir = tempfile.mkdtemp()
     archive_name = f"{cls.name}_作文打包"
     if essay_number:
@@ -396,27 +405,16 @@ def download_by_class(
 
     archive_path = os.path.join(tmp_dir, archive_name)
 
-    # 打包
     import tarfile
     with tarfile.open(archive_path, "w:gz") as tar:
         for d in dirs:
             if os.path.exists(d):
-                arcname = os.path.basename(os.path.dirname(d))
                 tar.add(d, arcname=os.path.relpath(d, get_upload_dir()))
 
     return FileResponse(archive_path, filename=archive_name, media_type="application/gzip")
 
 
-@router.get("/{essay_id}", response_model=EssayOut)
-def get_essay(
-    essay_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay:
-        raise HTTPException(status_code=404, detail="作文不存在")
-    return _essay_to_out(essay, db)
+# ===== 以下所有 /{essay_id}/xxx 具名路由必须在 /{essay_id} 通用路由之前 =====
 
 
 @router.post("/{essay_id}/claim")
@@ -436,7 +434,6 @@ def claim_essay(
         raise HTTPException(status_code=400, detail="该作文已被其他人认领")
 
     essay.reviewer_id = current_user.id
-    # 保持 pending 状态，不走 correcting
     db.commit()
     return {"message": "认领成功"}
 
@@ -455,19 +452,14 @@ def delete_essay(
     if "admin" not in current_user.role and essay.collected_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权限删除此作文")
 
-    # 检查是否有批改文件
-    from ..utils.file_utils import get_upload_dir, has_correction
     if essay.content_file:
         file_path = os.path.join(get_upload_dir(), essay.content_file)
         orig_dir = os.path.dirname(file_path)
-        orig_name = os.path.basename(file_path)
-        corr_exists = has_correction(orig_dir, orig_name)
+        corr_exists = has_correction(orig_dir, os.path.basename(file_path))
         if corr_exists and not force:
             raise HTTPException(status_code=400, detail="作文已有批改结果，请确认强制删除")
 
-    # 删除相关文件
     if essay.content_file:
-        import shutil
         dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
         if os.path.exists(dir_path):
             shutil.rmtree(dir_path)
@@ -477,75 +469,51 @@ def delete_essay(
     return {"message": "删除成功"}
 
 
-@router.put("/{essay_id}", response_model=EssayOut)
-def update_essay(
-    essay_id: int,
-    grade: str = "",
-    essay_number: int = None,
-    essay_title: str = "",
-    student_name: str = "",
-    teaching_mode: str = "",
-    remark: str = "",
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """更新作文信息"""
-    essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay:
-        raise HTTPException(status_code=404, detail="作文不存在")
-    # 权限：管理员可改所有，收集者只能改自己上传的
-    if "admin" not in current_user.role and essay.collected_by != current_user.id:
-        raise HTTPException(status_code=403, detail="无权限编辑此作文")
-    if grade:
-        essay.grade = grade
-    if essay_number is not None:
-        essay.essay_number = essay_number
-    if essay_title:
-        essay.essay_title = essay_title
-    if student_name:
-        essay.student_name = student_name
-    if teaching_mode:
-        essay.teaching_mode = teaching_mode
-    if remark is not None:
-        essay.remark = remark
-    db.commit()
-    db.refresh(essay)
-    return _essay_to_out(essay, db)
-
-
 @router.post("/{essay_id}/upload-correction")
 async def upload_correction(
     essay_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    corrected_text: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """上传批改结果"""
+    """上传批改结果（支持文件上传 + 文字批改）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
     if essay.reviewer_id and essay.reviewer_id != current_user.id:
         raise HTTPException(status_code=403, detail="该作文不是你的任务")
-    if not essay.content_file:
-        raise HTTPException(status_code=400, detail="原文不存在，无法上传批改")
 
-    original_path = os.path.join(get_upload_dir(), essay.content_file)
-    original_dir = os.path.dirname(original_path)
-    original_name = os.path.basename(original_path)
+    # 至少提供文件或文字
+    if not file and not corrected_text.strip():
+        raise HTTPException(status_code=400, detail="请上传文件或填写批改文字")
 
-    corr_name = generate_correction_filename(original_name)
-    corr_path = os.path.join(original_dir, corr_name)
+    # 保存文件（如果有）
+    corr_name = ""
+    if file and file.filename:
+        if not essay.content_file:
+            raise HTTPException(status_code=400, detail="原文不存在，无法上传批改")
+        original_path = os.path.join(get_upload_dir(), essay.content_file)
+        original_dir = os.path.dirname(original_path)
+        original_name = os.path.basename(original_path)
 
-    content = await file.read()
-    with open(corr_path, "wb") as f:
-        f.write(content)
+        corr_name = generate_correction_filename(original_name)
+        corr_path = os.path.join(original_dir, corr_name)
+
+        content = await file.read()
+        with open(corr_path, "wb") as f:
+            f.write(content)
+
+    # 保存文字批改（如果有）
+    if corrected_text.strip():
+        essay.corrected_text = corrected_text.strip()
 
     essay.reviewer_id = current_user.id
     essay.status = "corrected"
     essay.corrected_at = datetime.now()
     db.commit()
 
-    return {"message": "批改上传成功", "file": corr_name}
+    return {"message": "批改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
 
 
 @router.get("/{essay_id}/images")
@@ -599,7 +567,7 @@ def download_essay_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """下载原文：图片打包zip，docx直接下载"""
+    """下载原文：图片打包zip，docx直接下载。文件名格式：标题——学生姓名第N次线上/线下补交"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay or not essay.content_file:
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -608,27 +576,27 @@ def download_essay_file(
     if not os.path.exists(dir_path):
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    # 检查目录下的文件类型
     files = os.listdir(dir_path)
     images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_')]
-    has_non_image = any(not f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_') and not f.startswith('.') for f in files)
+    has_non_image = any(
+        not f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp'))
+        and not f.startswith('改_') and not f.startswith('.')
+        for f in files
+    )
+
+    dl_name = _build_download_filename(essay)
 
     if images and not has_non_image and len(images) > 1:
-        # 纯多图片 → 打包zip下载
-        import tempfile, zipfile
         zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             for img in sorted(images):
                 img_path = os.path.join(dir_path, img)
                 zf.write(img_path, img)
         zip_buffer.close()
-        student_name = essay.student_name if essay.student_name else "作文"
-        return FileResponse(zip_buffer.name, filename=f"{student_name}.zip", media_type="application/zip")
+        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
     else:
-        # 单文件（一张图片或docx）直接返回
-        file_path = os.path.join(dir_path, essay.content_file.rsplit('/', 1)[-1] if '/' in essay.content_file else essay.content_file)
+        file_path = os.path.join(dir_path, os.path.basename(essay.content_file))
         if not os.path.exists(file_path):
-            # 取第一个非改文件
             for f in sorted(files):
                 if not f.startswith('改_') and not f.startswith('.'):
                     file_path = os.path.join(dir_path, f)
@@ -637,9 +605,9 @@ def download_essay_file(
             raise HTTPException(status_code=404, detail="文件不存在")
 
         import mimetypes
+        ext = os.path.splitext(file_path)[1]
         media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-        filename = os.path.basename(file_path)
-        return FileResponse(file_path, filename=filename)
+        return FileResponse(file_path, filename=f"{dl_name}{ext}", media_type=media_type)
 
 
 @router.get("/{essay_id}/download-correction")
@@ -663,8 +631,139 @@ def download_correction(
     if not os.path.exists(corr_path):
         raise HTTPException(status_code=404, detail="批改结果不存在")
 
-    filename = os.path.basename(corr_path)
-    return FileResponse(corr_path, filename=filename)
+    dl_name = _build_download_filename(essay)
+    ext = os.path.splitext(corr_path)[1]
+    return FileResponse(corr_path, filename=f"{dl_name}{ext}")
+
+
+@router.get("/{essay_id}/export-docx")
+def export_docx(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """从 DB 读取 content_text/corrected_text 套用模板生成 docx"""
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+
+    from docx import Document
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+
+    template_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+        "$MMM $DD.docx"
+    )
+    doc = Document(template_path)
+
+    content = essay.content_text or ""
+    corrected = essay.corrected_text or ""
+
+    # 在"修改前："段落之后插入原文
+    insert_after_idx = None
+    for i, p in enumerate(doc.paragraphs):
+        if p.text.strip() == "修改前：":
+            insert_after_idx = i
+            break
+
+    if insert_after_idx is not None and content:
+        insert_after = doc.paragraphs[insert_after_idx]
+        new_para = doc.add_paragraph()
+        run = new_para.add_run(content)
+        run.font.size = Pt(12)
+        new_p_element = new_para._element
+        target_p_element = insert_after._element
+        target_p_element.addnext(new_p_element)
+
+    # 在"修改后："段落之前插入分页符，然后在其之后插入批改文字
+    insert_before_idx2 = None
+    for i, p in enumerate(doc.paragraphs):
+        if p.text.strip() == "修改后：":
+            insert_before_idx2 = i
+            break
+
+    if insert_before_idx2 is not None:
+        # 在"修改后："段落前插入分页符段落
+        target_p2 = doc.paragraphs[insert_before_idx2]
+        page_break_para = doc.add_paragraph()
+        run_pb = page_break_para.add_run()
+        run_pb._element.append(qn('w:br'))
+        run_pb._element.find(qn('w:br')).set(qn('w:type'), 'page')
+        pb_element = page_break_para._element
+        target_p2._element.addprevious(pb_element)
+
+        # 在"修改后："段落之后插入批改文字
+        if corrected:
+            insert_after2 = doc.paragraphs[insert_before_idx2]
+            new_para2 = doc.add_paragraph()
+            run2 = new_para2.add_run(corrected)
+            run2.font.size = Pt(12)
+            new_p2_element = new_para2._element
+            target_p2_element = insert_after2._element
+            target_p2_element.addnext(new_p2_element)
+
+    dl_name = _build_download_filename(essay)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+
+    return FileResponse(
+        tmp_path,
+        filename=f"改_{dl_name}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+# ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====
+
+
+@router.get("/{essay_id}", response_model=EssayOut)
+def get_essay(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+    return _essay_to_out(essay, db)
+
+
+@router.put("/{essay_id}", response_model=EssayOut)
+def update_essay(
+    essay_id: int,
+    grade: str = "",
+    essay_number: int = None,
+    essay_title: str = "",
+    student_name: str = "",
+    teaching_mode: str = "",
+    remark: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """更新作文信息"""
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+    if "admin" not in current_user.role and essay.collected_by != current_user.id:
+        raise HTTPException(status_code=403, detail="无权限编辑此作文")
+    if grade:
+        essay.grade = grade
+    if essay_number is not None:
+        essay.essay_number = essay_number
+    if essay_title:
+        essay.essay_title = essay_title
+    if student_name:
+        essay.student_name = student_name
+    if teaching_mode:
+        essay.teaching_mode = teaching_mode
+    if remark is not None:
+        essay.remark = remark
+    db.commit()
+    db.refresh(essay)
+    return _essay_to_out(essay, db)
 
 
 def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
@@ -672,7 +771,6 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
     reviewer = db.query(User).filter(User.id == essay.reviewer_id).first() if essay.reviewer_id else None
     class_ = db.query(Class).filter(Class.id == essay.class_id).first()
 
-    # 检查是否有批改文件
     corr_exists = False
     file_path = ""
     if essay.content_file:
@@ -683,7 +781,6 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
 
     # 自动同步状态
     if corr_exists and essay.status != "corrected":
-        from datetime import datetime
         essay.status = "corrected"
         essay.corrected_at = datetime.now()
         db.commit()
@@ -700,6 +797,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         teaching_mode=essay.teaching_mode or "线下",
         remark=essay.remark or "",
         content_text=essay.content_text or "",
+        corrected_text=essay.corrected_text or "",
         content_file=essay.content_file or "",
         file_type=essay.file_type or "text",
         collected_by=essay.collected_by,

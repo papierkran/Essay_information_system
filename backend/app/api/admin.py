@@ -294,10 +294,8 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    # 将相关作文的 collected_by 置为 NULL
     # 将该用户的作文 collected_by 置为 1（管理员 ID）
     db.query(Essay).filter(Essay.collected_by == user_id).update({"collected_by": 1})
-    db.delete(user)
     db.delete(user)
     db.commit()
     return {"message": "删除成功"}

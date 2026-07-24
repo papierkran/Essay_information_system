@@ -84,6 +84,7 @@ class Essay(Base):
     collected_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(String(20), default="pending")
     file_saved = Column(Boolean, default=True)
+    corrected_text = Column(Text, default="")
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     corrected_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
