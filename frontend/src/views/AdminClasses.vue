@@ -4,14 +4,16 @@
 
     <!-- 桌面端标签页 -->
     <div v-if="isDesktop" class="tabs" style="margin-bottom:16px">
-      <button :class="['tab-btn', { active: activeTab === 'classes' }]" @click="activeTab = 'classes'">班级管理</button>
       <button :class="['tab-btn', { active: activeTab === 'tasks' }]" @click="activeTab = 'tasks'">收集任务</button>
+      <button :class="['tab-btn', { active: activeTab === 'classes' }]" @click="activeTab = 'classes'">班级管理</button>
+
     </div>
 
     <!-- 手机端标签页 -->
     <van-tabs v-else v-model:active="activeTab" style="margin-bottom:12px">
-      <van-tab title="班级管理" name="classes" />
       <van-tab title="收集任务" name="tasks" />
+      <van-tab title="班级管理" name="classes" />
+
     </van-tabs>
 
     <!-- 班级管理内容 -->

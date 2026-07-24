@@ -9,7 +9,7 @@ from ..database import get_db
 from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask
 from ..schemas.schemas import (
     UserCreate, UserOut, OrganizationCreate, OrganizationOut,
-    ClassCreate, ClassOut, TaskCreate, TaskOut
+    ClassCreate, ClassOut, TaskCreate, TaskOut, PasswordChange
 )
 from ..utils.auth import hash_password, get_current_user
 
@@ -326,18 +326,19 @@ def update_user_role(
 
 @router.put("/profile/password")
 def update_my_password(
-    old_password: str = "",
-    new_password: str = "",
+    data: PasswordChange,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """用户自己修改密码"""
     from ..utils.auth import verify_password, hash_password
-    if not verify_password(old_password, current_user.password_hash):
+    if not data.old_password:
+        raise HTTPException(status_code=400, detail="请输入原密码")
+    if not verify_password(data.old_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="原密码错误")
-    if not new_password or len(new_password) < 4:
+    if not data.new_password or len(data.new_password) < 4:
         raise HTTPException(status_code=400, detail="新密码至少4位")
-    current_user.password_hash = hash_password(new_password)
+    current_user.password_hash = hash_password(data.new_password)
     db.commit()
     return {"message": "密码修改成功"}
 

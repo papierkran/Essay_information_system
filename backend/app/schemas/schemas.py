@@ -31,6 +31,12 @@ class TaskOut(BaseModel):
         from_attributes = True
 
 
+# ===== 密码修改 =====
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
 # ===== 用户 =====
 class UserCreate(BaseModel):
     username: str = ""

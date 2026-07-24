@@ -21,7 +21,11 @@
           <td><span :class="u.is_active ? 'tag tag-corrected' : 'tag tag-pending'">{{ u.is_active ? '启用' : '禁用' }}</span></td>
           <td style="white-space:nowrap">
             <template v-if="u.username === 'admin'">
-              <span style="color:#999;font-size:12px">无法修改</span>
+              <template v-if="u.id === currentUserId">
+                <button class="btn" style="font-size:12px;padding:4px 8px" @click="changePassword(u)">改密</button>
+                <span style="color:#999;font-size:12px">不可编辑</span>
+              </template>
+              <span v-else style="color:#999;font-size:12px">无法修改</span>
             </template>
             <template v-else>
               <button class="btn" style="font-size:12px;padding:4px 8px" @click="editUser(u)">编辑</button>
@@ -38,9 +42,15 @@
       <van-cell v-for="u in list" :key="u.id" :title="u.nickname || u.username"
         :label="`${u.username} · ${roleLabel(u.role)}`">
         <template #right-icon>
-        <van-icon v-if="u.username !== 'admin'" name="edit" @click="editUser(u)" />
-        <span v-else style="color:#999;font-size:12px">无法修改</span>
-      </template>
+          <template v-if="u.username === 'admin' && u.id === currentUserId">
+            <van-icon name="edit" @click="changePassword(u)" />
+            <span style="color:#999;font-size:12px;margin-left:4px">改密</span>
+          </template>
+          <template v-else-if="u.username !== 'admin'">
+            <van-icon name="edit" @click="editUser(u)" />
+          </template>
+          <span v-else style="color:#999;font-size:12px">无法修改</span>
+        </template>
       </van-cell>
     </van-list>
 
@@ -174,14 +184,18 @@ function changePassword(u) {
 }
 
 async function savePassword() {
+  const isSelf = pwdUser.value.id === currentUserId.value
+  if (isSelf && !pwdForm.value.old_password) {
+    showToast('请输入原密码')
+    return
+  }
   if (!pwdForm.value.new_password || pwdForm.value.new_password.length < 4) {
     showToast('新密码至少4位')
     return
   }
   try {
-    const isSelf = pwdUser.value.id === currentUserId.value
     if (isSelf) {
-      await api.put('/admin/profile/password', null, { params: pwdForm.value })
+      await api.put('/admin/profile/password', pwdForm.value)
     } else {
       await api.put(`/admin/users/${pwdUser.value.id}`, { password: pwdForm.value.new_password })
     }
