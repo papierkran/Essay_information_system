@@ -24,7 +24,28 @@
           <van-button round block type="primary" native-type="submit" :loading="loading">登录</van-button>
         </div>
       </van-form>
+
+      <div class="server-config" @click="showServerConfig = true">
+        ⚙️ 设置服务器地址
+      </div>
+
+      <div v-if="serverUrl" class="server-hint">
+        当前：{{ serverUrl }}
+      </div>
     </div>
+
+    <van-dialog v-model:show="showServerConfig" title="设置服务器地址" show-cancel-button>
+      <div style="padding:16px">
+        <div style="font-size:13px;color:#666;margin-bottom:12px">
+          如果无法连接服务器，请在此设置后端地址。
+        </div>
+        <input v-model="serverUrlInput" placeholder="http://192.168.31.158:8000" style="width:100%;padding:10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px" />
+        <div style="font-size:12px;color:#999;margin-top:8px">留空则使用默认地址</div>
+      </div>
+      <template #confirm>
+        <van-button type="primary" @click="saveServerUrl">保存</van-button>
+      </template>
+    </van-dialog>
   </div>
 </template>
 
@@ -41,8 +62,22 @@ const username = ref('')
 const password = ref('')
 const keyName = ref('')
 const loading = ref(false)
+const showServerConfig = ref(false)
+const serverUrlInput = ref(localStorage.getItem('apiBaseUrl') || '')
+const serverUrl = ref(localStorage.getItem('apiBaseUrl') || '')
 
 const { saveAuth } = useAuth()
+
+function saveServerUrl() {
+  if (serverUrlInput.value) {
+    localStorage.setItem('apiBaseUrl', serverUrlInput.value)
+  } else {
+    localStorage.removeItem('apiBaseUrl')
+  }
+  serverUrl.value = serverUrlInput.value
+  showServerConfig.value = false
+  showToast('服务器地址已保存，刷新页面生效')
+}
 
 // 列出所有已保存的账号
 const savedAccounts = computed(() => {
@@ -123,4 +158,23 @@ async function onLogin() {
 .account-role { font-size: 12px; color: #999; }
 
 .login-desktop .login-card { max-width: 420px; padding: 40px 32px; }
+
+.server-config {
+  text-align: center;
+  font-size: 13px;
+  color: #1677ff;
+  cursor: pointer;
+  margin-top: 12px;
+  padding: 8px;
+}
+
+.server-config:hover { text-decoration: underline; }
+
+.server-hint {
+  text-align: center;
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+  word-break: break-all;
+}
 </style>
