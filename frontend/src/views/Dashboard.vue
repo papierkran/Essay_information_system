@@ -27,7 +27,7 @@
             <td>{{ e.grade || '-' }}</td>
             <td>{{ e.essay_title || '无标题' }}</td>
             <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
-            <td>{{ e.created_at?.substring(0, 16) }}</td>
+            <td>{{ formatDateTime(e.created_at) }}</td>
           </tr>
         </tbody>
       </table>
@@ -48,13 +48,14 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
+import { formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
 
 const recentList = ref([])
 
-function statusLabel(s) { return { pending: '待批', correcting: '批改中', corrected: '已批' }[s] || s }
+function statusLabel(s) { return { pending: '待修改', correcting: '修改中', corrected: '已修改' }[s] || s }
 
 function goUpload() { router.push('/essay/upload') }
 function goList() { router.push('/essay/list') }

@@ -6,7 +6,7 @@ from .utils.file_utils import get_upload_dir
 from .api import auth, admin, essays
 import os
 
-app = FastAPI(title="作文批改收集信息系统", version="0.1.0")
+app = FastAPI(title="作文修改收集信息系统", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

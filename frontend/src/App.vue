@@ -21,8 +21,8 @@
         <router-link v-if="canCollect" to="/essay/upload" class="sidebar-link" @click="sidebarOpen=false">✏️ 上传作文</router-link>
         <router-link v-if="canCollect" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>
         <router-link v-if="canCollect" to="/essay/list" class="sidebar-link" @click="sidebarOpen=false">📋 作文列表</router-link>
-        <router-link v-if="canReview" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 待批改</router-link>
-        <router-link v-if="canReview" to="/review/history" class="sidebar-link" @click="sidebarOpen=false">🕐 批改历史</router-link>
+        <router-link v-if="canReview" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 待修改</router-link>
+        <router-link v-if="canReview" to="/review/history" class="sidebar-link" @click="sidebarOpen=false">🕐 修改历史</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
         <router-link v-if="isAdmin" to="/admin/classes" class="sidebar-link" @click="sidebarOpen=false">🏫 班级管理</router-link>
         <router-link v-if="isAdmin" to="/admin/settings" class="sidebar-link" @click="sidebarOpen=false">⚙️ 系统设置</router-link>
@@ -62,7 +62,7 @@ const isAdmin = computed(() => userRole.value.includes('admin'))
 const canCollect = computed(() => userRole.value.includes('collector') || isAdmin.value)
 const canReview = computed(() => userRole.value.includes('reviewer') || isAdmin.value)
 const roleLabel = computed(() => {
-  const labels = { admin: '管理员', collector: '收集者', reviewer: '批改者' }
+  const labels = { admin: '管理员', collector: '收集者', reviewer: '修改者' }
   return (user.value.role || '').split(',').map(r => labels[r] || r).join(' + ')
 })
 

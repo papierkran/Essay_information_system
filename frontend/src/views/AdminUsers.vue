@@ -116,7 +116,7 @@ const newUser = ref({ username:'', password:'', nickname:'', role:'collector' })
 const selectedRoles = ref(['collector'])
 const roleOptions = [
   { value: 'collector', label: '收集者' },
-  { value: 'reviewer', label: '批改者' },
+  { value: 'reviewer', label: '修改者' },
   { value: 'admin', label: '管理员' },
 ]
 const showPwd = ref(false)
@@ -132,7 +132,7 @@ async function load() {
 }
 
 function roleLabel(r) {
-  const labels = { admin:'管理员', collector:'收集者', reviewer:'批改者' }
+  const labels = { admin:'管理员', collector:'收集者', reviewer:'修改者' }
   return (r||'').split(',').map(x=>labels[x]||x).join(' + ')
 }
 

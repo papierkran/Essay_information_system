@@ -1,6 +1,6 @@
 <template>
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
-    <div v-if="isDesktop" class="page-title">待批改作文</div>
+    <div v-if="isDesktop" class="page-title">待修改作文</div>
 
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
@@ -13,10 +13,10 @@
           <td>{{ e.grade || '-' }}</td>
           <td>{{ e.essay_title || '无标题' }}</td>
           <td>{{ e.collector_name }}</td>
-          <td>{{ e.created_at?.substring(0, 16) }}</td>
+          <td>{{ formatDateTime(e.created_at) }}</td>
           <td>
             <button class="btn btn-primary" @click="claimAndGo(e)" style="font-size:12px;padding:4px 12px">
-              认领批改
+              认领修改
             </button>
           </td>
         </tr>
@@ -37,7 +37,7 @@
           <van-tag plain type="primary">{{ e.grade || '未知' }}</van-tag>
         </template>
         <template #footer>
-          <van-button size="small" type="primary" @click.stop="claimAndGo(e)">认领批改</van-button>
+          <van-button size="small" type="primary" @click.stop="claimAndGo(e)">认领修改</van-button>
         </template>
       </van-card>
     </van-list>
@@ -50,6 +50,7 @@ import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
+import { formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const { isDesktop } = useScreen()

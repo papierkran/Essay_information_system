@@ -346,7 +346,26 @@ async function parseDocxContent(file) {
   const beforeMatch = fullText.match(/修改前[：:]\s*([\s\S]*?)(?=修改后[：:]|$)/)
   const afterMatch = fullText.match(/修改后[：:]\s*([\s\S]*?)$/)
   
+  let title = ''
+  let studentNameFromDoc = ''
+  
+  if (beforeMatch) {
+    const lines = beforeMatch[1].split('\n').map(l => l.trim()).filter(l => l)
+    if (lines.length > 0) {
+      title = lines[0]
+    }
+    if (lines.length > 1) {
+      const thirdLine = lines[1]
+      const dashIdx = thirdLine.indexOf('——')
+      if (dashIdx !== -1) {
+        studentNameFromDoc = thirdLine.substring(dashIdx + 2).trim()
+      }
+    }
+  }
+  
   return {
+    title: title,
+    studentName: studentNameFromDoc,
     before: beforeMatch ? beforeMatch[1].trim() : '',
     after: afterMatch ? afterMatch[1].trim() : ''
   }
@@ -416,12 +435,13 @@ async function onSubmitCorrections() {
   for (const { file, studentName } of corFiles.value) {
     corCurrentStudent.value = studentName
     try {
-      console.log('解析文件:', file.name, '学生:', studentName)
-      const { before, after } = await parseDocxContent(file)
-      console.log('解析结果 - 修改前:', before.length, '字, 修改后:', after.length, '字')
+      console.log('解析文件:', file.name, '文件名学生:', studentName)
+      const { title, studentName: docStudentName, before, after } = await parseDocxContent(file)
+      const finalStudentName = docStudentName || studentName
+      console.log('解析结果 - 学生:', finalStudentName, '标题:', title, '修改前:', before.length, '字, 修改后:', after.length, '字')
 
       if (!before && !after) {
-        errorDetails.push(`${studentName}: 文件内容解析失败`)
+        errorDetails.push(`${finalStudentName}: 文件内容解析失败`)
         corFail.value++
         corUploadedCount.value++
         continue
@@ -431,18 +451,19 @@ async function onSubmitCorrections() {
       fd.append('grade', corForm.value.grade)
       fd.append('essay_number', corForm.value.essay_number || 1)
       fd.append('teaching_mode', corForm.value.teaching_mode)
-      fd.append('student_name', studentName)
+      fd.append('student_name', finalStudentName)
+      fd.append('essay_title', title)
       fd.append('content_text', before || '')
       fd.append('corrected_text', after || '')
       fd.append('file', file)
 
-      console.log('上传:', studentName)
+      console.log('上传:', finalStudentName)
       await api.post('/essays/upload-correction-docx', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-      console.log('成功:', studentName)
+      console.log('成功:', finalStudentName)
       corSuccess.value++
     } catch (err) {
-      console.error('失败:', studentName, err.response?.data || err.message)
-      errorDetails.push(`${studentName}: ${err.response?.data?.detail || err.message}`)
+      console.error('失败:', finalStudentName, err.response?.data || err.message)
+      errorDetails.push(`${finalStudentName}: ${err.response?.data?.detail || err.message}`)
       corFail.value++
     }
     corUploadedCount.value++

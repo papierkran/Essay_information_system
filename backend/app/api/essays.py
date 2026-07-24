@@ -279,6 +279,7 @@ async def upload_correction_docx(
     essay_number: int = Form(...),
     teaching_mode: str = Form("线下"),
     student_name: str = Form(...),
+    essay_title: str = Form(""),
     content_text: str = Form(""),
     corrected_text: str = Form(""),
     file: UploadFile = File(None),
@@ -328,6 +329,7 @@ async def upload_correction_docx(
             class_id=1,
             grade=grade,
             essay_number=essay_number,
+            essay_title=essay_title,
             student_name=student_name,
             is_supplement=False,
             teaching_mode=teaching_mode,
@@ -398,7 +400,7 @@ def list_essays(
         )
 
     # 排序
-    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number}
+    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status}
     order_col = allowed_sort.get(sort_by, Essay.created_at)
     if sort_order == "asc":
         q = q.order_by(order_col.asc())
@@ -432,7 +434,7 @@ def pending_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取待批改的作文列表（批改者用）"""
+    """获取待修改的作文列表（修改者用）"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
@@ -565,7 +567,7 @@ def claim_essay(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批改者认领作文"""
+    """修改者认领作文"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
@@ -587,7 +589,7 @@ def delete_essay(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除作文（含文件，force=true时强制删除已批改文件）"""
+    """删除作文（含文件，force=true时强制删除已修改文件）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -599,7 +601,7 @@ def delete_essay(
         orig_dir = os.path.dirname(file_path)
         corr_exists = has_correction(orig_dir, os.path.basename(file_path))
         if corr_exists and not force:
-            raise HTTPException(status_code=400, detail="作文已有批改结果，请确认强制删除")
+            raise HTTPException(status_code=400, detail="作文已有修改结果，请确认强制删除")
 
     if essay.content_file:
         dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
@@ -619,7 +621,7 @@ async def upload_correction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """上传批改结果（支持文件上传 + 文字批改）"""
+    """上传修改结果（支持文件上传 + 文字修改）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -628,13 +630,13 @@ async def upload_correction(
 
     # 至少提供文件或文字
     if not file and not corrected_text.strip():
-        raise HTTPException(status_code=400, detail="请上传文件或填写批改文字")
+        raise HTTPException(status_code=400, detail="请上传文件或填写修改文字")
 
     # 保存文件（如果有）
     corr_name = ""
     if file and file.filename:
         if not essay.content_file:
-            raise HTTPException(status_code=400, detail="原文不存在，无法上传批改")
+            raise HTTPException(status_code=400, detail="原文不存在，无法上传修改")
         original_path = os.path.join(get_upload_dir(), essay.content_file)
         original_dir = os.path.dirname(original_path)
         original_name = os.path.basename(original_path)
@@ -646,7 +648,7 @@ async def upload_correction(
         with open(corr_path, "wb") as f:
             f.write(content)
 
-    # 保存文字批改（如果有）
+    # 保存文字修改（如果有）
     if corrected_text.strip():
         essay.corrected_text = corrected_text.strip()
 
@@ -655,7 +657,7 @@ async def upload_correction(
     essay.corrected_at = datetime.now()
     db.commit()
 
-    return {"message": "批改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
+    return {"message": "修改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
 
 
 @router.get("/{essay_id}/images")
@@ -757,7 +759,7 @@ def download_correction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """下载批改结果"""
+    """下载修改结果"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay or not essay.content_file:
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -770,7 +772,7 @@ def download_correction(
     corr_path = os.path.join(original_dir, corr_name)
 
     if not os.path.exists(corr_path):
-        raise HTTPException(status_code=404, detail="批改结果不存在")
+        raise HTTPException(status_code=404, detail="修改结果不存在")
 
     dl_name = _build_download_filename(essay)
     ext = os.path.splitext(corr_path)[1]
@@ -796,6 +798,50 @@ def export_docx(
         filename=f"改_{dl_name}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@router.post("/batch-export-docx")
+def batch_export_docx(
+    essay_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量导出选中作文的docx（修改前后），打包为zip下载"""
+    from pydantic import BaseModel
+
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    if not essays:
+        raise HTTPException(status_code=404, detail="未找到选中的作文")
+
+    # 创建临时zip文件
+    tmp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp_zip_path = tmp_zip.name
+    tmp_zip.close()
+
+    try:
+        with zipfile.ZipFile(tmp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for essay in essays:
+                tmp_docx = _generate_docx(essay, show_corrected=True)
+                dl_name = _build_download_filename(essay)
+                # 将docx文件添加到zip中
+                zf.write(tmp_docx, f"改_{dl_name}.docx")
+                # 删除临时docx文件
+                os.unlink(tmp_docx)
+
+        # 构建下载文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"作文导出_{timestamp}.zip"
+
+        return FileResponse(
+            tmp_zip_path,
+            filename=zip_filename,
+            media_type="application/zip",
+        )
+    except Exception as e:
+        # 清理临时文件
+        if os.path.exists(tmp_zip_path):
+            os.unlink(tmp_zip_path)
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 
 # ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====

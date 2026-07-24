@@ -4,38 +4,48 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">年级</span>
-        <select v-model="filters.grade" class="filter-input" @change="applyFilter">
-          <option value="">全部</option>
-          <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
-        </select>
+      <div class="filter-main">
+        <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
+        <div class="filter-row"><span class="filter-label">状态</span>
+          <select v-model="filters.status" class="filter-input" @change="applyFilter">
+            <option value="">全部</option>
+            <option value="pending">待批</option>
+            <option value="corrected">已批</option>
+          </select>
+        </div>
+        <div class="filter-row"><span class="filter-label">年级</span>
+          <select v-model="filters.grade" class="filter-input" @change="applyFilter">
+            <option value="">全部</option>
+            <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
+        <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
+        <button class="btn-collapse" @click="showMoreFilters = !showMoreFilters">
+          更多筛选 {{ showMoreFilters ? '▲' : '▼' }}
+        </button>
       </div>
-      <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @input="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">状态</span>
-        <select v-model="filters.status" class="filter-input" @change="applyFilter">
-          <option value="">全部</option>
-          <option value="pending">待批</option>
-          <option value="corrected">已批</option>
-        </select>
+      <div class="filter-more" v-show="showMoreFilters">
+        <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @input="applyFilter" /></div>
+        <div class="filter-row"><span class="filter-label">提交方式</span>
+          <select v-model="filters.mode" class="filter-input" @change="applyFilter">
+            <option value="">全部</option>
+            <option value="线下">线下</option>
+            <option value="线上">线上</option>
+          </select>
+        </div>
+        <div class="filter-row"><span class="filter-label">收集者</span><input v-model="filters.reviewer" placeholder="搜收集者" class="filter-input" @input="applyFilter" /></div>
+        <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
       </div>
-      <div class="filter-row"><span class="filter-label">提交方式</span>
-        <select v-model="filters.mode" class="filter-input" @change="applyFilter">
-          <option value="">全部</option>
-          <option value="线下">线下</option>
-          <option value="线上">线上</option>
-        </select>
+      <div class="filter-actions">
+        <button class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
       </div>
-      <div class="filter-row"><span class="filter-label">收集者</span><input v-model="filters.reviewer" placeholder="搜收集者" class="filter-input" @input="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
-      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
-      <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-      <button class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
     </div>
 
     <!-- 批量操作栏 -->
     <div class="batch-bar" v-if="selectedIds.length">
       <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="batchExportDocx">📥 批量导出docx</button>
       <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" @click="batchDelete">批量删除</button>
       <button class="btn" style="font-size:12px;padding:4px 12px" @click="selectedIds=[]">取消选择</button>
     </div>
@@ -54,15 +64,15 @@
           <tr>
             <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
             <th class="sortable" @click="toggleSort('student_name')">学生 {{ sortIcon('student_name') }}</th>
-            <th class="sortable" @click="toggleSort('grade')">年级 {{ sortIcon('grade') }}</th>
+            <th>年级</th>
             <th>作文</th>
             <th class="sortable" @click="toggleSort('essay_number')">第几次 {{ sortIcon('essay_number') }}</th>
             <th>提交方式</th>
-            <th>状态</th>
+            <th class="sortable" @click="toggleSort('status')">状态 {{ sortIcon('status') }}</th>
             <th>收集者</th>
             <th>备注</th>
             <th class="sortable" @click="toggleSort('created_at')">收集时间 {{ sortIcon('created_at') }}</th>
-            <th class="sortable" @click="toggleSort('corrected_at')">批改时间 {{ sortIcon('corrected_at') }}</th>
+            <th class="sortable" @click="toggleSort('corrected_at')">修改时间 {{ sortIcon('corrected_at') }}</th>
             <th>文件</th>
             <th>操作</th>
           </tr>
@@ -78,8 +88,8 @@
             <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
             <td>{{ e.collector_name || '-' }}</td>
             <td>{{ e.remark || '-' }}</td>
-            <td>{{ e.created_at?.substring(0, 16) }}</td>
-            <td>{{ e.corrected_at?.substring(0, 16) || '-' }}</td>
+            <td>{{ formatDateTime(e.created_at) }}</td>
+            <td>{{ formatDateTime(e.corrected_at) || '-' }}</td>
             <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
             <td style="white-space:nowrap">
               <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
@@ -94,9 +104,15 @@
 
     <!-- 分页 -->
     <div class="pagination" v-if="totalPages > 1">
+      <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
       <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
       <span class="page-info">{{ page }} / {{ totalPages }}</span>
       <button class="btn" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+      <button class="btn" :disabled="page >= totalPages" @click="goPage(totalPages)">末页</button>
+      <span class="page-jump" style="margin-left:12px">跳至
+        <input v-model.number="jumpPage" type="number" min="1" :max="totalPages" class="page-jump-input" @keyup.enter="jumpToPage" />
+        <button class="btn" style="font-size:12px;padding:4px 8px" @click="jumpToPage">GO</button>
+      </span>
       <span class="page-size" style="margin-left:12px">每页
         <select v-model.number="pageSize" @change="applyFilter">
           <option :value="20">20</option>
@@ -112,8 +128,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showDialog, showToast } from 'vant'
+import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api from '../api'
+import { formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const list = ref([])
@@ -123,9 +140,11 @@ const pendingTotal = ref(0)
 const correctedTotal = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
+const jumpPage = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
 const selectedIds = ref([])
+const showMoreFilters = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 
 const filters = ref({ name: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' })
@@ -133,7 +152,7 @@ const filters = ref({ name: '', grade: '', number: '', status: '', mode: '', rev
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
 
-function statusLabel(s) { return { pending:'待批', correcting:'批改中', corrected:'已批' }[s] || s }
+function statusLabel(s) { return { pending:'待修改', correcting:'修改中', corrected:'已修改' }[s] || s }
 function sortIcon(field) { if (sortBy.value !== field) return '⇅'; return sortOrder.value === 'asc' ? '↑' : '↓' }
 
 function toggleSort(field) {
@@ -172,6 +191,14 @@ async function loadData() {
 }
 
 function goPage(p) { page.value = p; loadData() }
+function jumpToPage() {
+  const p = parseInt(jumpPage.value)
+  if (isNaN(p) || p < 1 || p > totalPages.value) {
+    showToast('请输入有效的页码')
+    return
+  }
+  goPage(p)
+}
 function clearFilter() { filters.value = { name: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' }; applyFilter() }
 
 function toggleSelect(id) {
@@ -208,6 +235,36 @@ async function batchDelete() {
   }).catch(() => {})
 }
 
+async function batchExportDocx() {
+  if (!selectedIds.value.length) return
+  try {
+    showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
+    const res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob' })
+    
+    // 从响应头解析文件名
+    const disposition = res.headers['content-disposition']
+    let filename = '作文导出.zip'
+    if (disposition) {
+      const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i)
+      if (match) filename = decodeURIComponent(match[1])
+    }
+    
+    // 创建 Blob URL 并下载
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    window.URL.revokeObjectURL(url)
+    
+    closeToast()
+    showSuccessToast('导出成功')
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '导出失败')
+  }
+}
+
 function confirmDelete(e) {
   showDialog({
     title: '确认删除',
@@ -225,11 +282,11 @@ function confirmDelete(e) {
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
 function exportCSV() {
-  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','备注','收集时间','批改时间']
+  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','备注','收集时间','修改时间']
   const rows = list.value.map(e => [
     e.student_name, e.grade, e.essay_title, `第${e.essay_number}次`,
     e.teaching_mode, statusLabel(e.status), e.collector_name, e.remark,
-    e.created_at?.substring(0,16) || '', e.corrected_at?.substring(0,16) || '',
+    e.created_at ? formatDateTime(e.created_at) : '', e.corrected_at ? formatDateTime(e.corrected_at) : '',
   ])
   const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -246,15 +303,48 @@ onMounted(applyFilter)
 
 .filter-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
   margin-bottom: 12px;
   padding: 12px 16px;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
+
+.filter-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.btn-collapse {
+  background: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+}
+.btn-collapse:hover { border-color: #4096ff; color: #4096ff; }
 
 .filter-row { display: flex; align-items: center; gap: 4px; }
 .filter-label { font-size: 13px; color: #666; white-space: nowrap; }
@@ -304,10 +394,15 @@ onMounted(applyFilter)
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 20px 0;
 }
 .page-info { font-size: 14px; color: #333; }
+.page-jump { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #666; }
+.page-jump-input { width: 50px; padding: 4px 6px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; text-align: center; }
+.page-jump-input:focus { border-color: #4096ff; outline: none; }
+.page-size { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #666; }
 .page-size select { padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
 
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
@@ -316,9 +411,11 @@ onMounted(applyFilter)
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 
 @media (max-width: 767px) {
-  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-main { flex-direction: column; align-items: stretch; }
+  .filter-more { flex-direction: column; align-items: stretch; }
   .filter-row { width: 100%; }
   .filter-input { flex: 1; }
   .table-wrap { overflow-x: auto; }
+  .pagination { flex-direction: column; gap: 12px; }
 }
 </style>

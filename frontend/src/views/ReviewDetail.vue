@@ -5,7 +5,7 @@
     <template v-if="!loading && essay">
       <div v-if="isDesktop" class="page-title">作文详情</div>
 
-      <!-- ===== 桌面端：顶部行（基本信息 + 批改状态）===== -->
+      <!-- ===== 桌面端：顶部行（基本信息 + 修改状态）===== -->
       <div v-if="isDesktop" class="top-row">
         <div class="card top-card">
           <div class="card-header">
@@ -23,7 +23,7 @@
             <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" /></div>
             <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" /></div>
             <div class="info-item"><span class="info-label">收集者</span><span>{{ essay.collector_name }}</span></div>
-            <div class="info-item"><span class="info-label">上传时间</span><span>{{ essay.created_at?.substring(0,16) }}</span></div>
+            <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
             <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" /></div>
             <div class="info-item"><span class="info-label">提交方式</span>
               <select v-model="editForm.teaching_mode" class="edit-input">
@@ -37,24 +37,24 @@
 
         <div class="card top-card">
           <template v-if="canReview && essay.status !== 'corrected'">
-            <div class="card-header"><h3>📤 上传批改结果</h3></div>
+            <div class="card-header"><h3>📤 上传修改结果</h3></div>
             <div class="form-group">
-              <label>选择批改后的 docx 文件</label>
+              <label>选择修改后的 docx 文件</label>
               <input type="file" ref="fileInput" accept=".docx,.doc" @change="onFileSelected" />
               <p v-if="selectedFile" style="margin-top:8px;color:#52c41a">已选择: {{ selectedFile.name }}</p>
             </div>
             <div class="form-group">
-              <label>文字批改内容</label>
-              <textarea v-model="correctionText" rows="4" placeholder="输入批改文字..."></textarea>
+              <label>文字修改内容</label>
+                <textarea v-model="correctionText" rows="4" placeholder="输入修改文字..."></textarea>
             </div>
             <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()" style="width:100%">
-              {{ uploading ? '提交中...' : '提交批改' }}
+                {{ uploading ? '提交中...' : '提交修改' }}
             </button>
           </template>
           <template v-else>
-            <div class="card-header"><h3>✅ 已批改</h3></div>
-            <p style="color:#52c41a">批改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
-            <button v-if="essay.has_correction" class="btn btn-success" @click="downloadCorrection" style="margin-top:12px;width:100%">📥 下载批改结果</button>
+            <div class="card-header"><h3>✅ 已修改</h3></div>
+            <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
+            <button v-if="essay.has_correction" class="btn btn-success" @click="downloadCorrection" style="margin-top:12px;width:100%">📥 下载修改结果</button>
           </template>
         </div>
       </div>
@@ -136,22 +136,22 @@
               <div v-if="essay.corrected_text" class="content-text corrected-content">
                 <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
               </div>
-              <div v-else class="empty-state" style="padding:20px"><p>暂无批改内容</p></div>
+              <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
               <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
             </div>
             <!-- 重新上传面板（修改后：仅文字输入） -->
             <div v-if="showReuploadCorrected" class="reupload-area">
               <div class="form-group">
-                <label>批改文字内容</label>
-                <textarea v-model="correctionText" rows="4" placeholder="输入批改文字..."></textarea>
+                <label>修改文字内容</label>
+              <textarea v-model="correctionText" rows="4" placeholder="输入修改文字..."></textarea>
               </div>
               <div class="form-group">
-                <label>或上传批改文件</label>
+                <label>或上传修改文件</label>
                 <input type="file" accept=".docx,.doc" @change="onFileSelected" />
                 <p v-if="selectedFile" style="margin-top:8px;color:#52c41a">已选择: {{ selectedFile.name }}</p>
               </div>
               <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()">
-                {{ uploading ? '提交中...' : '提交批改' }}
+              {{ uploading ? '提交中...' : '提交修改' }}
               </button>
             </div>
           </div>
@@ -167,14 +167,14 @@
           <van-field v-model="editForm.essay_title" label="作文标题" />
           <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" />
           <van-cell title="收集者" :value="essay.collector_name" />
-          <van-cell title="上传时间" :value="essay.created_at?.substring(0,16)" />
+          <van-cell title="上传时间" :value="formatDateTime(essay.created_at)" />
           <van-cell v-if="essay.is_supplement" title="状态" value="补交" />
         </van-cell-group>
 
         <div style="margin:16px">
           <van-button v-if="essay.content_file" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
           <van-button round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
-          <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载批改结果</van-button>
+          <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载修改结果</van-button>
           <van-button round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
           <van-button round block @click="saveEdit" :loading="savingEdit">💾 保存修改</van-button>
         </div>
@@ -212,15 +212,15 @@
           <div v-if="essay.corrected_text" class="content-text corrected-content">
             <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
           </div>
-          <div v-else class="empty-state" style="padding:20px"><p>暂无批改内容</p></div>
+          <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
         </van-cell-group>
 
-        <!-- 手机端批改上传 -->
+        <!-- 手机端修改上传 -->
         <van-cell-group inset style="margin-top:12px" v-if="canReview && essay.status !== 'corrected'">
-          <van-field v-model="correctionFile" is-link readonly label="上传批改结果" placeholder="选择批改后的 docx 文件" @click="selectFile" />
-          <van-field v-model="correctionText" label="文字批改" type="textarea" rows="3" placeholder="输入批改文字..." />
+          <van-field v-model="correctionFile" is-link readonly label="上传修改结果" placeholder="选择修改后的 docx 文件" @click="selectFile" />
+          <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
           <div style="margin:16px">
-            <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交批改</van-button>
+            <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
           </div>
         </van-cell-group>
 
@@ -268,6 +268,7 @@ import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
+import { formatDateTime } from '../utils/format'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -449,7 +450,7 @@ async function downloadCorrection() {
   try {
     const res = await api.get(`/essays/${route.params.id}/download-correction`, { responseType: 'blob' })
     const disposition = res.headers['content-disposition']
-    let filename = '批改结果.docx'
+    let filename = '修改结果.docx'
     if (disposition) {
       const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i)
       if (match) filename = decodeURIComponent(match[1])
@@ -477,7 +478,7 @@ async function exportDocx() {
 
 async function uploadCorrection() {
   if (!selectedFile.value && !correctionText.value.trim()) {
-    showToast('请选择文件或输入批改文字')
+    showToast('请选择文件或输入修改文字')
     return
   }
   uploading.value = true
@@ -486,7 +487,7 @@ async function uploadCorrection() {
     if (selectedFile.value) fd.append('file', selectedFile.value)
     fd.append('corrected_text', correctionText.value)
     await api.post(`/essays/${route.params.id}/upload-correction`, fd)
-    showToast('批改提交成功')
+    showToast('修改提交成功')
     await loadEssay()
     selectedFile.value = null; correctionFile.value = ''
     correctionText.value = ''

@@ -94,7 +94,7 @@ const savedAccounts = computed(() => {
   return accounts
 })
 
-function roleLabel(r) { const m = { admin:'管理员', collector:'收集者', reviewer:'批改者' }; return (r||'').split(',').map(x=>m[x]||x).join(' + ') }
+function roleLabel(r) { const m = { admin:'管理员', collector:'收集者', reviewer:'修改者' }; return (r||'').split(',').map(x=>m[x]||x).join(' + ') }
 
 function switchTo(acct) {
   setActiveAuth(acct.key)

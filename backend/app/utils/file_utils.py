@@ -68,12 +68,12 @@ def generate_essay_filename(
 
 
 def generate_correction_filename(original_filename: str) -> str:
-    """生成批改文件名（加 改_ 前缀）"""
+    """生成修改文件名（加 改_ 前缀）"""
     return f"改_{original_filename}"
 
 
 def has_correction(file_dir: str, original_filename: str) -> bool:
-    """判断目录下是否有批改文件（有改_前缀的文件即视为已批改）"""
+    """判断目录下是否有修改文件（有改_前缀的文件即视为已修改）"""
     if not os.path.exists(file_dir):
         return False
     for f in os.listdir(file_dir):
@@ -83,7 +83,7 @@ def has_correction(file_dir: str, original_filename: str) -> bool:
 
 
 def count_corrections_in_dir(dir_path: str) -> int:
-    """统计目录下批改文件数量"""
+    """统计目录下修改文件数量"""
     if not os.path.exists(dir_path):
         return 0
     count = 0
