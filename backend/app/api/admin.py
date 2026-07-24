@@ -6,10 +6,10 @@ import json
 from datetime import datetime
 
 from ..database import get_db
-from ..models.models import User, Organization, Class, UserClass, Essay
+from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask
 from ..schemas.schemas import (
     UserCreate, UserOut, OrganizationCreate, OrganizationOut,
-    ClassCreate, ClassOut
+    ClassCreate, ClassOut, TaskCreate, TaskOut
 )
 from ..utils.auth import hash_password, get_current_user
 
@@ -497,3 +497,104 @@ def test_db(db: Session = Depends(get_db)):
         return {"status": "ok", "message": "数据库连接正常"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"数据库连接失败: {str(e)}")
+
+
+# ===== 作文收集任务管理 =====
+@router.post("/tasks", response_model=TaskOut)
+def create_task(
+    data: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin(current_user)
+    task = EssayTask(
+        name=data.name,
+        grade=data.grade,
+        essay_number=data.essay_number,
+        essay_topic=data.essay_topic,
+        course_name=data.course_name,
+        teaching_mode=data.teaching_mode,
+        deadline=data.deadline,
+        is_active=data.is_active,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return TaskOut.model_validate(task)
+
+
+@router.get("/tasks", response_model=list[TaskOut])
+def list_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin(current_user)
+    tasks = db.query(EssayTask).order_by(EssayTask.created_at.desc()).all()
+    return [TaskOut.model_validate(t) for t in tasks]
+
+
+@router.put("/tasks/{task_id}", response_model=TaskOut)
+def update_task(
+    task_id: int,
+    data: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin(current_user)
+    task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    task.name = data.name
+    task.grade = data.grade
+    task.essay_number = data.essay_number
+    task.essay_topic = data.essay_topic
+    task.course_name = data.course_name
+    task.teaching_mode = data.teaching_mode
+    task.deadline = data.deadline
+    task.is_active = data.is_active
+    db.commit()
+    db.refresh(task)
+    return TaskOut.model_validate(task)
+
+
+@router.delete("/tasks/{task_id}")
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin(current_user)
+    task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    db.delete(task)
+    db.commit()
+    return {"message": "删除成功"}
+
+
+@router.put("/tasks/{task_id}/activate")
+def activate_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """切换指定任务的活跃状态"""
+    require_admin(current_user)
+    task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    task.is_active = not task.is_active
+    db.commit()
+    return {"message": "已激活" if task.is_active else "已结束", "is_active": task.is_active}
+
+
+@router.put("/tasks/deactivate-all")
+def deactivate_all_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消所有活跃任务"""
+    require_admin(current_user)
+    db.query(EssayTask).filter(EssayTask.is_active == True).update({"is_active": False})
+    db.commit()
+    return {"message": "已取消所有活跃任务"}

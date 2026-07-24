@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ..database import get_db
-from ..models.models import User, Essay, Class, UserClass
-from ..schemas.schemas import EssayCreate, EssayOut
+from ..models.models import User, Essay, Class, UserClass, EssayTask
+from ..schemas.schemas import EssayCreate, EssayOut, TaskOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
@@ -18,6 +18,54 @@ from ..utils.file_utils import (
 )
 
 router = APIRouter(prefix="/api/essays", tags=["作文"])
+
+
+@router.get("/tasks", response_model=list[TaskOut])
+def list_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取所有任务列表（供上传选择用）"""
+    tasks = db.query(EssayTask).order_by(EssayTask.created_at.desc()).all()
+    return [TaskOut.model_validate(t) for t in tasks]
+
+
+@router.get("/tasks/active", response_model=list[TaskOut])
+def get_active_tasks(
+    db: Session = Depends(get_db),
+):
+    """获取所有活跃的收集任务（公开接口）"""
+    tasks = db.query(EssayTask).filter(EssayTask.is_active == True).all()
+    return [TaskOut.model_validate(t) for t in tasks]
+
+
+@router.get("/tasks/{task_id}/stats")
+def get_task_stats(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取指定任务的统计数据"""
+    task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    total = db.query(func.count(Essay.id)).filter(Essay.task_id == task_id).scalar() or 0
+    pending = db.query(func.count(Essay.id)).filter(
+        Essay.task_id == task_id,
+        Essay.status == "pending"
+    ).scalar() or 0
+    corrected = db.query(func.count(Essay.id)).filter(
+        Essay.task_id == task_id,
+        Essay.status == "corrected"
+    ).scalar() or 0
+    
+    return {
+        "task_id": task_id,
+        "total": total,
+        "pending": pending,
+        "corrected": corrected
+    }
 
 
 def _build_download_filename(essay: Essay) -> str:
@@ -133,6 +181,7 @@ def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
 async def upload_essay(
     essay_id: int = Form(None),
     class_id: int = Form(...),
+    task_id: int = Form(None),
     grade: str = Form(""),
     essay_number: int = Form(1),
     essay_title: str = Form(""),
@@ -161,6 +210,7 @@ async def upload_essay(
         if "admin" not in current_user.role and essay.collected_by != current_user.id:
             raise HTTPException(status_code=403, detail="无权限编辑此作文")
         essay.class_id = class_id
+        essay.task_id = task_id
         essay.grade = grade
         essay.essay_number = essay_number
         essay.essay_title = essay_title
@@ -172,6 +222,7 @@ async def upload_essay(
     else:
         essay = Essay(
             class_id=class_id,
+            task_id=task_id,
             grade=grade,
             essay_number=essay_number,
             essay_title=essay_title,
@@ -444,8 +495,8 @@ def pending_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取待修改的作文列表（修改者用）"""
-    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+    """获取待修改的作文列表（修改者/游客用）"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
     essays = db.query(Essay).filter(
@@ -915,6 +966,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
     collector = db.query(User).filter(User.id == essay.collected_by).first()
     reviewer = db.query(User).filter(User.id == essay.reviewer_id).first() if essay.reviewer_id else None
     class_ = db.query(Class).filter(Class.id == essay.class_id).first()
+    task = db.query(EssayTask).filter(EssayTask.id == essay.task_id).first() if essay.task_id else None
 
     corr_exists = False
     file_path = ""
@@ -934,6 +986,8 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         id=essay.id,
         class_id=essay.class_id,
         class_name=class_.name if class_ else "",
+        task_id=essay.task_id,
+        task_name=task.name if task else "",
         grade=essay.grade or "",
         essay_number=essay.essay_number or 0,
         essay_title=essay.essay_title or "",

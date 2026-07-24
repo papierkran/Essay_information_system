@@ -2,6 +2,12 @@
   <div class="page">
     <div v-if="isDesktop" class="page-title">批量上传</div>
 
+    <!-- 模板选择区域 -->
+    <van-cell-group inset style="margin-bottom:12px">
+      <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
+        placeholder="选择收集任务（自动填充年级等信息）" @click="showTaskPicker = true" />
+    </van-cell-group>
+
     <div class="batch-grid">
       <!-- 左侧：批量上传作文 -->
       <div class="batch-card">
@@ -124,11 +130,26 @@
         <van-cell v-for="g in grades" :key="g" :title="g" @click="selectCorGrade(g)" />
       </div>
     </van-action-sheet>
+
+    <!-- 模板选择器 -->
+    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
+      <div class="picker-list">
+        <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
+        <van-cell v-for="t in tasks" :key="t.id"
+          :title="t.name"
+          :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
+          @click="selectTask(t)">
+          <template #right-icon>
+            <van-tag v-if="t.is_active" type="primary" style="margin-right:8px">收集中</van-tag>
+          </template>
+        </van-cell>
+      </div>
+    </van-action-sheet>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { showToast, showDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
@@ -139,11 +160,15 @@ const loading = ref(false)
 const corLoading = ref(false)
 const showGradePicker = ref(false)
 const showCorGradePicker = ref(false)
+const showTaskPicker = ref(false)
 const selectedGrade = ref('')
 const corSelectedGrade = ref('')
+const selectedTaskName = ref('')
+const selectedTaskId = ref(null)
 const grades = ['初一', '初二', '初三', '高一', '高二', '高三']
 const folderInput = ref(null)
 const corFolderInput = ref(null)
+const tasks = ref([])
 
 const form = ref({ grade: '', essay_number: '', teaching_mode: '线上' })
 const corForm = ref({ grade: '', essay_number: '', teaching_mode: '线下' })
@@ -169,6 +194,13 @@ const corSuccess = ref(0)
 const corFail = ref(0)
 const corPercent = computed(() => corFiles.value.length ? Math.round(corUploadedCount.value / corFiles.value.length * 100) : 0)
 
+onMounted(async () => {
+  try {
+    const res = await api.get('/essays/tasks')
+    tasks.value = res.data
+  } catch {}
+})
+
 function selectGrade(g) {
   form.value.grade = g
   selectedGrade.value = g
@@ -179,6 +211,33 @@ function selectCorGrade(g) {
   corForm.value.grade = g
   corSelectedGrade.value = g
   showCorGradePicker.value = false
+}
+
+function selectTask(tpl) {
+  if (tpl) {
+    form.value.grade = tpl.grade
+    selectedGrade.value = tpl.grade
+    form.value.essay_number = String(tpl.essay_number)
+    // 自动填充提交方式
+    if (tpl.teaching_mode) {
+      form.value.teaching_mode = tpl.teaching_mode
+    }
+    corForm.value.grade = tpl.grade
+    corSelectedGrade.value = tpl.grade
+    corForm.value.essay_number = String(tpl.essay_number)
+    // 自动填充提交方式
+    if (tpl.teaching_mode) {
+      corForm.value.teaching_mode = tpl.teaching_mode
+    }
+    selectedTaskName.value = tpl.name
+    selectedTaskId.value = tpl.id
+    showToast(`已选择：${tpl.name}`)
+  } else {
+    selectedTaskName.value = ''
+    selectedTaskId.value = null
+    showToast('已取消模板选择')
+  }
+  showTaskPicker.value = false
 }
 
 function chineseToNumber(str) {
@@ -387,6 +446,9 @@ async function onSubmitEssays() {
     try {
       const fd = new FormData()
       fd.append('class_id', '1')
+      if (selectedTaskId.value) {
+        fd.append('task_id', String(selectedTaskId.value))
+      }
       fd.append('grade', form.value.grade)
       fd.append('essay_number', form.value.essay_number || 1)
       fd.append('student_name', studentName)

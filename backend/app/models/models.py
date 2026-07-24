@@ -5,6 +5,25 @@ from datetime import datetime
 from ..database import Base
 
 
+class EssayTask(Base):
+    """作文收集任务"""
+    __tablename__ = "essay_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)  # 任务名称
+    grade = Column(String(20), nullable=False)  # 年级
+    essay_number = Column(Integer, default=1)  # 第几次作文
+    essay_topic = Column(String(200), default="")  # 文章主题
+    course_name = Column(String(100), default="")  # 课程名称
+    teaching_mode = Column(String(10), default="线下")  # 线下/线上
+    deadline = Column(DateTime, nullable=True)  # 收集截止时间
+    is_active = Column(Boolean, default=False)  # 是否为当前活跃任务
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    essays = relationship("Essay", back_populates="task")
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 
@@ -75,6 +94,7 @@ class Essay(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
+    task_id = Column(Integer, ForeignKey("essay_tasks.id"), nullable=True)  # 关联收集任务
     grade = Column(String(20), default="")
     essay_number = Column(Integer, default=1)
     essay_title = Column(String(200), default="")
@@ -99,6 +119,7 @@ class Essay(Base):
         Index("idx_essays_collected_by", "collected_by"),
         Index("idx_essays_grade", "grade"),
         Index("idx_essays_created_at", "created_at"),
+        Index("idx_essays_task_id", "task_id"),
         CheckConstraint(
             "status IN ('pending', 'corrected')",
             name="ck_essays_status",
@@ -106,6 +127,7 @@ class Essay(Base):
     )
 
     class_ = relationship("Class", back_populates="essays")
+    task = relationship("EssayTask", back_populates="essays")
     collector = relationship("User", back_populates="collected_essays",
                              foreign_keys=[collected_by])
     reviewer = relationship("User", back_populates="reviewed_essays",

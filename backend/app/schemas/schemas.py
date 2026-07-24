@@ -3,6 +3,34 @@ from typing import Optional
 from datetime import datetime
 
 
+# ===== 作文收集任务 =====
+class TaskCreate(BaseModel):
+    name: str
+    grade: str
+    essay_number: int = 1
+    essay_topic: str = ""
+    course_name: str = ""
+    teaching_mode: str = "线下"
+    deadline: Optional[datetime] = None
+    is_active: bool = False
+
+
+class TaskOut(BaseModel):
+    id: int
+    name: str
+    grade: str
+    essay_number: int
+    essay_topic: str
+    course_name: str
+    teaching_mode: str
+    deadline: Optional[datetime] = None
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ===== 用户 =====
 class UserCreate(BaseModel):
     username: str = ""
@@ -73,6 +101,7 @@ class ClassOut(BaseModel):
 # ===== 作文 =====
 class EssayCreate(BaseModel):
     class_id: int
+    task_id: Optional[int] = None
     grade: str = ""
     essay_number: int = 1
     essay_title: str = ""
@@ -87,6 +116,8 @@ class EssayOut(BaseModel):
     id: int
     class_id: int
     class_name: str = ""
+    task_id: Optional[int] = None
+    task_name: str = ""
     grade: str
     essay_number: int
     essay_title: str

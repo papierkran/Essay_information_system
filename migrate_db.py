@@ -75,6 +75,74 @@ MIGRATIONS = [
             END $$;
         """,
     },
+    # 4. 创建 essay_tasks 表（作文收集任务）
+    {
+        "name": "create_essay_tasks",
+        "sql": """
+            CREATE TABLE IF NOT EXISTS essay_tasks (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                grade VARCHAR(20) NOT NULL,
+                essay_number INTEGER DEFAULT 1,
+                essay_topic VARCHAR(200) DEFAULT '',
+                course_name VARCHAR(100) DEFAULT '',
+                teaching_mode VARCHAR(10) DEFAULT '线下',
+                deadline TIMESTAMP,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """,
+    },
+    {
+        "name": "idx_essay_tasks_is_active",
+        "sql": "CREATE INDEX IF NOT EXISTS idx_essay_tasks_is_active ON essay_tasks (is_active);",
+    },
+    # 5. 添加 essays.task_id 字段
+    {
+        "name": "add_essays_task_id",
+        "sql": """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'essays' AND column_name = 'task_id'
+                ) THEN
+                    ALTER TABLE essays ADD COLUMN task_id INTEGER;
+                    ALTER TABLE essays ADD CONSTRAINT fk_essays_task
+                        FOREIGN KEY (task_id) REFERENCES essay_tasks(id);
+                    CREATE INDEX idx_essays_task_id ON essays (task_id);
+                END IF;
+            END $$;
+        """,
+    },
+    # 6. 迁移旧数据：如果存在essay_templates表，将其数据迁移到essay_tasks
+    {
+        "name": "migrate_templates_to_tasks",
+        "sql": """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'essay_templates'
+                ) THEN
+                    -- 迁移模板数据到任务表
+                    INSERT INTO essay_tasks (id, name, grade, essay_number, essay_topic, course_name, teaching_mode, deadline, is_active, created_at, updated_at)
+                    SELECT id, name, grade, essay_number, essay_topic, course_name, teaching_mode, deadline, is_active, created_at, updated_at
+                    FROM essay_templates
+                    ON CONFLICT (id) DO NOTHING;
+                    
+                    -- 如果essays表有template_id字段，迁移为task_id
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'essays' AND column_name = 'template_id'
+                    ) THEN
+                        UPDATE essays SET task_id = template_id WHERE task_id IS NULL AND template_id IS NOT NULL;
+                    END IF;
+                END IF;
+            END $$;
+        """,
+    },
 ]
 
 

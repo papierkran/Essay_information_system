@@ -51,7 +51,7 @@ const loading = ref(false)
 
 async function load() {
   loading.value = true
-  try { const res = await api.get('/essays?status=corrected'); list.value = res.data }
+  try { const res = await api.get('/essays?status=corrected'); list.value = res.data.items || res.data }
   catch { showToast('加载失败') }
   finally { loading.value = false }
 }

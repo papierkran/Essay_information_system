@@ -15,9 +15,10 @@
           <td>{{ e.collector_name }}</td>
           <td>{{ formatDateTime(e.created_at) }}</td>
           <td>
-            <button class="btn btn-primary" @click="claimAndGo(e)" style="font-size:12px;padding:4px 12px">
+            <button v-if="!isGuest" class="btn btn-primary" @click="claimAndGo(e)" style="font-size:12px;padding:4px 12px">
               认领修改
             </button>
+            <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none;font-size:12px">仅查看</router-link>
           </td>
         </tr>
       </tbody>
@@ -37,7 +38,8 @@
           <van-tag plain type="primary">{{ e.grade || '未知' }}</van-tag>
         </template>
         <template #footer>
-          <van-button size="small" type="primary" @click.stop="claimAndGo(e)">认领修改</van-button>
+          <van-button v-if="!isGuest" size="small" type="primary" @click.stop="claimAndGo(e)">认领修改</van-button>
+          <span v-else style="font-size:12px;color:#999">仅查看</span>
         </template>
       </van-card>
     </van-list>
@@ -45,15 +47,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
+const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
 const list = ref([])
 const loading = ref(false)
 
