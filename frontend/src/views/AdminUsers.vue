@@ -126,6 +126,7 @@ const roleOptions = [
   { value: 'collector', label: '收集者' },
   { value: 'reviewer', label: '修改者' },
   { value: 'admin', label: '管理员' },
+  { value: 'guest', label: '游客' },
 ]
 const showPwd = ref(false)
 const pwdUser = ref(null)
@@ -140,7 +141,7 @@ async function load() {
 }
 
 function roleLabel(r) {
-  const labels = { admin:'管理员', collector:'收集者', reviewer:'修改者' }
+  const labels = { admin:'管理员', collector:'收集者', reviewer:'修改者', guest:'游客' }
   return (r||'').split(',').map(x=>labels[x]||x).join(' + ')
 }
 

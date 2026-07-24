@@ -80,8 +80,8 @@
           </div>
           <div class="header-right">
             <button class="btn" style="font-size:12px;padding:4px 10px" @click="toggleFullscreen('both')">⛶ 双全屏</button>
-            <button v-if="essay.content_file" class="btn" style="font-size:12px;padding:4px 10px" @click="downloadOriginal">📥 下载原文</button>
-            <button class="btn" style="font-size:12px;padding:4px 10px" @click="exportDocx">📥 导出修改前后docx</button>
+            <button v-if="essay.content_file && !isGuest" class="btn" style="font-size:12px;padding:4px 10px" @click="downloadOriginal">📥 下载原文</button>
+            <button v-if="!isGuest" class="btn" style="font-size:12px;padding:4px 10px" @click="exportDocx">📥 导出修改前后docx</button>
           </div>
         </div>
         <div class="essay-split">
@@ -91,7 +91,7 @@
               <div class="pane-header-left">
                 <span class="pane-title">✏️ 修改前</span>
                 <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
-                <button class="btn-mini" @click="downloadOriginal" v-if="essay.content_file">📥 下载原文</button>
+                <button v-if="essay.content_file && !isGuest" class="btn-mini" @click="downloadOriginal">📥 下载原文</button>
                 <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
               </div>
               <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
@@ -182,8 +182,8 @@
         </van-cell-group>
 
         <div style="margin:16px">
-          <van-button v-if="essay.content_file" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
-          <van-button round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
+          <van-button v-if="essay.content_file && !isGuest" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
+          <van-button v-if="!isGuest" round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
           <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载修改结果</van-button>
           <van-button v-if="canEdit" round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
           <van-button round block @click="saveEdit" :loading="savingEdit" :disabled="!canEdit">💾 保存修改</van-button>
@@ -288,12 +288,17 @@ const isAdmin = computed(() => {
   const role = currentUser.value.role || ''
   return role.includes('admin')
 })
+const isGuest = computed(() => {
+  const role = currentUser.value.role || ''
+  return role.includes('guest')
+})
 const isOwner = computed(() => {
   if (isAdmin.value) return true
   return essay.value?.collected_by === currentUser.value.id
 })
-const isReadonly = computed(() => route.query.readonly === '1')
+const isReadonly = computed(() => isGuest.value || route.query.readonly === '1')
 const canReview = computed(() => {
+  if (isGuest.value) return false
   const role = currentUser.value.role || ''
   return role.includes('reviewer') || role.includes('admin')
 })

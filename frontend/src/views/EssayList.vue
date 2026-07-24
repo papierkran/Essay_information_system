@@ -31,11 +31,11 @@
       <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-      <button class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
+      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
     </div>
 
     <!-- 批量操作栏 -->
-    <div class="batch-bar" v-if="selectedIds.length">
+    <div class="batch-bar" v-if="selectedIds.length && !isGuest">
       <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="batchExportDocx">📥 批量导出docx</button>
       <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" @click="batchDelete">批量删除</button>
@@ -54,7 +54,7 @@
       <table class="desktop-table" v-if="list.length">
         <thead>
           <tr>
-            <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
+            <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
             <th class="sortable" @click="toggleSort('student_name')">学生 {{ sortIcon('student_name') }}</th>
             <th>年级</th>
             <th>作文标题</th>
@@ -71,7 +71,7 @@
         </thead>
         <tbody>
           <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id), 'row-readonly': !isOwner(e) }">
-            <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
+            <td v-if="!isGuest"><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
             <td>{{ e.student_name }}</td>
             <td>{{ e.grade || '-' }}</td>
             <td>{{ e.essay_title || '-' }}</td>
@@ -84,7 +84,7 @@
             <td>{{ formatDateTime(e.corrected_at) || '-' }}</td>
             <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
             <td style="white-space:nowrap">
-              <template v-if="isOwner(e)">
+              <template v-if="!isGuest && isOwner(e)">
                 <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
                 <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
               </template>
@@ -131,6 +131,7 @@ import { formatDateTime } from '../utils/format'
 
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
+const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 const isOwner = (essay) => currentUser.value.role?.includes('admin') || essay.collected_by === currentUser.value.id
 
 const router = useRouter()

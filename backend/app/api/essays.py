@@ -372,8 +372,8 @@ def list_essays(
 ):
     q = db.query(Essay)
 
-    # 权限过滤：收集者可以查看所有作文，但只能操作自己的
-    if "admin" not in current_user.role:
+    # 权限过滤：收集者和游客可以查看所有作文，批改者只能看自己的
+    if "admin" not in current_user.role and "guest" not in current_user.role:
         if "reviewer" in current_user.role:
             q = q.filter(Essay.reviewer_id == current_user.id)
         # 收集者可以查看所有作文，不做过滤
@@ -722,6 +722,8 @@ def download_essay_file(
     current_user: User = Depends(get_current_user),
 ):
     """下载原文：有文字内容时从 DB 生成 docx，纯图片时打包 zip"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无下载权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -796,6 +798,8 @@ def export_docx(
     current_user: User = Depends(get_current_user),
 ):
     """导出修改前后 docx：从 DB 读取 content_text + corrected_text"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无导出权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
