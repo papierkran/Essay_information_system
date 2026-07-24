@@ -181,36 +181,88 @@ function selectCorGrade(g) {
   showCorGradePicker.value = false
 }
 
+function chineseToNumber(str) {
+  const map = { '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 }
+  
+  if (map[str] !== undefined) return map[str]
+  
+  if (str.startsWith('十')) {
+    const rest = str.substring(1)
+    return 10 + (map[rest] || 0)
+  }
+  
+  if (str.endsWith('十')) {
+    const first = str.charAt(0)
+    return (map[first] || 0) * 10
+  }
+  
+  if (str.includes('十')) {
+    const parts = str.split('十')
+    return (map[parts[0]] || 0) * 10 + (map[parts[1]] || 0)
+  }
+  
+  return 0
+}
+
+function parseFolderName(folderName) {
+  const result = { grade: '', essay_number: '' }
+  
+  const gradeMatch = folderName.match(/(初一|初二|初三|高一|高二|高三)/)
+  if (gradeMatch) {
+    result.grade = gradeMatch[1]
+  }
+  
+  const numberMatch = folderName.match(/第([一二三四五六七八九十百零\d]+)次/)
+  if (numberMatch) {
+    const numStr = numberMatch[1]
+    if (/^\d+$/.test(numStr)) {
+      result.essay_number = numStr
+    } else {
+      const num = chineseToNumber(numStr)
+      if (num > 0) result.essay_number = String(num)
+    }
+  }
+  
+  return result
+}
+
+function getFolderPath(files) {
+  for (const file of files) {
+    const relativePath = file.webkitRelativePath
+    if (relativePath) {
+      return relativePath.split('/')[0]
+    }
+  }
+  return ''
+}
+
 function onFolderChange(e) {
   const files = Array.from(e.target.files)
-  console.log('选择的文件数量:', files.length)
   if (files.length === 0) return
 
   const map = {}
   const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.doc']
   const skipFolders = ['修改后']
 
+  const folderName = getFolderPath(files)
+
   for (const file of files) {
     const relativePath = file.webkitRelativePath
-    console.log('文件路径:', relativePath, '文件名:', file.name)
     if (!relativePath) continue
 
     const parts = relativePath.split('/')
-    console.log('路径分割:', parts, '长度:', parts.length)
     if (parts.length < 2) continue
 
     const studentName = parts[1]
     if (skipFolders.includes(studentName)) continue
 
     const ext = '.' + file.name.split('.').pop().toLowerCase()
-    console.log('扩展名:', ext, '学生名:', studentName)
     if (!supportedExts.includes(ext)) continue
 
     if (!map[studentName]) map[studentName] = []
     map[studentName].push(file)
   }
 
-  console.log('解析结果:', map)
   if (Object.keys(map).length === 0) {
     showToast('未找到有效的学生文件')
     return
@@ -218,6 +270,17 @@ function onFolderChange(e) {
 
   studentMap.value = map
   folderSelected.value = true
+
+  if (folderName) {
+    const parsed = parseFolderName(folderName)
+    if (parsed.grade && !form.value.grade) {
+      form.value.grade = parsed.grade
+      selectedGrade.value = parsed.grade
+    }
+    if (parsed.essay_number && !form.value.essay_number) {
+      form.value.essay_number = parsed.essay_number
+    }
+  }
 }
 
 function onCorFolderChange(e) {
@@ -248,6 +311,18 @@ function onCorFolderChange(e) {
 
   corFiles.value = parsed
   corFolderSelected.value = true
+
+  const folderName = getFolderPath(files)
+  if (folderName) {
+    const parsedFolder = parseFolderName(folderName)
+    if (parsedFolder.grade && !corForm.value.grade) {
+      corForm.value.grade = parsedFolder.grade
+      corSelectedGrade.value = parsedFolder.grade
+    }
+    if (parsedFolder.essay_number && !corForm.value.essay_number) {
+      corForm.value.essay_number = parsedFolder.essay_number
+    }
+  }
 }
 
 async function parseDocxContent(file) {

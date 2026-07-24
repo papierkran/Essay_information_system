@@ -289,6 +289,10 @@ async def upload_correction_docx(
     if "collector" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
+    cls = db.query(Class).filter(Class.id == 1).first()
+    if not cls:
+        raise HTTPException(status_code=400, detail="班级不存在（请先创建班级）")
+
     now = datetime.now()
     grade_name = grade if grade else "未定年级"
     if teaching_mode:
@@ -301,35 +305,47 @@ async def upload_correction_docx(
         str(now.day),
         f"{grade_name}第{essay_number}次",
     )
-    os.makedirs(dir_path, exist_ok=True)
+
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"创建目录失败: {str(e)}")
 
     file_saved = False
     if file and file.filename:
-        file_path = os.path.join(dir_path, file.filename)
-        content = await file.read()
-        with open(file_path, "wb") as fw:
-            fw.write(content)
-        file_saved = True
+        safe_filename = os.path.basename(file.filename)
+        file_path = os.path.join(dir_path, safe_filename)
+        try:
+            content = await file.read()
+            with open(file_path, "wb") as fw:
+                fw.write(content)
+            file_saved = True
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
-    essay = Essay(
-        class_id=1,
-        grade=grade,
-        essay_number=essay_number,
-        student_name=student_name,
-        is_supplement=False,
-        teaching_mode=teaching_mode,
-        remark="",
-        content_text=content_text,
-        corrected_text=corrected_text if corrected_text else "",
-        file_type="docx",
-        collected_by=current_user.id,
-        status="corrected" if corrected_text else "pending",
-        corrected_at=datetime.now() if corrected_text else None,
-        reviewer_id=current_user.id if corrected_text else None,
-    )
-    db.add(essay)
-    db.commit()
-    db.refresh(essay)
+    try:
+        essay = Essay(
+            class_id=1,
+            grade=grade,
+            essay_number=essay_number,
+            student_name=student_name,
+            is_supplement=False,
+            teaching_mode=teaching_mode,
+            remark="",
+            content_text=content_text,
+            corrected_text=corrected_text if corrected_text else "",
+            file_type="docx",
+            collected_by=current_user.id,
+            status="corrected" if corrected_text else "pending",
+            corrected_at=datetime.now() if corrected_text else None,
+            reviewer_id=current_user.id if corrected_text else None,
+        )
+        db.add(essay)
+        db.commit()
+        db.refresh(essay)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"创建记录失败: {str(e)}")
 
     return {"message": "上传成功", "id": essay.id}
 
@@ -455,7 +471,7 @@ def essay_stats(
     class_rows = (
         db.query(Class.name, func.count(Essay.id))
         .join(Class, Class.id == Essay.class_id)
-        .group_by(Essay.class_id)
+        .group_by(Class.id, Class.name)
         .order_by(func.count(Essay.id).desc())
         .all()
     )
@@ -465,7 +481,7 @@ def essay_stats(
         db.query(User.nickname, User.username, func.count(Essay.id))
         .join(User, User.id == Essay.collected_by)
         .filter(User.role.like("%collector%"))
-        .group_by(Essay.collected_by)
+        .group_by(Essay.collected_by, User.nickname, User.username)
         .order_by(func.count(Essay.id).desc())
         .limit(10)
         .all()

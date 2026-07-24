@@ -1,7 +1,15 @@
 import axios from 'axios'
 
+function getBaseUrl() {
+  const saved = localStorage.getItem('apiBaseUrl')
+  if (saved) {
+    return saved.replace(/\/+$/, '') + '/api'
+  }
+  return '/api'
+}
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: getBaseUrl(),
   timeout: 30000,
 })
 

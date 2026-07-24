@@ -397,6 +397,12 @@ def get_settings(current_user: User = Depends(get_current_user)):
         "user": db_info["user"],
         "database": db_info["database"],
     }
+
+    # 保护：返回时从原始设置中移除数据库密码
+    db_config = settings.get("database", {})
+    if "password" in db_config and db_config["password"]:
+        db_config["password"] = ""  # 不回显密码
+
     return settings
 
 
@@ -469,3 +475,19 @@ async def import_database(
     if result.returncode != 0 and "ERROR" in result.stderr:
         raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
     return {"message": "导入成功"}
+
+
+@router.get("/test-server")
+def test_server():
+    """测试后端服务是否正常"""
+    return {"status": "ok", "message": "后端服务连接正常"}
+
+
+@router.get("/test-db")
+def test_db(db: Session = Depends(get_db)):
+    """测试数据库连接是否正常"""
+    try:
+        db.execute("SELECT 1")
+        return {"status": "ok", "message": "数据库连接正常"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"数据库连接失败: {str(e)}")
