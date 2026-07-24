@@ -63,8 +63,7 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
         h = doc.add_paragraph()
         h_run = h.add_run(label)
         _set_run_font(h_run)
-        h_run.bold = True
-        _set_para_format(h, is_title=True)
+        _set_para_format(h, is_title=False)
 
         if not text.strip():
             return
