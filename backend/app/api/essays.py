@@ -30,6 +30,72 @@ def _build_download_filename(essay: Essay) -> str:
     return f"{title}——{student}第{n}次{mode}{supp}"
 
 
+def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
+    """从 DB 生成 docx，返回临时文件路径。show_corrected=True 时包含修改后内容。"""
+    from docx import Document
+    from docx.shared import Pt, Cm
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.oxml.ns import qn
+
+    content = essay.content_text or ""
+    corrected = essay.corrected_text or ""
+
+    doc = Document()
+
+    def _set_run_font(run):
+        run.font.name = '宋体'
+        run.font.size = Pt(12)
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+
+    def _set_para_format(para, is_title=False):
+        fmt = para.paragraph_format
+        fmt.line_spacing = Pt(12)
+        fmt.line_spacing_rule = WD_LINE_SPACING.AT_LEAST
+        fmt.space_before = Pt(0)
+        fmt.space_after = Pt(0)
+        if not is_title:
+            fmt.first_line_indent = Cm(0.74)
+        else:
+            fmt.first_line_indent = Cm(0)
+            fmt.alignment = 1  # CENTER
+
+    def _add_block(text, label):
+        h = doc.add_paragraph()
+        h_run = h.add_run(label)
+        _set_run_font(h_run)
+        h_run.bold = True
+        _set_para_format(h, is_title=True)
+
+        if not text.strip():
+            return
+        lines = text.split('\n')
+        non_empty = [l.strip() for l in lines if l.strip()]
+        for idx, line_text in enumerate(non_empty):
+            p = doc.add_paragraph()
+            run = p.add_run(line_text)
+            _set_run_font(run)
+            if idx < 2:
+                run.bold = True
+                _set_para_format(p, is_title=True)
+            else:
+                _set_para_format(p, is_title=False)
+
+    # 修改前
+    _add_block(content, "修改前：")
+
+    if show_corrected:
+        # 分页符
+        doc.add_page_break()
+        # 修改后
+        _add_block(corrected, "修改后：")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+    return tmp_path
+
+
 @router.get("/classes")
 def list_classes_public(
     db: Session = Depends(get_db),
@@ -567,47 +633,46 @@ def download_essay_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """下载原文：图片打包zip，docx直接下载。文件名格式：标题——学生姓名第N次线上/线下补交"""
+    """下载原文：有文字内容时从 DB 生成 docx，纯图片时打包 zip"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay or not essay.content_file:
-        raise HTTPException(status_code=404, detail="文件不存在")
-
-    dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-    if not os.path.exists(dir_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
-
-    files = os.listdir(dir_path)
-    images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_')]
-    has_non_image = any(
-        not f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp'))
-        and not f.startswith('改_') and not f.startswith('.')
-        for f in files
-    )
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
 
     dl_name = _build_download_filename(essay)
 
-    if images and not has_non_image and len(images) > 1:
-        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for img in sorted(images):
-                img_path = os.path.join(dir_path, img)
-                zf.write(img_path, img)
-        zip_buffer.close()
-        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
-    else:
-        file_path = os.path.join(dir_path, os.path.basename(essay.content_file))
-        if not os.path.exists(file_path):
-            for f in sorted(files):
-                if not f.startswith('改_') and not f.startswith('.'):
-                    file_path = os.path.join(dir_path, f)
-                    break
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="文件不存在")
+    # 有文字内容 → 从 DB 生成 docx
+    if essay.content_text and essay.content_text.strip():
+        tmp_path = _generate_docx(essay, show_corrected=False)
+        return FileResponse(
+            tmp_path,
+            filename=f"{dl_name}.docx",
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
 
-        import mimetypes
-        ext = os.path.splitext(file_path)[1]
-        media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-        return FileResponse(file_path, filename=f"{dl_name}{ext}", media_type=media_type)
+    # 纯图片 → 打包 zip
+    if essay.content_file:
+        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+        if os.path.exists(dir_path):
+            files = os.listdir(dir_path)
+            images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_')]
+            if images:
+                zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for img in sorted(images):
+                        zf.write(os.path.join(dir_path, img), img)
+                zip_buffer.close()
+                return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
+
+    # 兜底：返回原始文件
+    if essay.content_file:
+        file_path = os.path.join(get_upload_dir(), essay.content_file)
+        if os.path.exists(file_path):
+            import mimetypes
+            ext = os.path.splitext(file_path)[1]
+            media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+            return FileResponse(file_path, filename=f"{dl_name}{ext}", media_type=media_type)
+
+    raise HTTPException(status_code=404, detail="文件不存在")
 
 
 @router.get("/{essay_id}/download-correction")
@@ -642,45 +707,13 @@ def export_docx(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """从 DB 读取 content_text/corrected_text 生成 docx"""
+    """导出修改前后 docx：从 DB 读取 content_text + corrected_text"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
 
-    from docx import Document
-    from docx.shared import Pt
-
-    content = essay.content_text or ""
-    corrected = essay.corrected_text or ""
-
-    doc = Document()
-
-    # 修改前
-    doc.add_heading("修改前：", level=1)
-    if content:
-        for para_text in content.split('\n'):
-            if para_text.strip():
-                p = doc.add_paragraph(para_text.strip())
-                for run in p.runs:
-                    run.font.size = Pt(12)
-
-    # 分页符
-    doc.add_page_break()
-
-    # 修改后
-    doc.add_heading("修改后：", level=1)
-    if corrected:
-        for para_text in corrected.split('\n'):
-            if para_text.strip():
-                p = doc.add_paragraph(para_text.strip())
-                for run in p.runs:
-                    run.font.size = Pt(12)
-
+    tmp_path = _generate_docx(essay, show_corrected=True)
     dl_name = _build_download_filename(essay)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-    tmp_path = tmp.name
-    tmp.close()
-    doc.save(tmp_path)
 
     return FileResponse(
         tmp_path,
