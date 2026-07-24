@@ -16,6 +16,12 @@ const routes = [
     meta: { requiresAuth: true, roles: ['collector', 'admin'] },
   },
   {
+    path: '/essay/batch-upload',
+    name: 'EssayBatchUpload',
+    component: () => import('../views/EssayBatchUpload.vue'),
+    meta: { requiresAuth: true, roles: ['collector', 'admin'] },
+  },
+  {
     path: '/essay/list',
     name: 'EssayList',
     component: () => import('../views/EssayList.vue'),

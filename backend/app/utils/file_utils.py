@@ -44,9 +44,7 @@ def get_essay_dir(
         year,
         month,
         day,
-        grade_name,
-        f"第{essay_number}次",
-        collector_name,
+        f"{grade_name}第{essay_number}次",
     )
     if student_name:
         path = os.path.join(path, student_name)

@@ -19,6 +19,7 @@
       <nav>
         <router-link v-if="user.username" to="/dashboard" class="sidebar-link" @click="sidebarOpen=false">🏠 首页</router-link>
         <router-link v-if="canCollect" to="/essay/upload" class="sidebar-link" @click="sidebarOpen=false">✏️ 上传作文</router-link>
+        <router-link v-if="canCollect" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>
         <router-link v-if="canCollect" to="/essay/list" class="sidebar-link" @click="sidebarOpen=false">📋 作文列表</router-link>
         <router-link v-if="canReview" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 待批改</router-link>
         <router-link v-if="canReview" to="/review/history" class="sidebar-link" @click="sidebarOpen=false">🕐 批改历史</router-link>

@@ -273,6 +273,67 @@ async def upload_essay(
     return _essay_to_out(essay, db)
 
 
+@router.post("/upload-correction-docx")
+async def upload_correction_docx(
+    grade: str = Form(...),
+    essay_number: int = Form(...),
+    teaching_mode: str = Form("线下"),
+    student_name: str = Form(...),
+    content_text: str = Form(""),
+    corrected_text: str = Form(""),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量上传修改后docx：保存文件到年级目录，创建作文记录"""
+    if "collector" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+
+    now = datetime.now()
+    grade_name = grade if grade else "未定年级"
+    if teaching_mode:
+        grade_name = f"{grade_name}{teaching_mode}"
+
+    dir_path = os.path.join(
+        get_upload_dir(),
+        str(now.year),
+        f"{now.month}月",
+        str(now.day),
+        f"{grade_name}第{essay_number}次",
+    )
+    os.makedirs(dir_path, exist_ok=True)
+
+    file_saved = False
+    if file and file.filename:
+        file_path = os.path.join(dir_path, file.filename)
+        content = await file.read()
+        with open(file_path, "wb") as fw:
+            fw.write(content)
+        file_saved = True
+
+    essay = Essay(
+        class_id=1,
+        grade=grade,
+        essay_number=essay_number,
+        student_name=student_name,
+        is_supplement=False,
+        teaching_mode=teaching_mode,
+        remark="",
+        content_text=content_text,
+        corrected_text=corrected_text if corrected_text else "",
+        file_type="docx",
+        collected_by=current_user.id,
+        status="corrected" if corrected_text else "pending",
+        corrected_at=datetime.now() if corrected_text else None,
+        reviewer_id=current_user.id if corrected_text else None,
+    )
+    db.add(essay)
+    db.commit()
+    db.refresh(essay)
+
+    return {"message": "上传成功", "id": essay.id}
+
+
 @router.get("")
 def list_essays(
     class_id: int = None,
