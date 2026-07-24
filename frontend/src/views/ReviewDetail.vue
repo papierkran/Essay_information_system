@@ -92,7 +92,7 @@
                 <span class="pane-title">✏️ 修改前</span>
                 <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
                 <button class="btn-mini" @click="downloadOriginal" v-if="essay.content_file">📥 下载原文</button>
-                <button class="btn-mini" @click="toggleReuploadOriginal">📤 重新上传</button>
+                <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
               </div>
               <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
             </div>
@@ -138,7 +138,7 @@
             <div class="pane-header">
               <div class="pane-header-left">
                 <span class="pane-title">✅ 修改后</span>
-                <button class="btn-mini" @click="toggleReuploadCorrected">📤 重新上传</button>
+                <button class="btn-mini" @click="toggleReuploadCorrected" v-if="canEdit">📤 重新上传</button>
               </div>
               <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
             </div>
@@ -185,7 +185,7 @@
           <van-button v-if="essay.content_file" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
           <van-button round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
           <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载修改结果</van-button>
-          <van-button round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
+          <van-button v-if="canEdit" round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
           <van-button round block @click="saveEdit" :loading="savingEdit" :disabled="!canEdit">💾 保存修改</van-button>
         </div>
 
@@ -376,6 +376,10 @@ async function showOriginalImages() {
 }
 
 async function doReuploadDesktop() {
+  if (!canEdit.value) {
+    showToast('无权修改此作文')
+    return
+  }
   if (desktopFileList.value.length === 0 && !reuploadText.value.trim()) {
     showToast('请选择文件或输入文字')
     return
@@ -546,6 +550,10 @@ async function saveEdit() {
 }
 
 async function doReupload() {
+  if (!canEdit.value) {
+    showToast('无权修改此作文')
+    return
+  }
   const files = reuploadFileList.value.length > 0
     ? reuploadFileList.value.map(x => x.file)
     : []

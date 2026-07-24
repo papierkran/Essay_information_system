@@ -271,6 +271,8 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.username == "admin":
+        raise HTTPException(status_code=403, detail="超级管理员不可编辑")
     if data.nickname is not None:
         user.nickname = data.nickname
     if data.phone is not None:
@@ -294,6 +296,8 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.username == "admin":
+        raise HTTPException(status_code=403, detail="超级管理员不可删除")
     # 将该用户的作文 collected_by 置为 1（管理员 ID）
     db.query(Essay).filter(Essay.collected_by == user_id).update({"collected_by": 1})
     db.delete(user)
@@ -312,6 +316,8 @@ def update_user_role(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.username == "admin":
+        raise HTTPException(status_code=403, detail="超级管理员不可修改角色")
     user.role = role
     db.commit()
     db.refresh(user)
