@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -62,6 +62,10 @@ class UserClass(Base):
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
     role_in_class = Column(String(20), default="collector")
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "class_id", "role_in_class", name="uq_user_class_role"),
+    )
+
     user = relationship("User", back_populates="user_classes")
     class_ = relationship("Class", back_populates="user_classes")
 
@@ -89,6 +93,17 @@ class Essay(Base):
     corrected_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        Index("idx_essays_status", "status"),
+        Index("idx_essays_collected_by", "collected_by"),
+        Index("idx_essays_grade", "grade"),
+        Index("idx_essays_created_at", "created_at"),
+        CheckConstraint(
+            "status IN ('pending', 'corrected')",
+            name="ck_essays_status",
+        ),
+    )
 
     class_ = relationship("Class", back_populates="essays")
     collector = relationship("User", back_populates="collected_essays",

@@ -382,11 +382,21 @@ def get_settings(current_user: User = Depends(get_current_user)):
         with open(SETTINGS_FILE) as f:
             settings = json.load(f)
     else:
-        settings = {"upload_dir": "uploads"}
+        settings = {"upload_dir": "uploads", "database": {}}
 
     # 获取真实解析路径
     from ..utils.file_utils import get_upload_dir
     settings["_resolved_path"] = os.path.abspath(get_upload_dir())
+
+    # 返回当前数据库连接信息（隐藏密码）
+    from ..database import _load_db_settings
+    db_info = _load_db_settings()
+    settings["_db_info"] = {
+        "host": db_info["host"],
+        "port": db_info["port"],
+        "user": db_info["user"],
+        "database": db_info["database"],
+    }
     return settings
 
 
@@ -394,7 +404,7 @@ def get_settings(current_user: User = Depends(get_current_user)):
 def update_settings(data: dict, current_user: User = Depends(get_current_user)):
     require_admin(current_user)
     with open(SETTINGS_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(data, f, ensure_ascii=False, indent=2)
     return data
 
 
@@ -403,7 +413,8 @@ def export_database(current_user: User = Depends(get_current_user)):
     """导出数据库为 SQL 文件"""
     require_admin(current_user)
     import subprocess, tempfile
-    from ..database import DB_CONFIG
+    from ..database import _load_db_settings
+    DB_CONFIG = _load_db_settings()
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sql", mode="w")
     tmp_path = tmp.name
     tmp.close()
@@ -431,7 +442,8 @@ async def import_database(
     """导入 SQL 文件恢复数据库"""
     require_admin(current_user)
     import subprocess, tempfile
-    from ..database import DB_CONFIG
+    from ..database import _load_db_settings
+    DB_CONFIG = _load_db_settings()
     content = await file.read()
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sql", mode="wb")
     tmp.write(content)

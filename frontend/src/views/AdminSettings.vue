@@ -3,6 +3,33 @@
     <div v-if="isDesktop" class="page-title">系统设置</div>
 
     <div class="card" style="max-width:600px">
+      <div class="card-header"><h3>🗄️ 数据库连接</h3></div>
+      <div class="form-group">
+        <label>主机地址</label>
+        <input v-model="dbHost" placeholder="192.168.31.245" class="input" />
+      </div>
+      <div class="form-group">
+        <label>端口</label>
+        <input v-model="dbPort" placeholder="5432" class="input" />
+      </div>
+      <div class="form-group">
+        <label>用户名</label>
+        <input v-model="dbUser" placeholder="postgres" class="input" />
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <input v-model="dbPass" type="password" placeholder="数据库密码" class="input" />
+      </div>
+      <div class="form-group">
+        <label>数据库名</label>
+        <input v-model="dbName" placeholder="essay_system" class="input" />
+      </div>
+      <p style="font-size:12px;color:#999;margin-top:6px">
+        修改后需重启后端服务生效。密码字段不会回显，留空则不修改。
+      </p>
+    </div>
+
+    <div class="card" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>⚙️ 上传存储目录</h3></div>
       <div class="form-group">
         <label>文件存储路径（相对或绝对）</label>
@@ -45,6 +72,11 @@ import api from '../api'
 const { isDesktop } = useScreen()
 const uploadDir = ref('uploads')
 const resolvedPath = ref('')
+const dbHost = ref('')
+const dbPort = ref('5432')
+const dbUser = ref('')
+const dbPass = ref('')
+const dbName = ref('')
 const saving = ref(false)
 const saved = ref(false)
 const exporting = ref(false)
@@ -55,13 +87,24 @@ onMounted(async () => {
     const res = await api.get('/admin/settings')
     uploadDir.value = res.data.upload_dir || 'uploads'
     resolvedPath.value = res.data._resolved_path || ''
+    const dbInfo = res.data._db_info || {}
+    dbHost.value = dbInfo.host || ''
+    dbPort.value = dbInfo.port || '5432'
+    dbUser.value = dbInfo.user || ''
+    dbName.value = dbInfo.database || ''
   } catch {}
 })
 
 async function saveSettings() {
   saving.value = true; saved.value = false
+  const payload = { upload_dir: uploadDir.value, database: {} }
+  if (dbHost.value) payload.database.host = dbHost.value
+  if (dbPort.value) payload.database.port = dbPort.value
+  if (dbUser.value) payload.database.user = dbUser.value
+  if (dbPass.value) payload.database.password = dbPass.value
+  if (dbName.value) payload.database.database = dbName.value
   try {
-    await api.put('/admin/settings', { upload_dir: uploadDir.value })
+    await api.put('/admin/settings', payload)
     saved.value = true; showToast('设置已保存（重启后端生效）')
   } catch(err) { showToast(err.response?.data?.detail || '保存失败') }
   finally { saving.value = false; setTimeout(() => saved.value = false, 3000) }
@@ -96,6 +139,7 @@ async function importDB(e) {
 
 <style scoped>
 .page { padding: 0; }
+.input { width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px; }
 .success-text { color: #52c41a; }
 .error-text { color: #ff4d4f; }
 @media (max-width: 767px) { .page { padding: 16px; } }
