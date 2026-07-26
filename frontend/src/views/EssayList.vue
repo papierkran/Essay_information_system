@@ -39,55 +39,64 @@
       <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
     </div>
 
-    <!-- 批量操作栏 -->
-    <div class="batch-bar" v-if="selectedIds.length && !isGuest">
-      <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="batchExportDocx">📥 批量导出docx</button>
-      <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" @click="batchDelete">批量删除</button>
-      <button class="btn" style="font-size:12px;padding:4px 12px" @click="selectedIds=[]">取消选择</button>
-    </div>
-
     <!-- 统计行 -->
     <div class="stats-bar">
       <span>共 <strong>{{ total }}</strong> 条</span>
-      <span class="stat-pending">待批 <strong>{{ pendingTotal }}</strong></span>
-      <span class="stat-corrected">已批 <strong>{{ correctedTotal }}</strong></span>
+      <span class="stat-pending">待修改 <strong>{{ pendingTotal }}</strong></span>
+      <span class="stat-corrected">已修改 <strong>{{ correctedTotal }}</strong></span>
+      <template v-if="!isGuest">
+        <span style="color:#d9d9d9">|</span>
+        <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
+        <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchDelete">批量删除</button>
+        <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchCollector = true">修改收集者</button>
+        <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
+        <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds=[]">取消选择</button>
+      </template>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
+        <button class="btn" style="font-size:12px;padding:4px 10px" @click="showColumnSettings = true">⚙️ 列设置</button>
+        每页
+        <select v-model.number="pageSize" @change="applyFilter" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px">
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+          <option :value="200">200</option>
+          <option :value="500">500</option>
+          <option :value="1000">1000</option>
+        </select>
+        条
+      </span>
     </div>
 
     <!-- 表格 -->
-    <div class="table-wrap">
+    <div ref="topScroll" class="scroll-sync" @scroll="syncScroll('top')">
+      <div ref="topScrollContent" class="scroll-sync-content"></div>
+    </div>
+    <div ref="tableWrap" class="table-wrap" @scroll="syncScroll('bottom')">
       <table class="desktop-table" v-if="list.length">
         <thead>
           <tr>
             <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
-            <th class="sortable" @click="toggleSort('student_name')">学生 {{ sortIcon('student_name') }}</th>
-            <th>年级</th>
-            <th>作文标题</th>
-            <th class="sortable" @click="toggleSort('essay_number')">第几次 {{ sortIcon('essay_number') }}</th>
-            <th>提交方式</th>
-            <th class="sortable" @click="toggleSort('status')">状态 {{ sortIcon('status') }}</th>
-            <th class="sortable" @click="toggleSort('collector_name')">收集者 {{ sortIcon('collector_name') }}</th>
-            <th>备注</th>
-            <th class="sortable" @click="toggleSort('created_at')">收集时间 {{ sortIcon('created_at') }}</th>
-            <th class="sortable" @click="toggleSort('corrected_at')">修改时间 {{ sortIcon('corrected_at') }}</th>
-            <th>文件</th>
+            <template v-for="col in visibleColumns" :key="col.key">
+              <th :class="{ sortable: col.sortable }" @click="col.sortable && toggleSort(col.sort)">
+                {{ col.label }} <template v-if="col.sortable">{{ sortIcon(col.sort) }}</template>
+              </th>
+            </template>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id), 'row-readonly': !isOwner(e) }">
             <td v-if="!isGuest"><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
-            <td>{{ e.student_name }}</td>
-            <td>{{ e.grade || '-' }}</td>
-            <td>{{ e.essay_title || '-' }}</td>
-            <td>{{ e.essay_number }}</td>
-            <td>{{ e.teaching_mode || '-' }}</td>
-            <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
-            <td>{{ e.collector_name || '-' }}</td>
-            <td>{{ e.remark || '-' }}</td>
-            <td>{{ formatDateTime(e.created_at) }}</td>
-            <td>{{ formatDateTime(e.corrected_at) || '-' }}</td>
-            <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
+            <template v-for="col in visibleColumns" :key="col.key">
+              <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
+              <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
+              <td v-else-if="col.key === 'is_supplement'">{{ e.is_supplement ? '是' : '否' }}</td>
+              <td v-else-if="col.key === 'word_count'">{{ e.word_count || 0 }}</td>
+              <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
+              <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
+              <td v-else-if="col.key === 'corrected_at'">{{ formatDateTime(e.corrected_at) || '-' }}</td>
+              <td v-else>{{ e[col.field] || '-' }}</td>
+            </template>
             <td style="white-space:nowrap">
               <template v-if="!isGuest && isOwner(e)">
                 <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
@@ -105,7 +114,7 @@
     <div v-if="!list.length && !loading" class="empty-state"><div class="icon">📭</div><p>暂无作文</p></div>
 
     <!-- 分页 -->
-    <div class="pagination" v-if="totalPages > 1">
+    <div class="pagination" v-if="total > 0">
       <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
       <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
       <span class="page-info">{{ page }} / {{ totalPages }}</span>
@@ -114,14 +123,6 @@
       <span class="page-jump" style="margin-left:12px">跳至
         <input v-model.number="jumpPage" type="number" min="1" :max="totalPages" class="page-jump-input" @keyup.enter="jumpToPage" />
         <button class="btn" style="font-size:12px;padding:4px 8px" @click="jumpToPage">GO</button>
-      </span>
-      <span class="page-size" style="margin-left:12px">每页
-        <select v-model.number="pageSize" @change="applyFilter">
-          <option :value="20">20</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-        </select>
-        条
       </span>
     </div>
 
@@ -137,11 +138,57 @@
         <p v-if="!isAdmin" style="color:#999;font-size:12px;margin-top:8px">非管理员无法删除本地文件</p>
       </div>
     </van-dialog>
+
+    <!-- 列设置弹窗 -->
+    <van-dialog v-model:show="showColumnSettings" title="自定义表头" :show-cancel-button="false" :show-confirm-button="false">
+      <div style="padding:12px 16px">
+        <div v-for="col in allColumns" :key="col.key" style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
+          <van-checkbox v-model="col.visible" :disabled="col.fixed" style="flex:1">
+            <span :style="{ color: col.fixed ? '#999' : '#333' }">{{ col.label }}</span>
+          </van-checkbox>
+          <span v-if="col.fixed" style="font-size:11px;color:#999">固定</span>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
+          <button class="btn" @click="resetColumns">恢复默认</button>
+          <button class="btn btn-primary" @click="saveColumns">确定</button>
+        </div>
+      </template>
+    </van-dialog>
+
+    <!-- 批量修改收集者 -->
+    <van-dialog v-model:show="showBatchCollector" title="修改收集者" :show-cancel-button="true" @confirm="doBatchCollector">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的收集者修改为：</p>
+        <select v-model.number="batchCollectorId" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
+          <option value="">请选择</option>
+          <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
+        </select>
+      </div>
+    </van-dialog>
+
+    <!-- 批量修改任务 -->
+    <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="taskSearch = ''">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的任务修改为：</p>
+        <input v-model="taskSearch" placeholder="搜索任务名称..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box" />
+        <div style="max-height:200px;overflow-y:auto;margin-top:4px;border:1px solid #d9d9d9;border-radius:6px">
+          <div @click="batchTaskId = 0; taskSearch = ''" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5" :style="{ background: batchTaskId === 0 ? '#e6f4ff' : '#fff' }">
+            <span style="color:#999">无任务</span>
+          </div>
+          <div v-for="t in filteredTasks" :key="t.id" @click="batchTaskId = t.id; taskSearch = t.name" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5" :style="{ background: batchTaskId === t.id ? '#e6f4ff' : '#fff' }">
+            {{ t.name }}
+          </div>
+          <div v-if="!filteredTasks.length" style="padding:12px;text-align:center;color:#999">无匹配任务</div>
+        </div>
+      </div>
+    </van-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
@@ -157,14 +204,30 @@ const deletingEssay = ref(null)
 const showDelete = ref(false)
 const deleteFileChecked = ref(false)
 
+const showBatchCollector = ref(false)
+const batchCollectorId = ref('')
+const showBatchTask = ref(false)
+const batchTaskId = ref(0)
+const taskSearch = ref('')
+const taskList = ref([])
+
+const filteredTasks = computed(() => {
+  if (!taskSearch.value) return taskList.value
+  const kw = taskSearch.value.toLowerCase()
+  return taskList.value.filter(t => t.name.toLowerCase().includes(kw))
+})
+
 const router = useRouter()
+const topScroll = ref(null)
+const topScrollContent = ref(null)
+const tableWrap = ref(null)
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const pendingTotal = ref(0)
 const correctedTotal = ref(0)
 const page = ref(1)
-const pageSize = ref(50)
+const pageSize = ref(100)
 const jumpPage = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
@@ -178,6 +241,49 @@ const defaultCollectedBy = computed(() => {
   return currentUser.value.id || ''
 })
 const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '' })
+
+// ===== 列配置 =====
+const COLUMN_KEY = 'essay_list_columns_v2'
+const allColumns = ref([
+  { key: 'student_name', label: '学生', field: 'student_name', sortable: true, sort: 'student_name', visible: true, fixed: true },
+  { key: 'grade', label: '年级', field: 'grade', sortable: false, visible: true },
+  { key: 'essay_title', label: '作文标题', field: 'essay_title', sortable: false, visible: true },
+  { key: 'essay_number', label: '第几次', field: 'essay_number', sortable: true, sort: 'essay_number', visible: true },
+  { key: 'teaching_mode', label: '提交方式', field: 'teaching_mode', sortable: false, visible: true },
+  { key: 'status', label: '状态', field: 'status', sortable: true, sort: 'status', visible: true },
+  { key: 'collector_name', label: '收集者', field: 'collector_name', sortable: true, sort: 'collector_name', visible: true },
+  { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
+  { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
+  { key: 'remark', label: '备注', field: 'remark', sortable: true, sort: 'remark', visible: true },
+  { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: false, visible: false },
+  { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: false, visible: false },
+  { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: false, visible: false },
+  { key: 'created_at', label: '收集时间', field: 'created_at', sortable: true, sort: 'created_at', visible: true },
+  { key: 'corrected_at', label: '修改时间', field: 'corrected_at', sortable: true, sort: 'corrected_at', visible: true },
+  { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: true },
+])
+const showColumnSettings = ref(false)
+
+function loadColumnSettings() {
+  try {
+    const saved = localStorage.getItem(COLUMN_KEY)
+    if (saved) {
+      const map = JSON.parse(saved)
+      allColumns.value.forEach(c => { if (map[c.key] !== undefined) c.visible = map[c.key] })
+    }
+  } catch {}
+}
+function saveColumns() {
+  const map = {}
+  allColumns.value.forEach(c => { map[c.key] = c.visible })
+  localStorage.setItem(COLUMN_KEY, JSON.stringify(map))
+  showColumnSettings.value = false
+}
+function resetColumns() {
+  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: false, remark: true, is_supplement: false, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: true }
+  allColumns.value.forEach(c => { c.visible = defaults[c.key] !== undefined ? defaults[c.key] : false })
+}
+const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
@@ -204,6 +310,23 @@ function buildParams() {
   return p
 }
 
+function syncScroll(source) {
+  if (source === 'top' && tableWrap.value) {
+    tableWrap.value.scrollLeft = topScroll.value.scrollLeft
+  } else if (source === 'bottom' && topScroll.value) {
+    topScroll.value.scrollLeft = tableWrap.value.scrollLeft
+  }
+}
+
+function updateTopScrollWidth() {
+  if (topScrollContent.value && tableWrap.value) {
+    const table = tableWrap.value.querySelector('table')
+    if (table) {
+      topScrollContent.value.style.width = table.scrollWidth + 'px'
+    }
+  }
+}
+
 async function applyFilter() {
   page.value = 1; selectedIds.value = []
   await loadData()
@@ -221,7 +344,11 @@ async function loadData() {
       collectorList.value = res.data.collectors
     }
   } catch { showToast('查询失败') }
-  finally { loading.value = false }
+  finally {
+    loading.value = false
+    await nextTick()
+    updateTopScrollWidth()
+  }
 }
 
 function goPage(p) { page.value = p; loadData() }
@@ -290,6 +417,34 @@ async function batchExportDocx() {
   }
 }
 
+async function doBatchCollector() {
+  if (!batchCollectorId.value) { showToast('请选择收集者'); return }
+  try {
+    await api.post('/essays/batch-update', { ids: selectedIds.value, collected_by: batchCollectorId.value })
+    showSuccessToast('修改成功')
+    selectedIds.value = []
+    batchCollectorId.value = ''
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchTask() {
+  try {
+    await api.post('/essays/batch-update', { ids: selectedIds.value, task_id: batchTaskId.value || null })
+    showSuccessToast('修改成功')
+    selectedIds.value = []
+    batchTaskId.value = 0
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function loadTasks() {
+  try {
+    const res = await api.get('/essays/tasks')
+    taskList.value = res.data
+  } catch {}
+}
+
 function confirmDelete(e) {
   deletingEssay.value = e
   deleteFileChecked.value = false
@@ -336,6 +491,8 @@ function exportCSV() {
 }
 
 onMounted(async () => {
+  loadColumnSettings()
+  loadTasks()
   // 初始化筛选：管理员默认全部，其他角色默认自己
   filters.value.collectedBy = defaultCollectedBy.value
   await applyFilter()
@@ -367,10 +524,6 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
-  background: #fffbe6;
-  border-radius: 8px;
-  margin-bottom: 8px;
 }
 
 .stats-bar {
@@ -384,7 +537,7 @@ onMounted(async () => {
 .stat-pending { color: #d46b08; }
 .stat-corrected { color: #52c41a; }
 
-.table-wrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .inline-select {
   padding: 2px 4px;
   border: 1px solid transparent;
@@ -439,11 +592,23 @@ onMounted(async () => {
 .icon-readonly { font-size: 14px; }
 .text-readonly { font-size: 11px; }
 
+.scroll-sync {
+  overflow-x: auto;
+  height: 0;
+}
+.scroll-sync-content {
+  height: 1px;
+}
+.scroll-sync::-webkit-scrollbar { height: 6px; }
+.scroll-sync::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+.scroll-sync::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+.scroll-sync::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
 @media (max-width: 767px) {
   .filter-bar { flex-direction: column; align-items: stretch; }
   .filter-row { width: 100%; }
   .filter-input { flex: 1; }
-  .table-wrap { overflow-x: auto; }
-  .pagination { flex-direction: column; gap: 12px; }
+  .stats-bar { flex-wrap: wrap; }
+  .pagination { flex-wrap: wrap; justify-content: center; }
 }
 </style>

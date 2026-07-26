@@ -215,6 +215,7 @@ body {
 
 .desktop-table {
   width: 100%;
+  min-width: max-content;
   border-collapse: collapse;
   background: #fff;
   border-radius: 8px;
@@ -235,6 +236,7 @@ body {
   padding: 10px 12px;
   border-bottom: 1px solid #f5f5f5;
   font-size: 14px;
+  white-space: nowrap;
 }
 .desktop-table tr:hover td { background: #fafafa; }
 

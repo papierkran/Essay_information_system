@@ -3,6 +3,11 @@
     <div v-if="loading" style="padding:40px;text-align:center;color:#999">加载中...</div>
 
     <template v-if="!loading && essay">
+      <div v-if="isDesktop" class="breadcrumb">
+        <router-link to="/essay/list" class="breadcrumb-link">作文列表</router-link>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">作文详情 - {{ essay.student_name }}《{{ essay.essay_title || '无标题' }}》</span>
+      </div>
       <div v-if="isDesktop" class="page-title">作文详情</div>
 
       <!-- ===== 桌面端：顶部行（基本信息 + 修改状态）===== -->
@@ -42,7 +47,12 @@
                 <option value="线下">线下</option>
               </select>
             </div>
-            <div v-if="essay.is_supplement" class="info-item"><span class="info-label">状态</span><span><van-tag type="warning">补交</van-tag></span></div>
+            <div class="info-item"><span class="info-label">是否补交</span>
+              <select v-model="editForm.is_supplement" class="edit-input" :disabled="!canEdit">
+                <option :value="false">否</option>
+                <option :value="true">是</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -172,14 +182,21 @@
       <!-- ===== 手机端 ===== -->
       <template v-else>
         <van-cell-group inset>
-          <van-field v-model="editForm.student_name" label="学生姓名" />
-          <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="showMobileGrade = true" is-link readonly />
-          <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" />
-          <van-field v-model="editForm.essay_title" label="作文标题" />
-          <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" />
+          <van-field v-model="editForm.student_name" label="学生姓名" :disabled="!canEdit" />
+          <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
+          <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
+          <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
+          <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" :disabled="!canEdit" />
+          <van-field label="是否补交">
+            <template #input>
+              <van-radio-group v-model="editForm.is_supplement" :disabled="!canEdit" direction="horizontal">
+                <van-radio :name="false">否</van-radio>
+                <van-radio :name="true">是</van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
           <van-cell title="收集者" :value="essay.collector_name" />
           <van-cell title="上传时间" :value="formatDateTime(essay.created_at)" />
-          <van-cell v-if="essay.is_supplement" title="状态" value="补交" />
         </van-cell-group>
 
         <div style="margin:16px">
@@ -440,6 +457,7 @@ async function loadEssay() {
       teaching_mode: essay.value.teaching_mode || '线下',
       remark: essay.value.remark,
       collected_by: essay.value.collected_by,
+      is_supplement: essay.value.is_supplement || false,
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
@@ -601,6 +619,22 @@ async function doReupload() {
 
 <style scoped>
 .detail-page { padding: 0; }
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: 13px;
+  color: #666;
+}
+.breadcrumb-link {
+  color: #1677ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.breadcrumb-link:hover { text-decoration: underline; }
+.breadcrumb-sep { color: #d9d9d9; }
+.breadcrumb-current { color: #333; }
 .content-text { padding: 12px 16px; }
 .content-text pre { white-space: pre-wrap; font-size: 14px; line-height: 1.8; margin: 0; font-family: inherit; }
 .content-text p { font-size: 14px; line-height: 1.8; margin: 0 0 8px 0; text-indent: 2em; }

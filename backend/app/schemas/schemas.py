@@ -145,6 +145,8 @@ class EssayOut(BaseModel):
     file_path: str = ""
     has_correction: bool = False
     file_saved: bool = True
+    word_count: int = 0
+    corrected_word_count: int = 0
 
     class Config:
         from_attributes = True

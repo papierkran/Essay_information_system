@@ -3,9 +3,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
 import json
+import shutil
 from datetime import datetime
 
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask
 from ..schemas.schemas import (
     UserCreate, UserOut, OrganizationCreate, OrganizationOut,
@@ -417,9 +418,46 @@ def get_settings(current_user: User = Depends(get_current_user)):
 @router.put("/settings")
 def update_settings(data: dict, current_user: User = Depends(get_current_user)):
     require_admin(current_user)
+
+    # 读取旧的 upload_dir
+    old_upload_dir = ""
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE) as f:
+            old_settings = json.load(f)
+        old_upload_dir = old_settings.get("upload_dir", "uploads")
+
+    new_upload_dir = data.get("upload_dir", "uploads")
+
+    # 保存新设置
     with open(SETTINGS_FILE, "w") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    return data
+
+    # 清除缓存，让 get_upload_dir 读取新值
+    from ..utils import file_utils
+    file_utils._SETTINGS = None
+
+    # 如果 upload_dir 变了，移动数据库中有记录的文件
+    moved = 0
+    if old_upload_dir and new_upload_dir and old_upload_dir != new_upload_dir:
+        old_abs = os.path.abspath(old_upload_dir)
+        new_abs = os.path.abspath(new_upload_dir)
+
+        if os.path.isdir(old_abs):
+            # 获取数据库中所有有 content_file 的作文
+            db = SessionLocal()
+            try:
+                essays = db.query(Essay).filter(Essay.content_file != "", Essay.content_file.isnot(None)).all()
+                for e in essays:
+                    old_file = os.path.join(old_abs, e.content_file)
+                    if os.path.exists(old_file):
+                        new_file = os.path.join(new_abs, e.content_file)
+                        os.makedirs(os.path.dirname(new_file), exist_ok=True)
+                        shutil.move(old_file, new_file)
+                        moved += 1
+            finally:
+                db.close()
+
+    return {"message": "设置已保存", "moved": moved}
 
 
 @router.get("/database/export")

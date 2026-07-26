@@ -255,6 +255,59 @@ async def upload_essay(
     _log_operation(db, essay.id, current_user.id, "上传", student_name)
     db.commit()
     db.refresh(essay)
+
+    # 保存文件
+    now = datetime.now()
+    ts = now.strftime("%H%M%S")
+
+    grade_name = grade if grade else "未定年级"
+    if teaching_mode:
+        grade_name = f"{grade_name}{teaching_mode}"
+
+    dir_path = os.path.join(
+        get_upload_dir(),
+        str(now.year),
+        f"{now.month}月",
+        str(now.day),
+        f"{grade_name}第{essay_number}次",
+        student_name,
+    )
+    os.makedirs(dir_path, exist_ok=True)
+
+    if files:
+        img_index = 1
+        uploaded_files = []
+        for f in files:
+            if not f.filename:
+                continue
+            ext = os.path.splitext(f.filename)[1].lower()
+            content = await f.read()
+            if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+                essay.file_type = "image"
+                img_name = f"{img_index}{ext}"
+                img_index += 1
+                img_path = os.path.join(dir_path, img_name)
+                with open(img_path, "wb") as fw:
+                    fw.write(content)
+                uploaded_files.append(img_name)
+            elif ext in [".docx", ".doc"]:
+                essay.file_type = "docx"
+                safe_filename = generate_essay_filename(
+                    essay_title, student_name, essay_number,
+                    is_supplement, remark, ts, ext,
+                )
+                file_path = os.path.join(dir_path, safe_filename)
+                with open(file_path, "wb") as fw:
+                    fw.write(content)
+                uploaded_files.append(safe_filename)
+
+        if uploaded_files:
+            essay.content_file = os.path.relpath(
+                os.path.join(dir_path, uploaded_files[0]), get_upload_dir()
+            )
+
+    db.commit()
+    db.refresh(essay)
     return _essay_to_out(essay, db)
 
 
@@ -385,11 +438,14 @@ def list_essays(
 
     # 排序
     from sqlalchemy import case
-    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status}
+    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark}
     
     # 处理collector_name排序
     if sort_by == "collector_name":
         q = q.outerjoin(User, User.id == Essay.collected_by)
+        order_col = User.nickname
+    elif sort_by == "reviewer_name":
+        q = q.outerjoin(User, User.id == Essay.reviewer_id)
         order_col = User.nickname
     else:
         order_col = allowed_sort.get(sort_by, Essay.created_at)
@@ -859,6 +915,32 @@ def export_docx(
     )
 
 
+@router.post("/batch-update")
+def batch_update_essays(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量修改选中作文的收集者或任务"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员可批量修改")
+    essay_ids = data.get("ids", [])
+    if not essay_ids:
+        raise HTTPException(status_code=400, detail="未选中任何作文")
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    updated = 0
+    if "collected_by" in data and data["collected_by"]:
+        for e in essays:
+            e.collected_by = data["collected_by"]
+            updated += 1
+    if "task_id" in data:
+        for e in essays:
+            e.task_id = data["task_id"]
+            updated += 1
+    db.commit()
+    return {"message": f"已更新 {updated} 条记录", "count": len(essays)}
+
+
 @router.post("/batch-export-docx")
 def batch_export_docx(
     essay_ids: list[int],
@@ -928,6 +1010,7 @@ def update_essay(
     teaching_mode: str = "",
     remark: str = "",
     collected_by: int = None,
+    is_supplement: bool = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -958,6 +1041,8 @@ def update_essay(
         essay.remark = remark
     if collected_by is not None and "admin" in current_user.role:
         essay.collected_by = collected_by
+    if is_supplement is not None:
+        essay.is_supplement = is_supplement
 
     # 如果年级/次数/学生/方式变了，移动文件
     new_grade = essay.grade
@@ -1082,4 +1167,6 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         file_path=file_path,
         has_correction=corr_exists,
         file_saved=essay.file_saved if essay.file_saved is not None else True,
+        word_count=len((essay.content_text or "").replace('\r\n', '\n').replace('\r', '\n').replace(' ', '')),
+        corrected_word_count=len((essay.corrected_text or "").replace('\r\n', '\n').replace('\r', '\n').replace(' ', '')),
     )

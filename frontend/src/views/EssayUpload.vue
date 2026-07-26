@@ -34,7 +34,10 @@
       <van-cell-group inset style="margin-top:12px">
         <van-field name="uploader" label="上传文件（docx/图片，可多选）">
           <template #input>
-            <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple />
+            <div>
+              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple :before-read="beforeRead" />
+              <div style="font-size:12px;color:#999;margin-top:4px">图片大小不超过 4MB</div>
+            </div>
           </template>
         </van-field>
         <van-field v-model="form.content_text" label="或粘贴文字" type="textarea" placeholder="粘贴文字..." rows="4" autosize />
@@ -111,6 +114,16 @@ function selectGrade(g) {
   form.value.grade = g
   selectedGrade.value = g
   showGradePicker.value = false
+}
+
+function beforeRead(file) {
+  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+  const ext = '.' + file.name.split('.').pop().toLowerCase()
+  if (imageExts.includes(ext) && file.size > 4 * 1024 * 1024) {
+    showToast('图片大小不能超过 4MB')
+    return false
+  }
+  return true
 }
 
 function selectTask(tpl) {
