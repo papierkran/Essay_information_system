@@ -175,6 +175,24 @@ async function onSubmit() {
     if (detail) msg = detail
     else if (status) msg = `服务器错误 (${status})`
     else if (err.message) msg = err.message
+
+    // 409 冲突：保留表单数据，引导用户操作
+    if (status === 409) {
+      showDialog({
+        title: '⚠️ 作文已存在',
+        message: msg,
+        confirmButtonText: '知道了',
+        cancelButtonText: '去列表查看',
+        showCancelButton: true,
+        className: 'upload-msg-dialog',
+      }).then((action) => {
+        if (action === 'cancel') {
+          window.location.hash = '#/essays'
+        }
+      })
+      return
+    }
+
     showDialog({
       title: '❌ 上传失败',
       message: msg,

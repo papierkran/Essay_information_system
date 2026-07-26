@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ..database import get_db
-from ..models.models import User, Essay, Class, UserClass, EssayTask
-from ..schemas.schemas import EssayCreate, EssayOut, TaskOut
+from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog
+from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
@@ -162,6 +162,14 @@ def get_collector_classes(user: User, db: Session) -> list[int]:
     return [uc.class_id for uc in ucs]
 
 
+def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = ""):
+    try:
+        log = OperationLog(essay_id=essay_id, user_id=user_id, action=action, detail=detail)
+        db.add(log)
+    except Exception:
+        pass
+
+
 def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
     """构建文件路径，返回 (dir_path, filename, year, month)"""
     now = datetime.now()
@@ -220,105 +228,31 @@ async def upload_essay(
         essay.remark = remark
         essay.content_text = content_text
     else:
-        essay = Essay(
-            class_id=class_id,
-            task_id=task_id,
-            grade=grade,
-            essay_number=essay_number,
-            essay_title=essay_title,
-            student_name=student_name,
-            is_supplement=is_supplement,
-            teaching_mode=teaching_mode,
-            remark=remark,
-            content_text=content_text,
-            file_type=file_type,
-            collected_by=current_user.id,
-            status="pending",
-        )
-        db.add(essay)
-    db.commit()
-    db.refresh(essay)
-
-    # 保存文件
-    now = datetime.now()
-    ts = now.strftime("%H%M%S")
-    collector_name = current_user.nickname or current_user.username
-
-    dir_path = get_essay_dir(
-        str(now.year), f"{now.month}月", str(now.day),
-        grade or "未定年级", essay_number, collector_name, student_name, teaching_mode,
-    )
-    os.makedirs(dir_path, exist_ok=True)
-
-    uploaded_files = []
-
-    if files:
-        img_index = 1
-        for f in files:
-            if not f.filename:
-                continue
-            ext = os.path.splitext(f.filename)[1].lower()
-            if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                file_type = "image"
-                essay.file_type = file_type
-                img_name = f"{img_index}{ext}"
-                img_index += 1
-                img_path = os.path.join(dir_path, img_name)
-                content = await f.read()
-                with open(img_path, "wb") as fw:
-                    fw.write(content)
-                uploaded_files.append(img_name)
-            elif ext in [".docx", ".doc"]:
-                file_type = "docx"
-                essay.file_type = file_type
-                safe_filename = generate_essay_filename(
-                    essay_title, student_name, essay_number,
-                    is_supplement, remark, ts, ext,
-                )
-                file_path = os.path.join(dir_path, safe_filename)
-                content = await f.read()
-                with open(file_path, "wb") as fw:
-                    fw.write(content)
-                uploaded_files.append(safe_filename)
-
-        if uploaded_files:
-            essay.content_file = os.path.relpath(os.path.join(dir_path, uploaded_files[0]), get_upload_dir())
-    elif content_text.strip():
-        from docx import Document
-        from docx.shared import Pt
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-            "$MMM $DD.docx"
-        )
-
-        doc = Document(template_path)
-
-        insert_after_idx = None
-        for i, p in enumerate(doc.paragraphs):
-            if p.text.strip() == "修改前：":
-                insert_after_idx = i
-                break
-
-        if insert_after_idx is not None:
-            insert_after = doc.paragraphs[insert_after_idx]
-            new_para = doc.add_paragraph()
-            run = new_para.add_run(content_text)
-            run.font.size = Pt(12)
-
-            new_p_element = new_para._element
-            target_p_element = insert_after._element
-            target_p_element.addnext(new_p_element)
-
-        safe_filename = generate_essay_filename(
-            essay_title, student_name, essay_number,
-            is_supplement, remark, ts, ".docx",
-        )
-        file_path = os.path.join(dir_path, safe_filename)
-        doc.save(file_path)
-        essay.content_file = os.path.relpath(file_path, get_upload_dir())
-        essay.file_type = "docx"
-
+        try:
+            essay = Essay(
+                class_id=class_id,
+                task_id=task_id,
+                grade=grade,
+                essay_number=essay_number,
+                essay_title=essay_title,
+                student_name=student_name,
+                is_supplement=is_supplement,
+                teaching_mode=teaching_mode,
+                remark=remark,
+                content_text=content_text,
+                file_type=file_type,
+                collected_by=current_user.id,
+                status="pending",
+            )
+            db.add(essay)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=f"学生「{student_name}」的同一篇作文已存在（第{essay_number}次{'补交' if is_supplement else '正篇'}），如需修改请先删除旧记录"
+            )
+    _log_operation(db, essay.id, current_user.id, "上传", student_name)
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -394,6 +328,7 @@ async def upload_correction_docx(
             reviewer_id=current_user.id if corrected_text else None,
         )
         db.add(essay)
+        _log_operation(db, essay.id, current_user.id, "修改", student_name)
         db.commit()
         db.refresh(essay)
     except Exception as e:
@@ -411,7 +346,7 @@ def list_essays(
     grade: str = None,
     essay_number: int = None,
     teaching_mode: str = None,
-    reviewer: str = None,
+    collected_by: int = None,
     remark: str = None,
     essay_title: str = None,
     sort_by: str = "created_at",
@@ -421,11 +356,11 @@ def list_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = db.query(Essay)
+    q = db.query(Essay).filter(Essay.deleted_at == None)
 
     # 权限过滤：收集者和游客可以查看所有作文，批改者只能看自己的
     if "admin" not in current_user.role and "guest" not in current_user.role:
-        if "reviewer" in current_user.role:
+        if "reviewer" in current_user.role and "collector" not in current_user.role:
             q = q.filter(Essay.reviewer_id == current_user.id)
         # 收集者可以查看所有作文，不做过滤
 
@@ -443,14 +378,12 @@ def list_essays(
         q = q.filter(Essay.teaching_mode == teaching_mode)
     if remark:
         q = q.filter(Essay.remark.like(f"%{remark}%"))
-    if reviewer:
-        q = q.join(User, User.id == Essay.collected_by).filter(
-            User.nickname.like(f"%{reviewer}%") | User.username.like(f"%{reviewer}%")
-        )
+    if collected_by:
+        q = q.filter(Essay.collected_by == collected_by)
     if essay_title:
         q = q.filter(Essay.essay_title.like(f"%{essay_title}%"))
 
-    # 排序：收集者优先展示自己的作文
+    # 排序
     from sqlalchemy import case
     allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status}
     
@@ -461,12 +394,10 @@ def list_essays(
     else:
         order_col = allowed_sort.get(sort_by, Essay.created_at)
     
-    # 优先排序：自己的作文排在前面
-    is_mine = case((Essay.collected_by == current_user.id, 0), else_=1)
     if sort_order == "asc":
-        q = q.order_by(is_mine.asc(), order_col.asc())
+        q = q.order_by(order_col.asc())
     else:
-        q = q.order_by(is_mine.asc(), order_col.desc())
+        q = q.order_by(order_col.desc())
 
     # 只显示文件已保存的记录
     q = q.filter(Essay.file_saved == True)
@@ -480,11 +411,19 @@ def list_essays(
     pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "pending", Essay.file_saved == True).scalar() or 0
     corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "corrected", Essay.file_saved == True).scalar() or 0
 
+    # 收集者列表（用于前端下拉筛选）
+    collectors = db.query(User).filter(
+        User.deleted_at == None,
+        (User.role.like('%collector%') | User.role.like('%admin%'))
+    ).all()
+    collector_list = [{"id": u.id, "nickname": u.nickname or u.username} for u in collectors]
+
     return {
         "items": result,
         "total": total,
         "pending": pending_total,
         "corrected": corrected_total,
+        "collectors": collector_list,
         "page": page,
         "page_size": page_size,
     }
@@ -500,12 +439,52 @@ def pending_essays(
         raise HTTPException(status_code=403, detail="无权限")
 
     essays = db.query(Essay).filter(
+        Essay.deleted_at == None,
         Essay.status == "pending",
         Essay.file_saved == True,
     ).order_by(Essay.created_at.asc()).all()
 
     result = [_essay_to_out(e, db) for e in essays]
     return result
+
+
+@router.get("/trash")
+def list_trash(
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查看已删除的作文（管理员）"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+    q = db.query(Essay).filter(Essay.deleted_at != None).order_by(Essay.deleted_at.desc())
+    total = q.count()
+    essays = q.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "items": [_essay_to_out(e, db) for e in essays],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/{essay_id}/restore")
+def restore_essay(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """从回收站恢复作文"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+    essay = db.query(Essay).filter(Essay.id == essay_id, Essay.deleted_at != None).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在或不在回收站")
+    essay.deleted_at = None
+    _log_operation(db, essay.id, current_user.id, "恢复", essay.student_name)
+    db.commit()
+    return {"message": "已恢复"}
 
 
 @router.get("/stats")
@@ -518,13 +497,14 @@ def essay_stats(
     today = now.date()
     month_start = today.replace(day=1)
 
-    total = db.query(func.count(Essay.id)).scalar() or 0
-    pending = db.query(func.count(Essay.id)).filter(Essay.status == "pending").scalar() or 0
-    corrected = db.query(func.count(Essay.id)).filter(Essay.status == "corrected").scalar() or 0
-    this_month = db.query(func.count(Essay.id)).filter(Essay.created_at >= month_start).scalar() or 0
+    base = db.query(Essay).filter(Essay.deleted_at == None)
+    total = base.count()
+    pending = base.filter(Essay.status == "pending").count()
+    corrected = base.filter(Essay.status == "corrected").count()
+    this_month = base.filter(Essay.created_at >= month_start).count()
 
     grade_rows = (
-        db.query(Essay.grade, func.count(Essay.id))
+        base.with_entities(Essay.grade, func.count(Essay.id))
         .group_by(Essay.grade)
         .order_by(func.count(Essay.id).desc())
         .all()
@@ -532,7 +512,7 @@ def essay_stats(
     grade_dist = [{"name": g or "未知", "value": c} for g, c in grade_rows]
 
     class_rows = (
-        db.query(Class.name, func.count(Essay.id))
+        base.with_entities(Class.name, func.count(Essay.id))
         .join(Class, Class.id == Essay.class_id)
         .group_by(Class.id, Class.name)
         .order_by(func.count(Essay.id).desc())
@@ -541,7 +521,7 @@ def essay_stats(
     class_dist = [{"name": n, "value": c} for n, c in class_rows]
 
     collector_rows = (
-        db.query(User.nickname, User.username, func.count(Essay.id))
+        base.with_entities(User.nickname, User.username, func.count(Essay.id))
         .join(User, User.id == Essay.collected_by)
         .filter(User.role.like("%collector%"))
         .group_by(Essay.collected_by, User.nickname, User.username)
@@ -556,12 +536,8 @@ def essay_stats(
         d = today - timedelta(days=i)
         d_start = datetime.combine(d, datetime.min.time())
         d_end = datetime.combine(d, datetime.max.time())
-        uploaded = db.query(func.count(Essay.id)).filter(
-            Essay.created_at >= d_start, Essay.created_at <= d_end
-        ).scalar() or 0
-        done = db.query(func.count(Essay.id)).filter(
-            Essay.corrected_at >= d_start, Essay.corrected_at <= d_end
-        ).scalar() or 0
+        uploaded = base.filter(Essay.created_at >= d_start, Essay.created_at <= d_end).count()
+        done = base.filter(Essay.corrected_at >= d_start, Essay.corrected_at <= d_end).count()
         trend.append({"date": d.strftime("%m-%d"), "uploaded": uploaded, "corrected": done})
 
     return {
@@ -639,6 +615,7 @@ def claim_essay(
         raise HTTPException(status_code=400, detail="该作文已被其他人认领")
 
     essay.reviewer_id = current_user.id
+    _log_operation(db, essay.id, current_user.id, "认领", essay.student_name)
     db.commit()
     return {"message": "认领成功"}
 
@@ -646,32 +623,48 @@ def claim_essay(
 @router.delete("/{essay_id}")
 def delete_essay(
     essay_id: int,
-    force: bool = False,
+    delete_file: bool = False,
+    permanent: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除作文（含文件，force=true时强制删除已修改文件）"""
+    """删除作文。
+    - 默认：软删除（写入 deleted_at），文件保留
+    - delete_file=true：同时删除本地文件（需管理员）
+    - permanent=true：物理删除数据库记录（需管理员）
+    """
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
     if "admin" not in current_user.role and essay.collected_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权限删除此作文")
 
-    if essay.content_file:
-        file_path = os.path.join(get_upload_dir(), essay.content_file)
-        orig_dir = os.path.dirname(file_path)
-        corr_exists = has_correction(orig_dir, os.path.basename(file_path))
-        if corr_exists and not force:
-            raise HTTPException(status_code=400, detail="作文已有修改结果，请确认强制删除")
+    if delete_file:
+        if "admin" not in current_user.role:
+            raise HTTPException(status_code=403, detail="仅管理员可删除本地文件")
+        if essay.content_file:
+            dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+            if os.path.exists(dir_path):
+                shutil.rmtree(dir_path)
+        essay.content_file = ""
 
-    if essay.content_file:
-        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-        if os.path.exists(dir_path):
-            shutil.rmtree(dir_path)
+    if permanent:
+        if "admin" not in current_user.role:
+            raise HTTPException(status_code=403, detail="仅管理员可彻底删除")
+        if essay.content_file:
+            dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+            if os.path.exists(dir_path) and not delete_file:
+                # 如果还没删文件，现在删
+                pass  # delete_file 已经处理了
+        db.delete(essay)
+        _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
+        db.commit()
+        return {"message": "已彻底删除"}
 
-    db.delete(essay)
+    essay.deleted_at = datetime.now()
+    _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
     db.commit()
-    return {"message": "删除成功"}
+    return {"message": "已移入回收站"}
 
 
 @router.post("/{essay_id}/upload-correction")
@@ -716,6 +709,7 @@ async def upload_correction(
     essay.reviewer_id = current_user.id
     essay.status = "corrected"
     essay.corrected_at = datetime.now()
+    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
     db.commit()
 
     return {"message": "修改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
@@ -943,6 +937,13 @@ def update_essay(
         raise HTTPException(status_code=404, detail="作文不存在")
     if "admin" not in current_user.role and essay.collected_by != current_user.id:
         raise HTTPException(status_code=403, detail="无权限编辑此作文")
+
+    # 记录修改前的路径关键字段
+    old_grade = essay.grade
+    old_number = essay.essay_number
+    old_student = essay.student_name
+    old_mode = essay.teaching_mode
+
     if grade:
         essay.grade = grade
     if essay_number is not None:
@@ -957,9 +958,81 @@ def update_essay(
         essay.remark = remark
     if collected_by is not None and "admin" in current_user.role:
         essay.collected_by = collected_by
+
+    # 如果年级/次数/学生/方式变了，移动文件
+    new_grade = essay.grade
+    new_number = essay.essay_number
+    new_student = essay.student_name
+    new_mode = essay.teaching_mode
+
+    if (essay.content_file and (
+        new_grade != old_grade or
+        new_number != old_number or
+        new_student != old_student or
+        new_mode != old_mode
+    )):
+        old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+
+        # 构建新目录路径
+        from ..utils.file_utils import get_essay_dir, move_content_file
+        now = datetime.now()
+        task_name = ""
+        task_created_at = None
+        if essay.task_id:
+            task = db.query(EssayTask).filter(EssayTask.id == essay.task_id).first()
+            if task:
+                task_name = task.name
+                task_created_at = task.created_at
+
+        new_dir = get_essay_dir(
+            str(now.year), f"{now.month}月", str(now.day),
+            new_grade or "未定年级", new_number, "", new_student, new_mode,
+            task_name=task_name, task_created_at=task_created_at,
+        )
+
+        new_content_file = move_content_file(essay, old_dir, new_dir)
+        if new_content_file:
+            essay.content_file = new_content_file
+
+    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name)
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
+
+
+@router.get("/operations")
+def list_operations(
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取操作历史列表"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+
+    q = db.query(OperationLog).order_by(OperationLog.created_at.desc())
+    total = q.count()
+    logs = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    result = []
+    for log in logs:
+        user = db.query(User).filter(User.id == log.user_id).first()
+        essay = db.query(Essay).filter(Essay.id == log.essay_id).first()
+        result.append(OperationLogOut(
+            id=log.id,
+            essay_id=log.essay_id,
+            user_id=log.user_id,
+            user_name=user.nickname or user.username if user else "未知",
+            action=log.action,
+            detail=log.detail or "",
+            student_name=essay.student_name if essay else "",
+            essay_title=essay.essay_title if essay else "",
+            essay_number=essay.essay_number if essay else 0,
+            created_at=log.created_at,
+        ))
+
+    return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
 def _essay_to_out(essay: Essay, db: Session) -> EssayOut:

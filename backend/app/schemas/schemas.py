@@ -148,3 +148,19 @@ class EssayOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class OperationLogOut(BaseModel):
+    id: int
+    essay_id: int
+    user_id: int
+    user_name: str = ""
+    action: str
+    detail: str = ""
+    student_name: str = ""
+    essay_title: str = ""
+    essay_number: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

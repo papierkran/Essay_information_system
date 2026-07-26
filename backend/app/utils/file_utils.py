@@ -34,18 +34,36 @@ def get_essay_dir(
     collector_name: str,
     student_name: str = "",
     teaching_mode: str = "",
+    task_name: str = "",
+    task_created_at: datetime = None,
 ) -> str:
-    """生成作文存储目录路径"""
+    """生成作文存储目录路径。
+    - 有任务：{年}/{MMDD}_{课程名}/{年级}{方式}第{N}次/{学生}/
+    - 无任务：{年}/{月}月/{日}/{年级}{方式}第{N}次/{学生}/
+    """
     grade_name = grade if grade else "未定年级"
     if teaching_mode:
         grade_name = f"{grade_name}{teaching_mode}"
-    path = os.path.join(
-        get_upload_dir(),
-        year,
-        month,
-        day,
-        f"{grade_name}第{essay_number}次",
-    )
+    task_dir = f"{grade_name}第{essay_number}次"
+
+    if task_name and task_created_at:
+        task_year = str(task_created_at.year)
+        mmdd = task_created_at.strftime("%m%d")
+        course = task_name.replace("/", "_").replace("\\", "_")
+        path = os.path.join(
+            get_upload_dir(),
+            task_year,
+            f"{mmdd}_{course}",
+            task_dir,
+        )
+    else:
+        path = os.path.join(
+            get_upload_dir(),
+            year,
+            month,
+            day,
+            task_dir,
+        )
     if student_name:
         path = os.path.join(path, student_name)
     return path
@@ -91,3 +109,43 @@ def count_corrections_in_dir(dir_path: str) -> int:
         if f.startswith("改_"):
             count += 1
     return count
+
+
+def move_content_file(essay, old_dir: str, new_dir: str) -> str:
+    """把作文文件从旧目录移到新目录。
+    返回新的 content_file 值（新目录下第一个文件的相对路径），失败返回空字符串。
+    仅当新旧路径不同且旧路径存在时才操作。
+    """
+    if not old_dir or not new_dir:
+        return ""
+    if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+        return essay.content_file
+    if not os.path.isdir(old_dir):
+        return ""
+
+    os.makedirs(new_dir, exist_ok=True)
+    first_file = ""
+    for fname in os.listdir(old_dir):
+        src = os.path.join(old_dir, fname)
+        dst = os.path.join(new_dir, fname)
+        if os.path.exists(dst):
+            continue
+        shutil.move(src, dst)
+        if not first_file:
+            first_file = fname
+
+    # 清理空目录（逐层向上删）
+    _dir = old_dir
+    while _dir != get_upload_dir():
+        try:
+            if not os.listdir(_dir):
+                os.rmdir(_dir)
+                _dir = os.path.dirname(_dir)
+            else:
+                break
+        except OSError:
+            break
+
+    if first_file:
+        return os.path.relpath(os.path.join(new_dir, first_file), get_upload_dir())
+    return ""

@@ -18,10 +18,11 @@ class EssayTask(Base):
     teaching_mode = Column(String(10), default="线下")  # 线下/线上
     deadline = Column(DateTime, nullable=True)  # 收集截止时间
     is_active = Column(Boolean, default=False)  # 是否为当前活跃任务
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    essays = relationship("Essay", back_populates="task")
+    essays = relationship("Essay", back_populates="task", primaryjoin="and_(Essay.task_id==EssayTask.id, Essay.deleted_at==None)")
 
 
 class Organization(Base):
@@ -30,11 +31,12 @@ class Organization(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     desc = Column(Text, default="")
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    users = relationship("User", back_populates="organization")
-    classes = relationship("Class", back_populates="organization")
+    users = relationship("User", back_populates="organization", primaryjoin="and_(User.org_id==Organization.id, User.deleted_at==None)")
+    classes = relationship("Class", back_populates="organization", primaryjoin="and_(Class.org_id==Organization.id, Class.deleted_at==None)")
 
 
 class User(Base):
@@ -48,15 +50,18 @@ class User(Base):
     role = Column(String(50), default="collector")  # admin / collector / reviewer
     org_id = Column(Integer, ForeignKey("organizations.id"))
     is_active = Column(Boolean, default=True)
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     organization = relationship("Organization", back_populates="users")
-    user_classes = relationship("UserClass", back_populates="user")
+    user_classes = relationship("UserClass", back_populates="user", primaryjoin="and_(UserClass.user_id==User.id, UserClass.deleted_at==None)")
     collected_essays = relationship("Essay", back_populates="collector",
-                                    foreign_keys="Essay.collected_by")
+                                    foreign_keys="Essay.collected_by",
+                                    primaryjoin="and_(Essay.collected_by==User.id, Essay.deleted_at==None)")
     reviewed_essays = relationship("Essay", back_populates="reviewer",
-                                   foreign_keys="Essay.reviewer_id")
+                                   foreign_keys="Essay.reviewer_id",
+                                   primaryjoin="and_(Essay.reviewer_id==User.id, Essay.deleted_at==None)")
 
 
 class Class(Base):
@@ -65,12 +70,13 @@ class Class(Base):
     id = Column(Integer, primary_key=True, index=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     name = Column(String(100), nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     organization = relationship("Organization", back_populates="classes")
-    user_classes = relationship("UserClass", back_populates="class_")
-    essays = relationship("Essay", back_populates="class_")
+    user_classes = relationship("UserClass", back_populates="class_", primaryjoin="and_(UserClass.class_id==Class.id, UserClass.deleted_at==None)")
+    essays = relationship("Essay", back_populates="class_", primaryjoin="and_(Essay.class_id==Class.id, Essay.deleted_at==None)")
 
 
 class UserClass(Base):
@@ -80,6 +86,7 @@ class UserClass(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
     role_in_class = Column(String(20), default="collector")
+    deleted_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("user_id", "class_id", "role_in_class", name="uq_user_class_role"),
@@ -111,6 +118,7 @@ class Essay(Base):
     corrected_text = Column(Text, default="")
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     corrected_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -120,6 +128,9 @@ class Essay(Base):
         Index("idx_essays_grade", "grade"),
         Index("idx_essays_created_at", "created_at"),
         Index("idx_essays_task_id", "task_id"),
+        Index("idx_essays_deleted_at", "deleted_at"),
+        UniqueConstraint("class_id", "task_id", "student_name", "essay_number", "is_supplement",
+                         name="uq_essay_task_student"),
         CheckConstraint(
             "status IN ('pending', 'corrected')",
             name="ck_essays_status",
@@ -132,3 +143,24 @@ class Essay(Base):
                              foreign_keys=[collected_by])
     reviewer = relationship("User", back_populates="reviewed_essays",
                             foreign_keys=[reviewer_id])
+    operations = relationship("OperationLog", back_populates="essay",
+                              primaryjoin="and_(OperationLog.essay_id==Essay.id, Essay.deleted_at==None)")
+
+
+class OperationLog(Base):
+    __tablename__ = "operation_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    essay_id = Column(Integer, ForeignKey("essays.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(20), nullable=False)
+    detail = Column(String(500), default="")
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        Index("idx_operation_logs_essay_id", "essay_id"),
+        Index("idx_operation_logs_created_at", "created_at"),
+    )
+
+    essay = relationship("Essay", back_populates="operations", foreign_keys=[essay_id])
+    user = relationship("User", foreign_keys=[user_id])

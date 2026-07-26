@@ -40,8 +40,8 @@ const routes = [
     meta: { requiresAuth: true, roles: ['reviewer', 'collector', 'admin', 'guest'] },
   },
   {
-    path: '/review/history',
-    name: 'ReviewHistory',
+    path: '/review/operations',
+    name: 'OperationHistory',
     component: () => import('../views/ReviewHistory.vue'),
     meta: { requiresAuth: true, roles: ['reviewer', 'admin', 'guest'] },
   },

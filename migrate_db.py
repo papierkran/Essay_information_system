@@ -9,6 +9,20 @@ from backend.app.database import engine, DATABASE_URL
 from sqlalchemy import text
 
 MIGRATIONS = [
+    # 0. 清理重复数据（为后续唯一约束做准备，保留每组中 id 最大的那条）
+    {
+        "name": "clean_dup_essays_for_unique",
+        "sql": """
+            DELETE FROM essays a
+            USING essays b
+            WHERE a.id < b.id
+              AND a.class_id = b.class_id
+              AND a.task_id IS NOT DISTINCT FROM b.task_id
+              AND a.student_name = b.student_name
+              AND a.essay_number = b.essay_number
+              AND a.is_supplement = b.is_supplement;
+        """,
+    },
     # 1. 添加索引
     {
         "name": "idx_essays_status",
@@ -112,6 +126,53 @@ MIGRATIONS = [
                     ALTER TABLE essays ADD CONSTRAINT fk_essays_task
                         FOREIGN KEY (task_id) REFERENCES essay_tasks(id);
                     CREATE INDEX idx_essays_task_id ON essays (task_id);
+                END IF;
+            END $$;
+        """,
+    },
+    # 7. 所有表添加 deleted_at 软删除字段
+    {
+        "name": "add_deleted_at_columns",
+        "sql": """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='essays' AND column_name='deleted_at') THEN
+                    ALTER TABLE essays ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='essay_tasks' AND column_name='deleted_at') THEN
+                    ALTER TABLE essay_tasks ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deleted_at') THEN
+                    ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='deleted_at') THEN
+                    ALTER TABLE organizations ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='classes' AND column_name='deleted_at') THEN
+                    ALTER TABLE classes ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_classes' AND column_name='deleted_at') THEN
+                    ALTER TABLE user_classes ADD COLUMN deleted_at TIMESTAMP;
+                END IF;
+            END $$;
+        """,
+    },
+    {
+        "name": "idx_essays_deleted_at",
+        "sql": "CREATE INDEX IF NOT EXISTS idx_essays_deleted_at ON essays (deleted_at);",
+    },
+    # 8. essays 唯一约束（NULLS NOT DISTINCT，PG15+）
+    {
+        "name": "uq_essay_task_student",
+        "sql": """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_essay_task_student'
+                ) THEN
+                    ALTER TABLE essays
+                    ADD CONSTRAINT uq_essay_task_student
+                    UNIQUE NULLS NOT DISTINCT (class_id, task_id, student_name, essay_number, is_supplement);
                 END IF;
             END $$;
         """,

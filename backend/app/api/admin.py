@@ -43,7 +43,7 @@ def list_orgs(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    orgs = db.query(Organization).all()
+    orgs = db.query(Organization).filter(Organization.deleted_at == None).all()
     return [OrganizationOut.model_validate(o) for o in orgs]
 
 
@@ -75,7 +75,7 @@ def delete_org(
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="培训班不存在")
-    db.delete(org)
+    org.deleted_at = datetime.now()
     db.commit()
     return {"message": "删除成功"}
 
@@ -102,7 +102,7 @@ def list_classes(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    q = db.query(Class)
+    q = db.query(Class).filter(Class.deleted_at == None)
     if org_id:
         q = q.filter(Class.org_id == org_id)
     classes = q.all()
@@ -137,7 +137,7 @@ def delete_class(
     cls = db.query(Class).filter(Class.id == class_id).first()
     if not cls:
         raise HTTPException(status_code=404, detail="班级不存在")
-    db.delete(cls)
+    cls.deleted_at = datetime.now()
     db.commit()
     return {"message": "删除成功"}
 
@@ -256,7 +256,7 @@ def list_users(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    users = db.query(User).all()
+    users = db.query(User).filter(User.deleted_at == None).all()
     return [UserOut.model_validate(u) for u in users]
 
 
@@ -300,7 +300,7 @@ def delete_user(
         raise HTTPException(status_code=403, detail="超级管理员不可删除")
     # 将该用户的作文 collected_by 置为 1（管理员 ID）
     db.query(Essay).filter(Essay.collected_by == user_id).update({"collected_by": 1})
-    db.delete(user)
+    user.deleted_at = datetime.now()
     db.commit()
     return {"message": "删除成功"}
 
@@ -352,12 +352,13 @@ def set_class_collectors(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    # 清除旧的收集者
+    # 软删除旧的收集者绑定
     db.query(UserClass).filter(
         UserClass.class_id == class_id,
         UserClass.role_in_class == "collector",
-    ).delete()
-    # 添加新收集者
+        UserClass.deleted_at == None,
+    ).update({"deleted_at": datetime.now()})
+    # 添加新收集者（先恢复已存在的同用户绑定，再新增）
     for uid in user_ids:
         db.add(UserClass(user_id=uid, class_id=class_id, role_in_class="collector"))
     db.commit()
@@ -530,7 +531,7 @@ def list_tasks(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    tasks = db.query(EssayTask).order_by(EssayTask.created_at.desc()).all()
+    tasks = db.query(EssayTask).filter(EssayTask.deleted_at == None).order_by(EssayTask.created_at.desc()).all()
     return [TaskOut.model_validate(t) for t in tasks]
 
 
@@ -568,7 +569,7 @@ def delete_task(
     task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    db.delete(task)
+    task.deleted_at = datetime.now()
     db.commit()
     return {"message": "删除成功"}
 

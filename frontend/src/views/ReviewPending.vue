@@ -15,9 +15,9 @@
           <td>{{ e.collector_name }}</td>
           <td>{{ formatDateTime(e.created_at) }}</td>
           <td>
-            <button v-if="!isGuest" class="btn btn-primary" @click="claimAndGo(e)" style="font-size:12px;padding:4px 12px">
-              认领修改
-            </button>
+            <template v-if="!isGuest">
+              <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
+            </template>
             <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none;font-size:12px">仅查看</router-link>
           </td>
         </tr>
@@ -38,8 +38,7 @@
           <van-tag plain type="primary">{{ e.grade || '未知' }}</van-tag>
         </template>
         <template #footer>
-          <van-button v-if="!isGuest" size="small" type="primary" @click.stop="claimAndGo(e)">认领修改</van-button>
-          <span v-else style="font-size:12px;color:#999">仅查看</span>
+          <span style="font-size:12px;color:#1677ff">点击查看详情</span>
         </template>
       </van-card>
     </van-list>
@@ -66,10 +65,6 @@ async function load() {
   try { const res = await api.get('/essays/pending'); list.value = res.data }
   catch { showToast('加载失败') }
   finally { loading.value = false }
-}
-async function claimAndGo(e) {
-  try { await api.post(`/essays/${e.id}/claim`); showToast('认领成功'); router.push(`/review/detail/${e.id}`) }
-  catch (err) { showToast(err.response?.data?.detail || '认领失败') }
 }
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 onMounted(load)

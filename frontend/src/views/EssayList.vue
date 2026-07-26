@@ -27,7 +27,12 @@
           <option value="线上">线上</option>
         </select>
       </div>
-      <div class="filter-row"><span class="filter-label">收集者</span><input v-model="filters.reviewer" placeholder="搜收集者" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">收集者</span>
+        <select v-model="filters.collectedBy" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
+        </select>
+      </div>
       <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
@@ -85,7 +90,7 @@
             <td><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
             <td style="white-space:nowrap">
               <template v-if="!isGuest && isOwner(e)">
-                <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none">详情编辑</router-link>
+                <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
                 <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
               </template>
               <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
@@ -119,6 +124,19 @@
         条
       </span>
     </div>
+
+    <!-- 删除确认弹窗 -->
+    <van-dialog v-model:show="showDelete" :title="deletingEssay ? '确认删除' : `批量删除 ${selectedIds.length} 条`"
+      :show-cancel-button="true" @confirm="doDelete" :close-on-click-overlay="false">
+      <div style="padding:16px;font-size:14px;line-height:1.8">
+        <p v-if="deletingEssay">学生：<strong>{{ deletingEssay.student_name }}</strong></p>
+        <p v-else>确定删除已选的 <strong>{{ selectedIds.length }}</strong> 条作文吗？</p>
+        <van-checkbox v-model="deleteFileChecked" :disabled="!isAdmin">
+          <span :style="{ color: isAdmin ? '#333' : '#ccc' }">同时删除本地文件</span>
+        </van-checkbox>
+        <p v-if="!isAdmin" style="color:#999;font-size:12px;margin-top:8px">非管理员无法删除本地文件</p>
+      </div>
+    </van-dialog>
   </div>
 </template>
 
@@ -132,7 +150,12 @@ import { formatDateTime } from '../utils/format'
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
 const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
+const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 const isOwner = (essay) => currentUser.value.role?.includes('admin') || essay.collected_by === currentUser.value.id
+
+const deletingEssay = ref(null)
+const showDelete = ref(false)
+const deleteFileChecked = ref(false)
 
 const router = useRouter()
 const list = ref([])
@@ -147,8 +170,14 @@ const sortBy = ref('created_at')
 const sortOrder = ref('desc')
 const selectedIds = ref([])
 const grades = ['初一','初二','初三','高一','高二','高三']
+const collectorList = ref([])
 
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' })
+// 初始化收集者筛选：管理员默认全部，其他角色默认自己
+const defaultCollectedBy = computed(() => {
+  if (isAdmin.value) return ''
+  return currentUser.value.id || ''
+})
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '' })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
@@ -170,7 +199,7 @@ function buildParams() {
   if (filters.value.number) p.essay_number = filters.value.number
   if (filters.value.status) p.status = filters.value.status
   if (filters.value.mode) p.teaching_mode = filters.value.mode
-  if (filters.value.reviewer) p.reviewer = filters.value.reviewer
+  if (filters.value.collectedBy) p.collected_by = Number(filters.value.collectedBy)
   if (filters.value.remark) p.remark = filters.value.remark
   return p
 }
@@ -188,6 +217,9 @@ async function loadData() {
     total.value = res.data.total
     pendingTotal.value = res.data.pending
     correctedTotal.value = res.data.corrected
+    if (res.data.collectors) {
+      collectorList.value = res.data.collectors
+    }
   } catch { showToast('查询失败') }
   finally { loading.value = false }
 }
@@ -201,7 +233,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', reviewer: '', remark: '' }; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '' }; applyFilter() }
 
 function toggleSelect(id) {
   const idx = selectedIds.value.indexOf(id)
@@ -223,18 +255,9 @@ async function inlineEdit(e, field, val) {
 
 async function batchDelete() {
   if (!selectedIds.value.length) return
-  showDialog({
-    title: '批量删除',
-    message: `确定删除 ${selectedIds.value.length} 条作文吗？`,
-    showCancelButton: true,
-  }).then(async () => {
-    for (const id of selectedIds.value) {
-      try { await api.delete(`/essays/${id}?force=true`) } catch {}
-    }
-    showToast(`已删除 ${selectedIds.value.length} 条`)
-    selectedIds.value = []
-    applyFilter()
-  }).catch(() => {})
+  deletingEssay.value = null  // 批量模式
+  deleteFileChecked.value = false
+  showDelete.value = true
 }
 
 async function batchExportDocx() {
@@ -268,17 +291,32 @@ async function batchExportDocx() {
 }
 
 function confirmDelete(e) {
-  showDialog({
-    title: '确认删除',
-    message: `确定删除 ${e.student_name} 的作文吗？`,
-    showCancelButton: true,
-  }).then(async () => {
-    try {
-      await api.delete(`/essays/${e.id}?force=true`)
-      applyFilter()
-      showToast('删除成功')
-    } catch (err) { showToast(err.response?.data?.detail || '删除失败') }
-  }).catch(() => {})
+  deletingEssay.value = e
+  deleteFileChecked.value = false
+  showDelete.value = true
+}
+
+async function doDelete() {
+  const e = deletingEssay.value
+  // 批量模式
+  if (!e && selectedIds.value.length) {
+    let done = 0
+    for (const id of selectedIds.value) {
+      try { await api.delete(`/essays/${id}`, { params: { delete_file: deleteFileChecked.value, permanent: deleteFileChecked.value } }) ; done++ } catch {}
+    }
+    showToast(`已处理 ${done}/${selectedIds.value.length} 条`)
+    selectedIds.value = []
+    applyFilter()
+    return
+  }
+  // 单条模式
+  if (!e) return
+  try {
+    await api.delete(`/essays/${e.id}`, { params: { delete_file: deleteFileChecked.value, permanent: deleteFileChecked.value } })
+    applyFilter()
+    showToast(deleteFileChecked.value ? '已彻底删除（含文件）' : '已移入回收站')
+  } catch (err) { showToast(err.response?.data?.detail || '删除失败') }
+  deletingEssay.value = null
 }
 
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
@@ -297,7 +335,11 @@ function exportCSV() {
   URL.revokeObjectURL(url)
 }
 
-onMounted(applyFilter)
+onMounted(async () => {
+  // 初始化筛选：管理员默认全部，其他角色默认自己
+  filters.value.collectedBy = defaultCollectedBy.value
+  await applyFilter()
+})
 </script>
 
 <style scoped>

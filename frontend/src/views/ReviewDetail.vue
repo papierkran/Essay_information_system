@@ -33,6 +33,7 @@
                 <span>{{ essay.collector_name }}</span>
               </template>
             </div>
+            <div class="info-item"><span class="info-label">修改者</span><span>{{ essay.reviewer_name || '-' }}</span></div>
             <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
             <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">提交方式</span>

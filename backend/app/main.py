@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db, SessionLocal
-from .models.models import Essay
+from .models.models import Essay, OperationLog
 from .utils.file_utils import get_upload_dir
 from .api import auth, admin, essays
 import os

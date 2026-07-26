@@ -22,7 +22,7 @@
         <router-link v-if="canCollect || isGuest" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>
         <router-link v-if="canViewList" to="/essay/list" class="sidebar-link" @click="sidebarOpen=false">📋 作文列表</router-link>
         <router-link v-if="canReview || isGuest" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 待修改</router-link>
-        <router-link v-if="canReview || isGuest" to="/review/history" class="sidebar-link" @click="sidebarOpen=false">🕐 修改历史</router-link>
+        <router-link v-if="canReview || isGuest" to="/review/operations" class="sidebar-link" @click="sidebarOpen=false">🕐 操作历史</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
         <router-link v-if="isAdmin" to="/admin/classes" class="sidebar-link" @click="sidebarOpen=false">🏫 班级管理</router-link>
         <router-link v-if="isAdmin" to="/admin/settings" class="sidebar-link" @click="sidebarOpen=false">⚙️ 系统设置</router-link>
