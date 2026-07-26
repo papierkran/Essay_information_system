@@ -395,18 +395,19 @@ function onCorFolderChange(e) {
     if (ext !== '.docx' && ext !== '.doc') continue
 
     const nameWithoutExt = file.name.replace(/\.(docx|doc)$/i, '')
-    const dashIndex = nameWithoutExt.indexOf('——')
+    let dashIndex = nameWithoutExt.indexOf('——')
+    if (dashIndex === -1) dashIndex = nameWithoutExt.indexOf('-')
 
     if (dashIndex === -1) continue
 
-    const studentName = nameWithoutExt.substring(dashIndex + 2).trim()
+    const studentName = nameWithoutExt.substring(dashIndex + (nameWithoutExt.charAt(dashIndex) === '—' ? 2 : 1)).trim()
     if (!studentName) continue
 
     parsed.push({ file, studentName })
   }
 
   if (parsed.length === 0) {
-    showToast('未找到"改*——学生名.docx"格式的文件')
+    showToast('未找到"改*——学生名.docx"或"改*-学生名.docx"格式的文件')
     return
   }
 
@@ -541,10 +542,11 @@ async function onSubmitCorrections() {
 
   for (const { file, studentName } of corFiles.value) {
     corCurrentStudent.value = studentName
+    let finalStudentName = studentName
     try {
       console.log('解析文件:', file.name, '文件名学生:', studentName)
       const { title, studentName: docStudentName, before, after } = await parseDocxContent(file)
-      const finalStudentName = docStudentName || studentName
+      finalStudentName = docStudentName || studentName
       console.log('解析结果 - 学生:', finalStudentName, '标题:', title, '修改前:', before.length, '字, 修改后:', after.length, '字')
 
       if (!before && !after) {

@@ -28,6 +28,13 @@
             <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item">
+              <span class="info-label">任务</span>
+              <select v-model="editForm.task_id" class="edit-input" :disabled="!canEdit">
+                <option :value="0">无任务</option>
+                <option v-for="t in taskList" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+            <div class="info-item">
               <span class="info-label">收集者</span>
               <template v-if="isAdmin && !isReadonly">
                 <select v-model="editForm.collected_by" class="edit-input">
@@ -186,6 +193,7 @@
           <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
           <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
           <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
+          <van-field v-model="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
           <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" :disabled="!canEdit" />
           <van-field label="是否补交">
             <template #input>
@@ -220,6 +228,13 @@
         <van-action-sheet v-model:show="showMobileGrade" title="选择年级">
           <div class="picker-list">
             <van-cell v-for="g in grades" :key="g" :title="g" @click="editForm.grade = g; showMobileGrade = false" />
+          </div>
+        </van-action-sheet>
+
+        <van-action-sheet v-model:show="showMobileTask" title="选择任务">
+          <div class="picker-list">
+            <van-cell title="无任务" @click="editForm.task_id = 0; showMobileTask = false" />
+            <van-cell v-for="t in taskList" :key="t.id" :title="t.name" @click="editForm.task_id = t.id; showMobileTask = false" />
           </div>
         </van-action-sheet>
 
@@ -333,6 +348,7 @@ const previewIndex = ref(0)
 const previewImages = ref([])
 const savingEdit = ref(false)
 const showMobileGrade = ref(false)
+const showMobileTask = ref(false)
 const loading = ref(true)
 const reuploadFileList = ref([])
 const reuploadText = ref('')
@@ -343,6 +359,12 @@ const showReuploadCorrected = ref(false)
 const editForm = ref({})
 const grades = ['初一','初二','初三','高一','高二','高三']
 const collectorList = ref([])
+const taskList = ref([])
+const selectedTaskName = computed(() => {
+  if (!editForm.value.task_id) return '无任务'
+  const t = taskList.value.find(x => x.id === editForm.value.task_id)
+  return t ? t.name : '无任务'
+})
 const desktopFileList = ref([])
 const fullscreenMode = ref(null) // 'original' | 'corrected' | 'both' | null
 const showWordCount = ref(true)
@@ -439,6 +461,7 @@ async function doReuploadDesktop() {
 
 onMounted(async () => {
   await loadEssay()
+  await loadTasks()
   if (isAdmin.value) {
     await loadCollectors()
   }
@@ -458,6 +481,7 @@ async function loadEssay() {
       remark: essay.value.remark,
       collected_by: essay.value.collected_by,
       is_supplement: essay.value.is_supplement || false,
+      task_id: essay.value.task_id || 0,
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
@@ -474,6 +498,13 @@ async function loadCollectors() {
   try {
     const res = await api.get('/admin/users')
     collectorList.value = res.data.filter(u => u.role && (u.role.includes('collector') || u.role.includes('admin')))
+  } catch {}
+}
+
+async function loadTasks() {
+  try {
+    const res = await api.get('/essays/tasks')
+    taskList.value = res.data
   } catch {}
 }
 
@@ -527,8 +558,15 @@ async function exportDocx() {
     const disposition = res.headers['content-disposition']
     let filename = '导出.docx'
     if (disposition) {
-      const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i)
-      if (match) filename = decodeURIComponent(match[1])
+      // 优先匹配 filename*=UTF-8''xxx（中文文件名）
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^";]+)/i)
+      if (utf8Match) {
+        filename = decodeURIComponent(utf8Match[1])
+      } else {
+        // 匹配 filename="xxx" 或 filename=xxx
+        const match = disposition.match(/filename="?([^";]+)"?/i)
+        if (match) filename = match[1]
+      }
     }
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
@@ -565,6 +603,9 @@ async function saveEdit() {
   try {
     const res = await api.put(`/essays/${route.params.id}`, null, { params: editForm.value })
     essay.value = { ...essay.value, ...res.data }
+    // 同步 editForm，让下拉框也更新显示
+    editForm.value.task_id = res.data.task_id || 0
+    editForm.value.collected_by = res.data.collected_by
     showToast('保存成功')
   } catch(err) {
     showToast(err.response?.data?.detail || '保存失败')

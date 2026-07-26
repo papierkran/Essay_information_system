@@ -162,9 +162,16 @@ def get_collector_classes(user: User, db: Session) -> list[int]:
     return [uc.class_id for uc in ucs]
 
 
-def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = ""):
+def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = "", old_value: str = "", new_value: str = ""):
     try:
-        log = OperationLog(essay_id=essay_id, user_id=user_id, action=action, detail=detail)
+        log = OperationLog(
+            essay_id=essay_id,
+            user_id=user_id,
+            action=action,
+            detail=detail,
+            old_value=old_value,
+            new_value=new_value
+        )
         db.add(log)
     except Exception:
         pass
@@ -307,6 +314,21 @@ async def upload_essay(
                     fw.write(content)
                 uploaded_files.append(safe_filename)
 
+                # 解析docx内容作为修改前内容
+                if not essay.content_text and ext == ".docx":
+                    try:
+                        from docx import Document
+                        import io
+                        doc = Document(io.BytesIO(content))
+                        text_lines = []
+                        for para in doc.paragraphs:
+                            if para.text.strip():
+                                text_lines.append(para.text.strip())
+                        if text_lines:
+                            essay.content_text = "\n".join(text_lines)
+                    except Exception:
+                        pass
+
         if uploaded_files:
             essay.content_file = os.path.relpath(
                 os.path.join(dir_path, uploaded_files[0]), get_upload_dir()
@@ -375,24 +397,48 @@ async def upload_correction_docx(
             raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
     try:
-        essay = Essay(
-            class_id=1,
-            grade=grade,
-            essay_number=essay_number,
-            essay_title=essay_title,
-            student_name=student_name,
-            is_supplement=False,
-            teaching_mode=teaching_mode,
-            remark="",
-            content_text=content_text,
-            corrected_text=corrected_text if corrected_text else "",
-            file_type="docx",
-            collected_by=collector_id,
-            status="corrected" if corrected_text else "pending",
-            corrected_at=datetime.now() if corrected_text else None,
-            reviewer_id=current_user.id if corrected_text else None,
-        )
-        db.add(essay)
+        # 检查是否已存在同一条记录（同一学生同一次作文）
+        existing = db.query(Essay).filter(
+            Essay.class_id == 1,
+            Essay.student_name == student_name,
+            Essay.essay_number == essay_number,
+            Essay.is_supplement == False,
+            Essay.deleted_at == None,
+        ).first()
+
+        if existing:
+            # 更新已有记录
+            existing.essay_title = essay_title or existing.essay_title
+            existing.content_text = content_text or existing.content_text
+            existing.corrected_text = corrected_text if corrected_text else existing.corrected_text
+            existing.status = "corrected" if corrected_text else existing.status
+            existing.corrected_at = datetime.now() if corrected_text else existing.corrected_at
+            existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
+            existing.teaching_mode = teaching_mode or existing.teaching_mode
+            existing.collected_by = collector_id
+            essay = existing
+        else:
+            # 新建记录
+            essay = Essay(
+                class_id=1,
+                grade=grade,
+                essay_number=essay_number,
+                essay_title=essay_title,
+                student_name=student_name,
+                is_supplement=False,
+                teaching_mode=teaching_mode,
+                remark="",
+                content_text=content_text,
+                corrected_text=corrected_text if corrected_text else "",
+                file_type="docx",
+                collected_by=collector_id,
+                status="corrected" if corrected_text else "pending",
+                corrected_at=datetime.now() if corrected_text else None,
+                reviewer_id=current_user.id if corrected_text else None,
+            )
+            db.add(essay)
+
+        db.flush()
         _log_operation(db, essay.id, current_user.id, "修改", student_name)
         db.commit()
         db.refresh(essay)
@@ -414,6 +460,9 @@ def list_essays(
     collected_by: int = None,
     remark: str = None,
     essay_title: str = None,
+    task_id: int = None,
+    reviewer_id: int = None,
+    is_supplement: bool = None,
     sort_by: str = "created_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -447,10 +496,16 @@ def list_essays(
         q = q.filter(Essay.collected_by == collected_by)
     if essay_title:
         q = q.filter(Essay.essay_title.like(f"%{essay_title}%"))
+    if task_id is not None:
+        q = q.filter(Essay.task_id == task_id)
+    if reviewer_id is not None:
+        q = q.filter(Essay.reviewer_id == reviewer_id)
+    if is_supplement is not None:
+        q = q.filter(Essay.is_supplement == is_supplement)
 
     # 排序
     from sqlalchemy import case
-    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark}
+    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark, "is_supplement": Essay.is_supplement}
     
     # 处理collector_name排序
     if sort_by == "collector_name":
@@ -683,7 +738,7 @@ def claim_essay(
         raise HTTPException(status_code=400, detail="该作文已被其他人认领")
 
     essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "认领", essay.student_name)
+    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
     db.commit()
     return {"message": "认领成功"}
 
@@ -941,16 +996,27 @@ def batch_update_essays(
         raise HTTPException(status_code=400, detail="未选中任何作文")
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
     updated = 0
+    skipped = 0
     if "collected_by" in data and data["collected_by"]:
         for e in essays:
             e.collected_by = data["collected_by"]
             updated += 1
     if "task_id" in data:
+        from sqlalchemy.exc import IntegrityError
+        new_task_id = data["task_id"] if data["task_id"] else None
         for e in essays:
-            e.task_id = data["task_id"]
-            updated += 1
+            savepoint = db.begin_nested()
+            e.task_id = new_task_id
+            try:
+                db.flush()
+                savepoint.commit()
+                updated += 1
+            except IntegrityError:
+                savepoint.rollback()
+                skipped += 1
     db.commit()
-    return {"message": f"已更新 {updated} 条记录", "count": len(essays)}
+    msg = f"已更新 {updated} 条记录，{skipped} 条略过（重复冲突）" if skipped else f"已更新 {updated} 条记录"
+    return {"message": msg, "count": updated, "skipped": skipped}
 
 
 @router.post("/batch-export-docx")
@@ -1000,6 +1066,43 @@ def batch_export_docx(
 # ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====
 
 
+@router.get("/operations")
+def list_operations(
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取操作历史列表"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+
+    q = db.query(OperationLog).order_by(OperationLog.created_at.desc())
+    total = q.count()
+    logs = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    result = []
+    for log in logs:
+        user = db.query(User).filter(User.id == log.user_id).first()
+        essay = db.query(Essay).filter(Essay.id == log.essay_id).first() if log.essay_id else None
+        result.append(OperationLogOut(
+            id=log.id,
+            essay_id=log.essay_id,
+            user_id=log.user_id,
+            user_name=user.nickname or user.username if user else "未知",
+            action=log.action.value if hasattr(log.action, 'value') else log.action,
+            old_value=log.old_value or "",
+            new_value=log.new_value or "",
+            detail=log.detail or "",
+            student_name=essay.student_name if essay else "",
+            essay_title=essay.essay_title if essay else "",
+            essay_number=essay.essay_number if essay else 0,
+            created_at=log.created_at,
+        ))
+
+    return {"items": result, "total": total, "page": page, "page_size": page_size}
+
+
 @router.get("/{essay_id}", response_model=EssayOut)
 def get_essay(
     essay_id: int,
@@ -1023,6 +1126,7 @@ def update_essay(
     remark: str = "",
     collected_by: int = None,
     is_supplement: bool = None,
+    task_id: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1055,6 +1159,8 @@ def update_essay(
         essay.collected_by = collected_by
     if is_supplement is not None:
         essay.is_supplement = is_supplement
+    if task_id is not None:
+        essay.task_id = task_id if task_id > 0 else None
 
     # 如果年级/次数/学生/方式变了，移动文件
     new_grade = essay.grade
@@ -1091,45 +1197,33 @@ def update_essay(
         if new_content_file:
             essay.content_file = new_content_file
 
-    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name)
-    db.commit()
+    # 构建变更记录
+    import json
+    changes = {}
+    if old_grade != essay.grade:
+        changes["grade"] = {"old": old_grade, "new": essay.grade}
+    if old_number != essay.essay_number:
+        changes["essay_number"] = {"old": old_number, "new": essay.essay_number}
+    if old_student != essay.student_name:
+        changes["student_name"] = {"old": old_student, "new": essay.student_name}
+    if old_mode != essay.teaching_mode:
+        changes["teaching_mode"] = {"old": old_mode, "new": essay.teaching_mode}
+    if essay_title and essay_title != essay.essay_title:
+        changes["essay_title"] = {"old": essay.essay_title, "new": essay_title}
+    if remark is not None and remark != essay.remark:
+        changes["remark"] = {"old": essay.remark, "new": remark}
+    if is_supplement is not None and is_supplement != essay.is_supplement:
+        changes["is_supplement"] = {"old": essay.is_supplement, "new": is_supplement}
+
+    old_value = json.dumps(changes, ensure_ascii=False) if changes else ""
+    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name, old_value=old_value, new_value=old_value)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
     db.refresh(essay)
     return _essay_to_out(essay, db)
-
-
-@router.get("/operations")
-def list_operations(
-    page: int = 1,
-    page_size: int = 50,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """获取操作历史列表"""
-    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
-        raise HTTPException(status_code=403, detail="无权限")
-
-    q = db.query(OperationLog).order_by(OperationLog.created_at.desc())
-    total = q.count()
-    logs = q.offset((page - 1) * page_size).limit(page_size).all()
-
-    result = []
-    for log in logs:
-        user = db.query(User).filter(User.id == log.user_id).first()
-        essay = db.query(Essay).filter(Essay.id == log.essay_id).first()
-        result.append(OperationLogOut(
-            id=log.id,
-            essay_id=log.essay_id,
-            user_id=log.user_id,
-            user_name=user.nickname or user.username if user else "未知",
-            action=log.action,
-            detail=log.detail or "",
-            student_name=essay.student_name if essay else "",
-            essay_title=essay.essay_title if essay else "",
-            essay_number=essay.essay_number if essay else 0,
-            created_at=log.created_at,
-        ))
-
-    return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
 def _essay_to_out(essay: Essay, db: Session) -> EssayOut:

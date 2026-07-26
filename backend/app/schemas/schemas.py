@@ -154,10 +154,12 @@ class EssayOut(BaseModel):
 
 class OperationLogOut(BaseModel):
     id: int
-    essay_id: int
+    essay_id: Optional[int] = None
     user_id: int
     user_name: str = ""
     action: str
+    old_value: str = ""
+    new_value: str = ""
     detail: str = ""
     student_name: str = ""
     essay_title: str = ""

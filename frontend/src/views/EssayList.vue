@@ -33,6 +33,28 @@
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
         </select>
       </div>
+      <div class="filter-row" style="position:relative">
+        <span class="filter-label">任务</span>
+        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @blur="setTimeout(() => showTaskDropdown = false, 200)" />
+        <div v-if="showTaskDropdown" class="task-dropdown">
+          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
+          <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
+          <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
+        </div>
+      </div>
+      <div class="filter-row"><span class="filter-label">批改者</span>
+        <select v-model="filters.reviewerId" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="r in reviewerList" :key="r.id" :value="r.id">{{ r.nickname || r.username }}</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">是否补交</span>
+        <select v-model="filters.isSupplement" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      </div>
       <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
@@ -90,7 +112,7 @@
             <template v-for="col in visibleColumns" :key="col.key">
               <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
               <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
-              <td v-else-if="col.key === 'is_supplement'">{{ e.is_supplement ? '是' : '否' }}</td>
+              <td v-else-if="col.key === 'is_supplement'"><span :style="{ color: e.is_supplement ? '#fa8c16' : '#d9d9d9', fontSize: '16px' }">{{ e.is_supplement ? '🔄' : '' }}</span></td>
               <td v-else-if="col.key === 'word_count'">{{ e.word_count || 0 }}</td>
               <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
               <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
@@ -210,10 +232,19 @@ const showBatchTask = ref(false)
 const batchTaskId = ref(0)
 const taskSearch = ref('')
 const taskList = ref([])
+const reviewerList = ref([])
+const filterTaskSearch = ref('')
+const showTaskDropdown = ref(false)
 
 const filteredTasks = computed(() => {
   if (!taskSearch.value) return taskList.value
   const kw = taskSearch.value.toLowerCase()
+  return taskList.value.filter(t => t.name.toLowerCase().includes(kw))
+})
+
+const filteredTaskOptions = computed(() => {
+  if (!filterTaskSearch.value) return taskList.value
+  const kw = filterTaskSearch.value.toLowerCase()
   return taskList.value.filter(t => t.name.toLowerCase().includes(kw))
 })
 
@@ -240,7 +271,26 @@ const defaultCollectedBy = computed(() => {
   if (isAdmin.value) return ''
   return currentUser.value.id || ''
 })
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '' })
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '' })
+
+// ===== 筛选持久化 =====
+const FILTER_KEY = 'essay_list_filters'
+function saveFilters() {
+  localStorage.setItem(FILTER_KEY, JSON.stringify(filters.value))
+}
+function loadFilters() {
+  try {
+    const saved = localStorage.getItem(FILTER_KEY)
+    if (saved) {
+      const data = JSON.parse(saved)
+      Object.keys(filters.value).forEach(k => {
+        if (data[k] !== undefined) filters.value[k] = data[k]
+      })
+      return true
+    }
+  } catch {}
+  return false
+}
 
 // ===== 列配置 =====
 const COLUMN_KEY = 'essay_list_columns_v2'
@@ -255,7 +305,7 @@ const allColumns = ref([
   { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
   { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
   { key: 'remark', label: '备注', field: 'remark', sortable: true, sort: 'remark', visible: true },
-  { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: false, visible: false },
+  { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: false },
   { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: false, visible: false },
   { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: false, visible: false },
   { key: 'created_at', label: '收集时间', field: 'created_at', sortable: true, sort: 'created_at', visible: true },
@@ -307,6 +357,9 @@ function buildParams() {
   if (filters.value.mode) p.teaching_mode = filters.value.mode
   if (filters.value.collectedBy) p.collected_by = Number(filters.value.collectedBy)
   if (filters.value.remark) p.remark = filters.value.remark
+  if (filters.value.taskId) p.task_id = Number(filters.value.taskId)
+  if (filters.value.reviewerId) p.reviewer_id = Number(filters.value.reviewerId)
+  if (filters.value.isSupplement) p.is_supplement = filters.value.isSupplement === 'true'
   return p
 }
 
@@ -329,6 +382,7 @@ function updateTopScrollWidth() {
 
 async function applyFilter() {
   page.value = 1; selectedIds.value = []
+  saveFilters()
   await loadData()
 }
 
@@ -360,7 +414,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '' }; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
   const idx = selectedIds.value.indexOf(id)
@@ -397,8 +451,13 @@ async function batchExportDocx() {
     const disposition = res.headers['content-disposition']
     let filename = '作文导出.zip'
     if (disposition) {
-      const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i)
-      if (match) filename = decodeURIComponent(match[1])
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^";]+)/i)
+      if (utf8Match) {
+        filename = decodeURIComponent(utf8Match[1])
+      } else {
+        const match = disposition.match(/filename="?([^";]+)"?/i)
+        if (match) filename = match[1]
+      }
     }
     
     // 创建 Blob URL 并下载
@@ -442,6 +501,13 @@ async function loadTasks() {
   try {
     const res = await api.get('/essays/tasks')
     taskList.value = res.data
+  } catch {}
+}
+
+async function loadReviewers() {
+  try {
+    const res = await api.get('/admin/users')
+    reviewerList.value = res.data.filter(u => u.role && (u.role.includes('reviewer') || u.role.includes('admin')))
   } catch {}
 }
 
@@ -492,9 +558,18 @@ function exportCSV() {
 
 onMounted(async () => {
   loadColumnSettings()
-  loadTasks()
-  // 初始化筛选：管理员默认全部，其他角色默认自己
-  filters.value.collectedBy = defaultCollectedBy.value
+  await loadTasks()
+  loadReviewers()
+  // 恢复之前保存的筛选，如果没有则设置默认值
+  const hasSaved = loadFilters()
+  if (!hasSaved) {
+    filters.value.collectedBy = defaultCollectedBy.value
+  }
+  // 同步任务搜索框文字
+  if (filters.value.taskId && taskList.value.length) {
+    const t = taskList.value.find(x => x.id == filters.value.taskId)
+    if (t) filterTaskSearch.value = t.name
+  }
   await applyFilter()
 })
 </script>
@@ -519,6 +594,29 @@ onMounted(async () => {
 .filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
 .filter-input:focus { border-color: #4096ff; }
 .filter-input[type="number"] { width: 60px; }
+
+.task-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 4px;
+}
+.task-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.task-item:hover { background: #f0f0f0; }
+.task-item-active { background: #e6f4ff; color: #1677ff; }
 
 .batch-bar {
   display: flex;

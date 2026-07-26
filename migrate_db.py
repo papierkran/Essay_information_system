@@ -204,6 +204,28 @@ MIGRATIONS = [
             END $$;
         """,
     },
+    # 9. 重建 operation_logs 表（匹配最新模型结构）
+    {
+        "name": "recreate_operation_logs",
+        "sql": """
+            DROP TABLE IF EXISTS operation_logs CASCADE;
+            CREATE TABLE operation_logs (
+                id SERIAL PRIMARY KEY,
+                essay_id INTEGER,
+                user_id INTEGER NOT NULL,
+                action VARCHAR(20) NOT NULL,
+                old_value TEXT DEFAULT '',
+                new_value TEXT DEFAULT '',
+                detail VARCHAR(500) DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT fk_operation_logs_essay FOREIGN KEY (essay_id) REFERENCES essays(id) ON DELETE SET NULL,
+                CONSTRAINT fk_operation_logs_user FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            CREATE INDEX idx_operation_logs_essay_id ON operation_logs (essay_id);
+            CREATE INDEX idx_operation_logs_created_at ON operation_logs (created_at);
+            CREATE INDEX idx_operation_logs_user_id ON operation_logs (user_id);
+        """,
+    },
 ]
 
 

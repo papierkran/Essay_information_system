@@ -1,8 +1,20 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Enum as SAEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime
+import enum
 
 from ..database import Base
+
+
+class ActionEnum(str, enum.Enum):
+    """操作类型枚举"""
+    CREATE = "创建"
+    UPDATE = "修改"
+    DELETE = "删除"
+    RECOVER = "恢复"
+    EDIT = "编辑"
+    UPLOAD = "上传"
+    CORRECT = "批改"
 
 
 class EssayTask(Base):
@@ -151,15 +163,18 @@ class OperationLog(Base):
     __tablename__ = "operation_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    essay_id = Column(Integer, ForeignKey("essays.id"), nullable=False)
+    essay_id = Column(Integer, ForeignKey("essays.id", ondelete="SET NULL"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    action = Column(String(20), nullable=False)
+    action = Column(SAEnum(ActionEnum, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    old_value = Column(Text, default="")  # 变更前的值（JSON格式）
+    new_value = Column(Text, default="")  # 变更后的值（JSON格式）
     detail = Column(String(500), default="")
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
         Index("idx_operation_logs_essay_id", "essay_id"),
         Index("idx_operation_logs_created_at", "created_at"),
+        Index("idx_operation_logs_user_id", "user_id"),
     )
 
     essay = relationship("Essay", back_populates="operations", foreign_keys=[essay_id])
