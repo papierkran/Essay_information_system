@@ -198,6 +198,7 @@ async def upload_essay(
     teaching_mode: str = Form("线下"),
     remark: str = Form(""),
     content_text: str = Form(""),
+    collected_by: int = Form(None),
     files: list[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -205,6 +206,11 @@ async def upload_essay(
     # 检查权限（暂时放宽：收集者直接通过）
     if "collector" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
+
+    # 确定收集者：管理员可指定，否则用当前用户
+    collector_id = current_user.id
+    if collected_by and "admin" in current_user.role:
+        collector_id = collected_by
 
     # 确定文件类型
     file_type = "text"
@@ -241,7 +247,7 @@ async def upload_essay(
                 remark=remark,
                 content_text=content_text,
                 file_type=file_type,
-                collected_by=current_user.id,
+                collected_by=collector_id,
                 status="pending",
             )
             db.add(essay)
@@ -320,6 +326,7 @@ async def upload_correction_docx(
     essay_title: str = Form(""),
     content_text: str = Form(""),
     corrected_text: str = Form(""),
+    collected_by: int = Form(None),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -327,6 +334,11 @@ async def upload_correction_docx(
     """批量上传修改后docx：保存文件到年级目录，创建作文记录"""
     if "collector" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
+
+    # 确定收集者：管理员可指定，否则用当前用户
+    collector_id = current_user.id
+    if collected_by and "admin" in current_user.role:
+        collector_id = collected_by
 
     cls = db.query(Class).filter(Class.id == 1).first()
     if not cls:
@@ -375,7 +387,7 @@ async def upload_correction_docx(
             content_text=content_text,
             corrected_text=corrected_text if corrected_text else "",
             file_type="docx",
-            collected_by=current_user.id,
+            collected_by=collector_id,
             status="corrected" if corrected_text else "pending",
             corrected_at=datetime.now() if corrected_text else None,
             reviewer_id=current_user.id if corrected_text else None,

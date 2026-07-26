@@ -1,29 +1,32 @@
 # 📖 作文收集管理系统
 
-面向培训机构的作文收集与批改管理平台，支持双端适配（桌面端 + 手机端）。
+面向培训机构的作文收集与批改管理平台，支持桌面端和手机端双端适配。
 
 ## 功能概览
 
-| 功能 | 说明 |
+| 模块 | 功能 |
 |------|------|
-| 📤 作文上传 | 支持多图片、docx、文字粘贴，图片按序重命名 |
-| 📋 作文列表 | 多条件筛选 + 排序 + 分页 + 行内编辑 + 批量删除 |
-| ✏️ 详情编辑 | 可编辑全部字段，图片预览，重新上传文件 |
-| 📝 批改管理 | 待批列表、批改历史、批改文件上传/下载 |
-| 📊 工作台 | 快捷入口 + 最近上传 |
-| 👥 用户管理 | 多角色（管理员/收集者/批改者），多账号共存登录 |
-| 🏫 班级管理 | CSV 导入班级（预览勾选），创建/编辑/删除 |
-| ⚙️ 系统设置 | 自定义上传存储目录 |
-| 📥 导出 CSV | 当前筛选结果导出为表格文件 |
+| 📤 作文上传 | 单个/批量上传，支持多图片、docx、文字粘贴，图片按序重命名，支持更新已有作文 |
+| 📝 批量上传 | 按文件夹结构批量上传作文，批量上传批改结果（自动解析 docx 修改前/后文字） |
+| 📋 作文列表 | 8+ 条件筛选、多列排序、分页跳转、批量删除/导出/更换收集者/更换任务 |
+| ✏️ 作文详情 | 修改前/后左右分栏、字数统计、全屏模式、段落渲染、重新上传、图片预览 |
+| 📝 批改管理 | 待批列表、认领批改、文件上传 + 文字批改（corrected_text 存入数据库） |
+| 📥 下载导出 | 下载原文、导出修改前后 docx（宋体小四规范格式）、批量导出 zip、导出 CSV |
+| 📊 工作台 | 快捷入口、活跃收集任务（含实时统计）、最近上传、14 天趋势图 |
+| 👥 用户管理 | 4 角色（管理员/收集者/批改者/游客），多角色支持，多账号共存登录 |
+| 🏫 班级管理 | CRUD + ClassIn CSV 导入（预览勾选），收集任务管理（激活/停用） |
+| ⚙️ 系统设置 | 上传目录配置（自动迁移文件）、数据库连接、数据库备份/导入 |
+| 📋 操作日志 | 全部操作记录（上传/认领/批改/编辑/删除/恢复） |
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|------|
-| 前端 | Vue 3 + Vite + Vant 4 + ECharts + Axios |
-| 后端 | Python + FastAPI + SQLAlchemy + SQLite |
-| 认证 | JWT (python-jose + passlib) |
-| 文件 | python-docx（文字转 docx 模板） |
+| 前端 | Vue 3 + Vite 8 + Vant 4 + ECharts + Axios + JSZip |
+| 后端 | Python 3.10+ + FastAPI + SQLAlchemy + PostgreSQL |
+| 认证 | JWT (python-jose + passlib)，30 天有效期 |
+| 文件 | python-docx（文字转 docx，宋体小四规范格式） |
+| 部署 | Nginx 反向代理 + PostgreSQL |
 
 ## 快速启动
 
@@ -31,21 +34,21 @@
 
 ```bash
 # Python 3.10+，Node.js 18+
-pip install --break-system-packages -r backend/requirements.txt
+pip install -r backend/requirements.txt
 ```
 
-### 2. 配置环境变量（可选）
+### 2. 配置
 
 ```bash
 cp .env.example .env
-# 编辑 .env 修改 JWT 密钥和存储目录
+# 编辑 .env 修改 JWT 密钥、数据库连接、存储目录
 ```
 
 ### 3. 启动后端
 
 ```bash
 cd backend
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 0.0.0.0 --port 6886
 ```
 
 ### 4. 启动前端（开发模式）
@@ -53,14 +56,22 @@ python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm install
-npx vite --host 0.0.0.0 --port 5173
+npm run dev
 ```
 
-### 5. 访问
+### 5. 构建前端（生产部署）
 
-浏览器打开 `http://localhost:5173`
+```bash
+cd frontend
+npm run build
+# 把 dist/ 部署到 nginx
+```
 
-默认管理员账号：`admin` / `admin`
+### 6. 访问
+
+- 开发模式：`http://localhost:5173`
+- 生产模式：`https://your-domain`
+- 默认管理员：`admin` / `admin`
 
 ## 项目结构
 
@@ -68,59 +79,100 @@ npx vite --host 0.0.0.0 --port 5173
 Essay_information_system/
 ├── backend/
 │   ├── app/
-│   │   ├── api/            # 路由（auth, admin, essays）
-│   │   ├── models/         # ORM 模型
-│   │   ├── schemas/        # Pydantic 数据模型
-│   │   ├── utils/          # 工具（auth, file_utils）
-│   │   ├── database.py     # SQLAlchemy 引擎
-│   │   └── main.py         # FastAPI 入口
-│   ├── uploads/            # 作文文件存储
-│   ├── essay_system.db     # SQLite 数据库
+│   │   ├── api/
+│   │   │   ├── auth.py          # 认证接口（注册/登录/获取用户信息）
+│   │   │   ├── admin.py         # 管理接口（用户/班级/组织/任务/设置/备份）
+│   │   │   └── essays.py        # 作文接口（上传/列表/详情/批改/下载/导出/操作日志）
+│   │   ├── models/
+│   │   │   └── models.py        # SQLAlchemy ORM 模型
+│   │   ├── schemas/
+│   │   │   └── schemas.py       # Pydantic 数据模型
+│   │   ├── utils/
+│   │   │   ├── auth.py          # JWT 认证工具
+│   │   │   └── file_utils.py    # 文件路径/命名工具
+│   │   ├── database.py          # SQLAlchemy 引擎
+│   │   └── main.py              # FastAPI 入口（CORS、启动同步）
+│   ├── uploads/                 # 作文文件存储（默认）
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── views/          # 页面组件
-│   │   ├── api/            # API 客户端 + 多账号认证
-│   │   ├── router/         # 路由配置
-│   │   ├── composables/    # 组合式函数
-│   │   └── App.vue         # 根组件（含全局样式）
-│   ├── vite.config.js
+│   │   ├── views/               # 页面组件（12 个页面）
+│   │   ├── api/
+│   │   │   └── index.js         # Axios 实例 + 多账号认证 + 拦截器
+│   │   ├── router/
+│   │   │   └── index.js         # 路由配置（含角色权限守卫）
+│   │   ├── composables/
+│   │   │   └── useScreen.js     # 响应式断点 composable
+│   │   ├── utils/
+│   │   │   └── format.js        # 日期格式化工具
+│   │   ├── App.vue              # 根组件（侧边栏导航）
+│   │   └── main.js              # 入口
+│   ├── vite.config.js           # Vite 配置（API 代理、后端地址）
 │   └── package.json
-├── $MMM $DD.docx           # 作文模板（含分页符）
-├── .env.example            # 环境变量示例
-└── 作文批改系统计划书.md    # 需求文档
+├── $MMM $DD.docx                # 作文模板（含"修改前：""修改后："分页结构）
+├── .env.example                 # 环境变量示例
+├── 作文批改系统计划书.md         # 需求文档
+└── README.md
+```
+
+## 角色权限
+
+| 角色 | 可操作 |
+|------|--------|
+| **管理员** | 全部权限（用户/班级/作文管理、系统设置、数据库备份、批量操作） |
+| **收集者** | 上传作文（单个+批量）、查看作文列表、编辑/删除自己的作文 |
+| **批改者** | 查看待批列表、认领批改、上传批改结果（文件+文字）、查看操作日志 |
+| **游客** | 只读查看（作文列表、待批列表、详情、操作日志），不可下载/导出/编辑 |
+
+- 一人可多角色（如 `"collector,reviewer"`）
+- `admin` 用户为超级管理员，不可被其他管理员编辑/删除
+- 游客看到的操作按钮均为「仅查看」
+
+## 导出 docx 格式规范
+
+| 属性 | 值 |
+|------|-----|
+| 字体 | 宋体（含东亚字体） |
+| 字号 | 小四 = 12pt |
+| 行距 | 最小值 12 磅 |
+| 首行缩进 | 0.74cm |
+| 段前/段后 | 0 |
+| 标题行（前 2 段） | 居中 + 加粗 |
+| 文件名 | `改_{标题}——{学生}第{N}次{线上/线下}{补交}.docx` |
+
+## 存储目录结构
+
+```
+{upload_dir}/
+  {年份}/
+    {月}月/
+      {日}/
+        {年级}{线上/线下}第{N}次/
+          {收集者}/
+            {学生姓名}/
+              1.jpg
+              2.jpg
+              {标题}_{姓名}_{次数}_{补交}_{备注}_{时间戳}.docx
+              改_{原文件名}.docx
 ```
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `ESSAY_JWT_SECRET` | JWT 签名密钥 | `essay-…tion`（开发用，生产环境务必修改） |
-| `ESSAY_UPLOAD_DIR` | 上传文件存储目录 | `uploads`（相对 backend/） |
+| `ESSAY_JWT_SECRET` | JWT 签名密钥 | `essay-system-secret-key-2026` |
+| `ESSAY_UPLOAD_DIR` | 上传文件存储目录 | `uploads` |
+| `ESSAY_DB_HOST` | 数据库主机 | `localhost` |
+| `ESSAY_DB_PORT` | 数据库端口 | `5432` |
+| `ESSAY_DB_USER` | 数据库用户 | `postgres` |
+| `ESSAY_DB_PASSWORD` | 数据库密码 | （空） |
+| `ESSAY_DB_NAME` | 数据库名 | `essay_system` |
 
-## 角色权限
+## API 后端地址配置
 
-| 角色 | 可操作 |
-|------|--------|
-| 管理员 | 全部权限（用户/班级/作文管理、系统设置） |
-| 收集者 | 上传作文、查看自己收集的列表、详情编辑 |
-| 批改者 | 查看待批列表、认领批改、上传批改结果 |
+前端支持两种方式配置后端地址：
 
-一人可多角色（如既是收集者又是批改者）。
+1. **Nginx 代理**（推荐）：前端 `/api` 由 nginx 转发到后端，无需额外配置
+2. **手动设置**：登录页 ⚙️ 设置服务器地址，或管理后台系统设置中配置
 
-## 存储目录结构
-
-```
-{上传目录}/
-  {年份}/
-    {月}月/
-      {日}/
-        {年级}{线上/线下}/
-          第{次数}次/
-            {收集者}/
-              {学生姓名}/
-                1.jpg
-                2.jpg
-                {标题}_{姓名}_{次数}_{时间戳}.docx
-                改_{原文件名}.docx
-```
+`vite.config.js` 中可通过 `define.__API_BASE_URL__` 在构建时写死后端地址。

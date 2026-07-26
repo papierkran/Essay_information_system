@@ -40,6 +40,8 @@
               </van-radio-group>
             </template>
           </van-field>
+          <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
+            @click="showCollectorPicker = true" />
 
           <van-cell title="选择文件夹" :label="folderSelected ? `${studentCount} 位学生，${totalFiles} 个文件` : '点击选择'" is-link @click="$refs.folderInput.click()" />
           <input ref="folderInput" type="file" webkitdirectory style="display:none" @change="onFolderChange" />
@@ -78,6 +80,11 @@
           </div>
           <div class="tip-note">* 破折号「——」后的名字为学生姓名</div>
           <div class="tip-note">* 支持格式：docx/doc</div>
+          <div class="tip-note">* 将自动识别学生姓名、标题和作文内容</div>
+          <div class="tip-note">* 格式为以下格式才会正常识别   </div>
+          <div class="tip-note">* {第一行}修改前：</div>
+          <div class="tip-note">* {第二行}（作文标题）</div>
+          <div class="tip-note">* {第三行}——（学生姓名）</div>
         </div>
 
         <van-form @submit="onSubmitCorrections">
@@ -92,6 +99,8 @@
               </van-radio-group>
             </template>
           </van-field>
+          <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
+            @click="showCollectorPicker = true" />
 
           <van-cell title="选择文件夹" :label="corFolderSelected ? `${corFiles.length} 个文件` : '点击选择'" is-link @click="$refs.corFolderInput.click()" />
           <input ref="corFolderInput" type="file" webkitdirectory style="display:none" @change="onCorFolderChange" />
@@ -145,6 +154,14 @@
         </van-cell>
       </div>
     </van-action-sheet>
+
+    <!-- 收集者选择器 -->
+    <van-action-sheet v-model:show="showCollectorPicker" title="选择收集者">
+      <div class="picker-list">
+        <van-cell title="默认（当前用户）" @click="selectCollector(null)" />
+        <van-cell v-for="c in collectorList" :key="c.id" :title="c.nickname || c.username" @click="selectCollector(c)" />
+      </div>
+    </van-action-sheet>
   </div>
 </template>
 
@@ -152,19 +169,27 @@
 import { ref, computed, onMounted } from 'vue'
 import { showToast, showDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 import JSZip from 'jszip'
 
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
+const currentUser = computed(() => getAuth()?.user || {})
+const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
+
 const loading = ref(false)
 const corLoading = ref(false)
 const showGradePicker = ref(false)
 const showCorGradePicker = ref(false)
 const showTaskPicker = ref(false)
+const showCollectorPicker = ref(false)
 const selectedGrade = ref('')
 const corSelectedGrade = ref('')
 const selectedTaskName = ref('')
 const selectedTaskId = ref(null)
+const selectedCollector = ref(null)
+const selectedCollectorName = ref('')
+const collectorList = ref([])
 const grades = ['初一', '初二', '初三', '高一', '高二', '高三']
 const folderInput = ref(null)
 const corFolderInput = ref(null)
@@ -199,6 +224,12 @@ onMounted(async () => {
     const res = await api.get('/essays/tasks')
     tasks.value = res.data
   } catch {}
+  if (isAdmin.value) {
+    try {
+      const res = await api.get('/admin/users')
+      collectorList.value = (res.data || []).filter(u => u.role?.includes('collector') || u.role?.includes('admin'))
+    } catch {}
+  }
 })
 
 function selectGrade(g) {
@@ -211,6 +242,17 @@ function selectCorGrade(g) {
   corForm.value.grade = g
   corSelectedGrade.value = g
   showCorGradePicker.value = false
+}
+
+function selectCollector(c) {
+  if (c) {
+    selectedCollector.value = c.id
+    selectedCollectorName.value = c.nickname || c.username
+  } else {
+    selectedCollector.value = null
+    selectedCollectorName.value = ''
+  }
+  showCollectorPicker.value = false
 }
 
 function selectTask(tpl) {
@@ -449,6 +491,9 @@ async function onSubmitEssays() {
       if (selectedTaskId.value) {
         fd.append('task_id', String(selectedTaskId.value))
       }
+      if (selectedCollector.value) {
+        fd.append('collected_by', String(selectedCollector.value))
+      }
       fd.append('grade', form.value.grade)
       fd.append('essay_number', form.value.essay_number || 1)
       fd.append('student_name', studentName)
@@ -518,6 +563,9 @@ async function onSubmitCorrections() {
       fd.append('content_text', before || '')
       fd.append('corrected_text', after || '')
       fd.append('file', file)
+      if (selectedCollector.value) {
+        fd.append('collected_by', String(selectedCollector.value))
+      }
 
       console.log('上传:', finalStudentName)
       await api.post('/essays/upload-correction-docx', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
