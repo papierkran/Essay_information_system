@@ -2,7 +2,7 @@
   "upload_dir": "/root/桌面/数据库作文/",
   "database": {
     "host": "192.168.31.245",
-    "port": "5432",
+    "port": "54321",
     "user": "postgres",
     "database": "essay_system"
   }

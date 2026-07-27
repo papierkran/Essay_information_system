@@ -111,6 +111,12 @@
                 <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
                 <button v-if="essay.content_file && !isGuest" class="btn-mini" @click="downloadOriginal">📥 下载原文</button>
                 <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
+                <button class="btn-mini" @click="doOcr" :disabled="ocrLoading" v-if="essay.file_type === 'image' && canEdit">
+                  {{ ocrLoading ? '⏳ OCR中...' : '🔍 OCR识别' }}
+                </button>
+                <button class="btn-mini" @click="doAiCorrect" :disabled="aiLoading" v-if="essay.content_text && canEdit">
+                  {{ aiLoading ? '⏳ AI修正中...' : '🤖 AI错别字修正' }}
+                </button>
               </div>
               <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
             </div>
@@ -240,7 +246,12 @@
 
         <!-- 修改前 -->
         <van-cell-group inset style="margin-top:12px">
-          <van-cell title="✏️ 修改前" />
+          <van-cell title="✏️ 修改前">
+            <template v-if="canEdit">
+              <van-button v-if="essay.file_type === 'image'" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:8px">🔍 OCR识别</van-button>
+              <van-button v-if="essay.content_text" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 AI错别字修正</van-button>
+            </template>
+          </van-cell>
           <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
             <img v-for="(img, i) in images" :key="i" :src="img" @click="previewImage(img, 'original')" class="essay-image" />
           </div>
@@ -368,6 +379,8 @@ const selectedTaskName = computed(() => {
 const desktopFileList = ref([])
 const fullscreenMode = ref(null) // 'original' | 'corrected' | 'both' | null
 const showWordCount = ref(true)
+const ocrLoading = ref(false)
+const aiLoading = ref(false)
 
 const originalParagraphs = computed(() => {
   return (essay.value?.content_text || '').split('\n').filter(s => s.trim())
@@ -456,6 +469,33 @@ async function doReuploadDesktop() {
     showToast(err.response?.data?.detail || '上传失败')
   } finally {
     reuploading.value = false
+  }
+}
+
+async function doOcr() {
+  ocrLoading.value = true
+  try {
+    const res = await api.post(`/essays/${route.params.id}/ocr`)
+    showToast(`OCR 完成，识别到 ${res.data.word_count} 字`)
+    await loadEssay()
+  } catch(err) {
+    showToast(err.response?.data?.detail || 'OCR 识别失败')
+  } finally {
+    ocrLoading.value = false
+  }
+}
+
+async function doAiCorrect() {
+  aiLoading.value = true
+  try {
+    const res = await api.post(`/essays/${route.params.id}/ai-correct`)
+    const meta = res.data.metadata
+    showToast(`AI 修正完成，标题：${meta.title}，作者：${meta.author}`)
+    await loadEssay()
+  } catch(err) {
+    showToast(err.response?.data?.detail || 'AI 修正失败')
+  } finally {
+    aiLoading.value = false
   }
 }
 

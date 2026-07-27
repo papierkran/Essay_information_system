@@ -152,6 +152,20 @@ class EssayOut(BaseModel):
         from_attributes = True
 
 
+class SystemConfigOut(BaseModel):
+    config_key: str
+    config_value: dict
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SystemConfigUpdate(BaseModel):
+    config_key: str
+    config_value: dict
+
+
 class OperationLogOut(BaseModel):
     id: int
     essay_id: Optional[int] = None

@@ -159,6 +159,16 @@ class Essay(Base):
                               primaryjoin="and_(OperationLog.essay_id==Essay.id, Essay.deleted_at==None)")
 
 
+class SystemConfig(Base):
+    """系统配置（OCR、LLM 等），按 key 存储 JSON value"""
+    __tablename__ = "system_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    config_key = Column(String(100), unique=True, nullable=False)
+    config_value = Column(Text, default="{}")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class OperationLog(Base):
     __tablename__ = "operation_logs"
 

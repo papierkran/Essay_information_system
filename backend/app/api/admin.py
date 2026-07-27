@@ -7,10 +7,11 @@ import shutil
 from datetime import datetime
 
 from ..database import get_db, SessionLocal
-from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask
+from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask, SystemConfig
 from ..schemas.schemas import (
     UserCreate, UserOut, OrganizationCreate, OrganizationOut,
-    ClassCreate, ClassOut, TaskCreate, TaskOut, PasswordChange
+    ClassCreate, ClassOut, TaskCreate, TaskOut, PasswordChange,
+    SystemConfigOut, SystemConfigUpdate,
 )
 from ..utils.auth import hash_password, get_current_user
 
@@ -458,6 +459,61 @@ def update_settings(data: dict, current_user: User = Depends(get_current_user)):
                 db.close()
 
     return {"message": "设置已保存", "moved": moved}
+
+
+def _get_config(db: Session, key: str, default: dict = None) -> dict:
+    row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+    if row:
+        try:
+            return json.loads(row.config_value)
+        except (json.JSONDecodeError, TypeError):
+            return default or {}
+    return default or {}
+
+
+def _set_config(db: Session, key: str, value: dict):
+    row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+    if row:
+        row.config_value = json.dumps(value, ensure_ascii=False)
+    else:
+        row = SystemConfig(config_key=key, config_value=json.dumps(value, ensure_ascii=False))
+        db.add(row)
+    db.commit()
+
+
+@router.get("/config/{config_key}", response_model=SystemConfigOut)
+def get_config(
+    config_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取指定配置（如 ocr, llm）"""
+    require_admin(current_user)
+    value = _get_config(db, config_key)
+    row = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+    return SystemConfigOut(
+        config_key=config_key,
+        config_value=value,
+        updated_at=row.updated_at if row else None,
+    )
+
+
+@router.put("/config/{config_key}", response_model=SystemConfigOut)
+def update_config(
+    config_key: str,
+    data: SystemConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """更新指定配置"""
+    require_admin(current_user)
+    _set_config(db, config_key, data.config_value)
+    row = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+    return SystemConfigOut(
+        config_key=config_key,
+        config_value=_get_config(db, config_key),
+        updated_at=row.updated_at if row else None,
+    )
 
 
 @router.get("/database/export")

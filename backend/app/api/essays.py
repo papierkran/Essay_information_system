@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import tempfile
 import zipfile
@@ -9,13 +10,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ..database import get_db
-from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog
+from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog, SystemConfig
 from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
     has_correction, count_corrections_in_dir, get_upload_dir,
 )
+from ..utils.ocr_utils import ocr_essay_images, ai_correct_text
 
 router = APIRouter(prefix="/api/essays", tags=["作文"])
 
@@ -980,6 +982,84 @@ def export_docx(
         filename=f"改_{dl_name}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@router.post("/{essay_id}/ocr")
+def ocr_essay(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """对作文图片进行 OCR 识别，提取文字保存到 content_text"""
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+    if essay.file_type != "image":
+        raise HTTPException(status_code=400, detail="仅支持图片类型的作文进行 OCR")
+    if not essay.content_file:
+        raise HTTPException(status_code=400, detail="作文无文件")
+
+    cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "ocr").first()
+    ocr_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not ocr_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="OCR 功能未启用，请先在系统设置中配置")
+
+    xfyun_cfg = ocr_cfg.get("xfyun", {})
+    if not xfyun_cfg.get("url") or not xfyun_cfg.get("appid") or not xfyun_cfg.get("api_key"):
+        raise HTTPException(status_code=400, detail="讯飞 OCR 配置不完整")
+
+    essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+    try:
+        text = ocr_essay_images(essay_dir, xfyun_cfg)
+        essay.content_text = text
+        _log_operation(db, essay.id, current_user.id, "OCR", "OCR 识别完成")
+        db.commit()
+        db.refresh(essay)
+        return {"content_text": text, "word_count": len(text)}
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{essay_id}/ai-correct")
+def ai_correct_essay(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """对作文内容进行 AI 错别字修正，保存到 corrected_text"""
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+    if not essay.content_text or not essay.content_text.strip():
+        raise HTTPException(status_code=400, detail="作文无文字内容，请先进行 OCR 或手动输入")
+
+    cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "llm").first()
+    llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not llm_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="AI 修正功能未启用，请先在系统设置中配置")
+
+    try:
+        result = ai_correct_text(essay.content_text, llm_cfg)
+        corrected_text = result.get("修改后内容", essay.content_text)
+        essay.corrected_text = corrected_text
+        essay.status = "corrected"
+        essay.corrected_at = datetime.now()
+        essay.reviewer_id = current_user.id
+        _log_operation(db, essay.id, current_user.id, "CORRECT", "AI 错别字修正")
+        db.commit()
+        db.refresh(essay)
+        return {
+            "corrected_text": corrected_text,
+            "metadata": {
+                "title": result.get("作文标题", "未知"),
+                "author": result.get("作者", "未知"),
+                "word_count": result.get("原文字数", "未知"),
+                "grade": result.get("年级", "未知"),
+                "mode": result.get("线上或线下", "未知"),
+            },
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/batch-update")
