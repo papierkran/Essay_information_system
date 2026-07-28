@@ -2,9 +2,56 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">未改列表</div>
 
+    <!-- 筛选栏 -->
+    <div v-if="isDesktop" class="filter-bar">
+      <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">状态</span>
+        <select v-model="filters.status" class="filter-input" @change="applyFilter">
+          <option value="">全部(未修改+待确认)</option>
+          <option value="pending">未修改</option>
+          <option value="confirming">待确认</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">年级</span>
+        <select v-model="filters.grade" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.essayNumber" type="number" min="1" placeholder="不限" class="filter-input" style="width:70px" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">提交方式</span>
+        <select v-model="filters.teachingMode" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option value="线下">线下</option>
+          <option value="线上">线上</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">收集者</span>
+        <select v-model="filters.collectedBy" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">任务</span>
+        <select v-model.number="filters.taskId" class="filter-input" @change="applyFilter">
+          <option :value="0">全部</option>
+          <option v-for="t in taskList" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+      </div>
+      <div class="filter-row"><span class="filter-label">上传起始</span><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">上传截止</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">字数范围</span>
+        <input v-model.number="filters.wordCountMin" type="number" min="0" placeholder="最小" class="filter-input" style="width:70px" @input="applyFilter" />
+        <span style="color:#999">~</span>
+        <input v-model.number="filters.wordCountMax" type="number" min="0" placeholder="最大" class="filter-input" style="width:70px" @input="applyFilter" />
+      </div>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
+    </div>
+
     <!-- 批量操作工具栏 -->
     <div v-if="isDesktop && list.length" class="batch-bar">
-      <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
+      <span style="font-size:13px;color:#666">共 <strong>{{ sortedList.length }}</strong> 条 / 已选 {{ selectedIds.length }} 条</span>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
@@ -13,24 +60,24 @@
     </div>
 
     <!-- 桌面端：表格 -->
-    <table v-if="isDesktop && list.length" class="desktop-table">
+    <table v-if="isDesktop && sortedList.length" class="desktop-table">
       <thead><tr>
         <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
         <th>状态</th>
         <th>学生姓名</th>
         <th>作文标题</th>
         <th>任务名称</th>
-        <th>提交方式</th>
-        <th>第几次作文</th>
-        <th>修改前字数</th>
-        <th>修改后字数</th>
+        <th class="sortable" @click="toggleSort('teaching_mode')">提交方式 {{ sortIcon('teaching_mode') }}</th>
+        <th class="sortable" @click="toggleSort('essay_number')">第几次作文 {{ sortIcon('essay_number') }}</th>
+        <th class="sortable" @click="toggleSort('word_count')">修改前字数 {{ sortIcon('word_count') }}</th>
+        <th class="sortable" @click="toggleSort('corrected_word_count')">修改后字数 {{ sortIcon('corrected_word_count') }}</th>
         <th>收集者</th>
         <th>类型</th>
-        <th>上传时间</th>
+        <th class="sortable" @click="toggleSort('created_at')">上传时间 {{ sortIcon('created_at') }}</th>
         <th>操作</th>
       </tr></thead>
       <tbody>
-        <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
+        <tr v-for="e in sortedList" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
           <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
           <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
           <td>{{ e.student_name }}</td>
@@ -76,7 +123,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast, showDialog } from 'vant'
+import { showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
@@ -88,16 +135,69 @@ const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest')
 const list = ref([])
 const loading = ref(false)
 const selectedIds = ref([])
+const collectorList = ref([])
+const taskList = ref([])
+const grades = ['初一','初二','初三','高一','高二','高三']
+
+const filters = ref({
+  name: '',
+  essayTitle: '',
+  status: '',
+  grade: '',
+  essayNumber: '',
+  teachingMode: '',
+  collectedBy: '',
+  taskId: 0,
+  dateFrom: '',
+  dateTo: '',
+  wordCountMin: '',
+  wordCountMax: '',
+})
 
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', corrected: '已修改' }[s] || s }
 
-const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
+const sortBy = ref('')
+const sortOrder = ref('asc')
+
+const sortedList = computed(() => {
+  const arr = [...list.value]
+  if (!sortBy.value) return arr
+  arr.sort((a, b) => {
+    let va = a[sortBy.value] ?? ''
+    let vb = b[sortBy.value] ?? ''
+    if (typeof va === 'string') va = va.toLowerCase()
+    if (typeof vb === 'string') vb = vb.toLowerCase()
+    if (va < vb) return sortOrder.value === 'asc' ? -1 : 1
+    if (va > vb) return sortOrder.value === 'asc' ? 1 : -1
+    return 0
+  })
+  return arr
+})
+
+function toggleSort(field) {
+  if (sortBy.value === field) {
+    if (sortOrder.value === 'asc') sortOrder.value = 'desc'
+    else if (sortOrder.value === 'desc') { sortBy.value = ''; sortOrder.value = 'asc' }
+  } else {
+    sortBy.value = field
+    sortOrder.value = 'asc'
+  }
+}
+
+function sortIcon(field) {
+  if (sortBy.value !== field) return '⇅'
+  return sortOrder.value === 'asc' ? '▲' : '▼'
+}
+
+const allSelected = computed(() => sortedList.value.length > 0 && sortedList.value.every(e => selectedIds.value.includes(e.id)))
 
 function toggleAll() {
   if (allSelected.value) {
     selectedIds.value = []
   } else {
-    selectedIds.value = list.value.map(e => e.id)
+    const visibleIds = sortedList.value.map(e => e.id)
+    const newSet = [...new Set([...selectedIds.value, ...visibleIds])]
+    selectedIds.value = newSet
   }
 }
 function toggleSelect(id) {
@@ -106,12 +206,44 @@ function toggleSelect(id) {
   else selectedIds.value.push(id)
 }
 
+function buildParams() {
+  const p = {}
+  if (filters.value.name) p.name = filters.value.name
+  if (filters.value.essayTitle) p.essay_title = filters.value.essayTitle
+  if (filters.value.status) p.status = filters.value.status
+  if (filters.value.grade) p.grade = filters.value.grade
+  if (filters.value.essayNumber) p.essay_number = filters.value.essayNumber
+  if (filters.value.teachingMode) p.teaching_mode = filters.value.teachingMode
+  if (filters.value.collectedBy) p.collected_by = filters.value.collectedBy
+  if (filters.value.taskId) p.task_id = filters.value.taskId
+  if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
+  if (filters.value.dateTo) p.date_to = filters.value.dateTo
+  if (filters.value.wordCountMin) p.word_count_min = filters.value.wordCountMin
+  if (filters.value.wordCountMax) p.word_count_max = filters.value.wordCountMax
+  return p
+}
+
+let loadTimer = null
+function applyFilter() {
+  clearTimeout(loadTimer)
+  loadTimer = setTimeout(load, 300)
+}
+
 async function load() {
   loading.value = true
-  try { const res = await api.get('/essays/pending'); list.value = res.data }
+  try {
+    const res = await api.get('/essays/pending', { params: buildParams() })
+    list.value = res.data
+  }
   catch { showToast('加载失败') }
   finally { loading.value = false }
 }
+
+function clearFilter() {
+  filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: 0, dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
+  load()
+}
+
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
 async function batchOcr() {
@@ -121,13 +253,20 @@ async function batchOcr() {
     const res = await api.post('/essays/batch-ocr', { ids: selectedIds.value })
     const d = res.data
     closeToast()
-    showSuccessToast(`OCR 完成：成功 ${d.success} 条${d.errors.length ? `，失败 ${d.errors.length} 条` : ''}`)
+    let msg = `OCR 完成：成功 ${d.success} 条`
+    if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
+    if (d.success === 0 && d.errors.length === 0) msg = `选中 ${d.total} 条，全部非图片类型，无需 OCR`
+    if (d.success === 0 && d.errors.length > 0) {
+      showFailToast(`OCR 全部失败：${d.errors[0]?.reason || '未知'}`)
+    } else {
+      showSuccessToast(msg)
+    }
     if (d.errors.length) console.warn('OCR 失败明细:', d.errors)
     selectedIds.value = []
     await load()
   } catch (err) {
     closeToast()
-    showFailToast(err.response?.data?.detail || '批量 OCR 失败')
+    showFailToast(err.response?.data?.detail || '批量 OCR 失败（请确认系统设置中 OCR 已启用）')
   }
 }
 
@@ -138,7 +277,13 @@ async function batchAiCorrect() {
     const res = await api.post('/essays/batch-ai-correct', { ids: selectedIds.value })
     const d = res.data
     closeToast()
-    showSuccessToast(`AI 修正完成：成功 ${d.success} 条${d.errors.length ? `，失败 ${d.errors.length} 条` : ''}`)
+    if (d.success === 0 && d.errors.length > 0) {
+      showFailToast(`AI 修正全部失败：${d.errors[0]?.reason || '未知'}`)
+    } else {
+      let msg = `AI 修正完成：成功 ${d.success} 条`
+      if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
+      showSuccessToast(msg)
+    }
     if (d.errors.length) console.warn('AI 修正失败明细:', d.errors)
     selectedIds.value = []
     await load()
@@ -155,13 +300,21 @@ async function batchAiRewrite() {
     const res = await api.post('/essays/batch-ai-rewrite', { ids: selectedIds.value })
     const d = res.data
     closeToast()
-    showSuccessToast(`AI 改写完成：成功 ${d.success} 条${d.errors.length ? `，失败 ${d.errors.length} 条` : ''}`)
+    if (d.success === 0 && d.errors.length > 0) {
+      showFailToast(`AI 改写全部失败：${d.errors[0]?.reason || '未知原因'}`)
+    } else if (d.success === 0 && d.errors.length === 0) {
+      showFailToast(`选中 ${d.total} 条，全部无文字内容，请先进行 🔍 OCR识别`)
+    } else {
+      let msg = `AI 改写完成：成功 ${d.success} 条`
+      if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
+      showSuccessToast(msg)
+    }
     if (d.errors.length) console.warn('AI 改写失败明细:', d.errors)
     selectedIds.value = []
     await load()
   } catch (err) {
     closeToast()
-    showFailToast(err.response?.data?.detail || '批量 AI 改写失败')
+    showFailToast(err.response?.data?.detail || '批量 AI 改写失败（请确认系统设置中 AI 改作文已启用）')
   }
 }
 
@@ -190,12 +343,51 @@ async function confirmSingle(e) {
   }
 }
 
-onMounted(load)
+async function fetchCollectorsAndTasks() {
+  try { const res = await api.get('/essays/collectors'); collectorList.value = res.data }
+  catch (err) { console.warn('获取收集者列表失败:', err) }
+  try { const res = await api.get('/essays/tasks'); taskList.value = res.data }
+  catch (err) { console.warn('获取任务列表失败:', err) }
+}
+
+onMounted(() => { load(); fetchCollectorsAndTasks() })
 </script>
 
 <style scoped>
 .page { padding: 0; }
 @media (max-width: 767px) { .page { min-height: 100vh; } }
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.filter-row { display: flex; align-items: center; gap: 4px; }
+.filter-label { font-size: 13px; color: #666; white-space: nowrap; }
+.filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
+.filter-input:focus { border-color: #4096ff; }
+.filter-input[type="number"] { width: 60px; }
+
 .batch-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
 .row-selected { background-color: #e6f4ff !important; }
+.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable:hover { background: #f0f0f0; }
+
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.tag-pending { background: #fff7e6; color: #d46b08; }
+.tag-confirming { background: #e6f4ff; color: #1677ff; }
+.tag-correcting { background: #e6f4ff; color: #1677ff; }
+.tag-corrected { background: #f6ffed; color: #52c41a; }
+
+@media (max-width: 767px) {
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-row { width: 100%; }
+  .filter-input { flex: 1; }
+}
 </style>

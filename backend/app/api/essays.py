@@ -161,6 +161,19 @@ def list_classes_public(
     return [{"id": c.id, "name": c.name, "org_id": c.org_id} for c in classes]
 
 
+@router.get("/collectors")
+def list_collectors(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取收集者列表（用于筛选下拉）"""
+    collectors = db.query(User).filter(
+        User.deleted_at == None,
+        (User.role.like('%collector%') | User.role.like('%admin%'))
+    ).all()
+    return [{"id": u.id, "nickname": u.nickname or u.username} for u in collectors]
+
+
 def get_collector_classes(user: User, db: Session) -> list[int]:
     """获取用户负责的班级 ID 列表"""
     ucs = db.query(UserClass).filter(
@@ -419,7 +432,7 @@ async def upload_correction_docx(
             existing.essay_title = essay_title or existing.essay_title
             existing.content_text = content_text or existing.content_text
             existing.corrected_text = corrected_text if corrected_text else existing.corrected_text
-            existing.status = "confirming" if corrected_text and existing.status != "corrected" else existing.status
+            existing.status = "confirming" if corrected_text and existing.status == "pending" and existing.content_text and existing.content_text.strip() else existing.status
             existing.corrected_at = datetime.now() if corrected_text else existing.corrected_at
             existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
             existing.teaching_mode = teaching_mode or existing.teaching_mode
@@ -440,7 +453,7 @@ async def upload_correction_docx(
                 corrected_text=corrected_text if corrected_text else "",
                 file_type="docx",
                 collected_by=collector_id,
-                status="confirming" if corrected_text else "pending",
+                status="confirming" if corrected_text and content_text and content_text.strip() else "pending",
                 corrected_at=datetime.now() if corrected_text else None,
                 reviewer_id=current_user.id if corrected_text else None,
             )
@@ -575,19 +588,66 @@ def list_essays(
 
 @router.get("/pending", response_model=list[EssayOut])
 def pending_essays(
+    name: str = None,
+    grade: str = None,
+    essay_number: int = None,
+    teaching_mode: str = None,
+    task_id: int = None,
+    collected_by: int = None,
+    essay_title: str = None,
+    status: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    sort_by: str = "created_at",
+    sort_order: str = "asc",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取待修改的作文列表（修改者/游客用）"""
+    """获取待修改的作文列表（修改者/游客用），支持筛选"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
-    essays = db.query(Essay).filter(
+    q = db.query(Essay).filter(
         Essay.deleted_at == None,
-        Essay.status.in_(["pending", "confirming"]),
         Essay.file_saved == True,
-    ).order_by(Essay.created_at.asc()).all()
+    )
 
+    if status:
+        q = q.filter(Essay.status == status)
+    else:
+        q = q.filter(Essay.status.in_(["pending", "confirming"]))
+    if name:
+        q = q.filter(Essay.student_name.like(f"%{name}%"))
+    if grade:
+        q = q.filter(Essay.grade == grade)
+    if essay_number:
+        q = q.filter(Essay.essay_number == essay_number)
+    if teaching_mode:
+        q = q.filter(Essay.teaching_mode == teaching_mode)
+    if task_id is not None:
+        q = q.filter(Essay.task_id == task_id)
+    if collected_by:
+        q = q.filter(Essay.collected_by == collected_by)
+    if essay_title:
+        q = q.filter(Essay.essay_title.like(f"%{essay_title}%"))
+    if date_from:
+        q = q.filter(Essay.created_at >= date_from)
+    if date_to:
+        q = q.filter(Essay.created_at <= date_to + " 23:59:59")
+
+    allowed_sort = {
+        "created_at": Essay.created_at,
+        "student_name": Essay.student_name,
+        "grade": Essay.grade,
+        "essay_number": Essay.essay_number,
+    }
+    order_col = allowed_sort.get(sort_by, Essay.created_at)
+    if sort_order == "desc":
+        q = q.order_by(order_col.desc())
+    else:
+        q = q.order_by(order_col.asc())
+
+    essays = q.all()
     result = [_essay_to_out(e, db) for e in essays]
     return result
 
@@ -853,7 +913,7 @@ async def upload_correction(
         essay.corrected_text = corrected_text.strip()
 
     essay.reviewer_id = current_user.id
-    if essay.status != "corrected":
+    if essay.status == "pending" and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
     essay.corrected_at = datetime.now()
     _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
@@ -1034,8 +1094,6 @@ def ocr_essay(
     try:
         text = ocr_essay_images(essay_dir, xfyun_cfg)
         essay.content_text = text
-        if essay.status == "pending":
-            essay.status = "confirming"
         _log_operation(db, essay.id, current_user.id, "OCR", "OCR 识别完成")
         db.commit()
         db.refresh(essay)
@@ -1058,17 +1116,20 @@ def ai_correct_essay(
         raise HTTPException(status_code=400, detail="作文无文字内容，请先进行 OCR 或手动输入")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "llm_typo_fix").first()
-    llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not cfg_row:
+        raise HTTPException(status_code=400, detail="AI 错别字修正配置不存在，请先在系统设置中保存一次")
+    try:
+        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="AI 错别字修正配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
-        raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请先在系统设置中配置")
+        raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请在系统设置的「修改前-AI错别字修正」中勾选启用并保存")
 
     try:
         result = ai_correct_text(essay.content_text, llm_cfg)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
-        if essay.status == "pending":
-            essay.status = "confirming"
-        _log_operation(db, essay.id, current_user.id, "EDIT", "AI 错别字修正")
+        _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正")
         db.commit()
         db.refresh(essay)
         return {
@@ -1099,9 +1160,14 @@ def ai_rewrite_essay(
         raise HTTPException(status_code=400, detail="作文无文字内容")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "llm_editor").first()
-    llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not cfg_row:
+        raise HTTPException(status_code=400, detail="AI 改作文配置不存在，请先在系统设置中保存一次")
+    try:
+        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="AI 改作文配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
-        raise HTTPException(status_code=400, detail="AI 改作文未启用，请先在系统设置中配置")
+        raise HTTPException(status_code=400, detail="AI 改作文未启用，请在系统设置的「修改后-AI改作文」中勾选启用并保存")
 
     count_min = llm_cfg.get("count_min")
     count_max = llm_cfg.get("count_max")
@@ -1119,11 +1185,11 @@ def ai_rewrite_essay(
             count_min=count_min, count_max=count_max,
         )
         essay.corrected_text = rewritten
-        if essay.status != "corrected":
+        if essay.status == "pending" and essay.content_text and essay.content_text.strip():
             essay.status = "confirming"
         essay.corrected_at = datetime.now()
         essay.reviewer_id = current_user.id
-        _log_operation(db, essay.id, current_user.id, "CORRECT", "AI 改写")
+        _log_operation(db, essay.id, current_user.id, "批改", "AI 改写")
         db.commit()
         db.refresh(essay)
         return {"corrected_text": rewritten, "char_count": count_cjk_chars(rewritten)}
@@ -1148,7 +1214,7 @@ def confirm_essay(
     essay.status = "corrected"
     essay.corrected_at = datetime.now()
     essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "CORRECT", "确认修改")
+    _log_operation(db, essay.id, current_user.id, "批改", "确认修改")
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -1269,8 +1335,6 @@ def batch_ocr_essays(
             essay_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
             text = ocr_essay_images(essay_dir, xfyun_cfg)
             e.content_text = text
-            if e.status == "pending":
-                e.status = "confirming"
             _log_operation(db, e.id, current_user.id, "OCR", "批量 OCR 识别完成")
             success += 1
         except Exception as ex:
@@ -1296,9 +1360,14 @@ def batch_ai_correct_essays(
         raise HTTPException(status_code=404, detail="未找到选中的作文")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "llm_typo_fix").first()
-    llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not cfg_row:
+        raise HTTPException(status_code=400, detail="AI 错别字修正配置不存在，请先在系统设置中保存一次")
+    try:
+        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="AI 错别字修正配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
-        raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请先在系统设置中配置")
+        raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请在系统设置的「修改前-AI错别字修正」中勾选启用并保存")
 
     success = 0
     errors = []
@@ -1310,9 +1379,7 @@ def batch_ai_correct_essays(
             result = ai_correct_text(e.content_text, llm_cfg)
             corrected_text = result.get("修改后内容", e.content_text)
             e.content_text = corrected_text
-            if e.status == "pending":
-                e.status = "confirming"
-            _log_operation(db, e.id, current_user.id, "EDIT", "批量 AI 错别字修正")
+            _log_operation(db, e.id, current_user.id, "编辑", "批量 AI 错别字修正")
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
@@ -1337,9 +1404,14 @@ def batch_ai_rewrite_essays(
         raise HTTPException(status_code=404, detail="未找到选中的作文")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "llm_editor").first()
-    llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    if not cfg_row:
+        raise HTTPException(status_code=400, detail="AI 改作文配置不存在，请先在系统设置中保存一次")
+    try:
+        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="AI 改作文配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
-        raise HTTPException(status_code=400, detail="AI 改作文未启用，请先在系统设置中配置")
+        raise HTTPException(status_code=400, detail="AI 改作文未启用，请在系统设置的「修改后-AI改作文」中勾选启用并保存")
 
     success = 0
     errors = []
@@ -1350,11 +1422,11 @@ def batch_ai_rewrite_essays(
         try:
             rewritten = ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt"))
             e.corrected_text = rewritten
-            if e.status != "corrected":
+            if e.status == "pending" and e.content_text and e.content_text.strip():
                 e.status = "confirming"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
-            _log_operation(db, e.id, current_user.id, "CORRECT", "批量 AI 改写")
+            _log_operation(db, e.id, current_user.id, "批改", "批量 AI 改写")
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
@@ -1383,7 +1455,7 @@ def batch_confirm_essays(
             e.status = "corrected"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
-            _log_operation(db, e.id, current_user.id, "CORRECT", "确认修改")
+            _log_operation(db, e.id, current_user.id, "批改", "确认修改")
             count += 1
     db.commit()
     return {"success": count, "total": len(essays)}
@@ -1573,7 +1645,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         corr_exists = has_correction(original_dir, original_name)
 
     # 自动同步状态
-    if corr_exists and essay.status == "pending":
+    if corr_exists and essay.status == "pending" and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
         db.commit()
 

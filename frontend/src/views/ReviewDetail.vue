@@ -127,22 +127,25 @@
                 </div>
               </div>
             <div class="pane-body">
-              <div v-if="editingOriginal" class="edit-area">
-                <textarea ref="editTextareaRef" v-model="editOriginalText" class="edit-textarea" @input="autoResizeTextarea"></textarea>
-                <div class="edit-actions">
-                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveOriginalEdit" :disabled="savingOriginalEdit">💾 保存</button>
-                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelOriginalEdit">取消</button>
+              <div class="edit-wrapper">
+                <div v-show="editingOriginal" class="edit-area">
+                  <textarea ref="editTextareaRef" v-model="editOriginalText" class="edit-textarea" @input="autoResizeTextarea"></textarea>
+                  <div class="edit-actions">
+                    <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveOriginalEdit" :disabled="savingOriginalEdit">💾 保存</button>
+                    <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelOriginalEdit">取消</button>
+                  </div>
                 </div>
-              </div>
-              <div v-else>
-                <div v-if="essay.content_text" class="content-text">
-                  <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                <div :class="{ 'content-hidden': editingOriginal }">
+                  <div v-if="essay.content_text" class="content-text">
+                    <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                  </div>
+                  <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
+                  <div v-if="showWordCount" class="word-count">{{ (essay.content_text || '').length }} 字</div>
                 </div>
-                <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
                 <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
-                  <img v-for="(img, i) in images" :key="i" :src="img" @click="previewImage(img, 'original')" class="essay-image" />
+                  <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
                 </div>
-                <div v-if="showWordCount" class="word-count">{{ (essay.content_text || '').length }} 字</div>
+                <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
               </div>
             </div>
             <!-- 重新上传面板（修改前） -->
@@ -191,19 +194,21 @@
               </div>
             </div>
             <div class="pane-body">
-              <div v-if="editingCorrected" class="edit-area">
-                <textarea ref="editCorrectedRef" v-model="editCorrectedText" class="edit-textarea" @input="autoResizeCorrected"></textarea>
-                <div class="edit-actions">
-                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
-                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
+              <div class="edit-wrapper">
+                <div v-show="editingCorrected" class="edit-area">
+                  <textarea ref="editCorrectedRef" v-model="editCorrectedText" class="edit-textarea" @input="autoResizeCorrected"></textarea>
+                  <div class="edit-actions">
+                    <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
+                    <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
+                  </div>
                 </div>
-              </div>
-              <div v-else>
-                <div v-if="essay.corrected_text" class="content-text corrected-content">
-                  <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                <div :class="{ 'content-hidden': editingCorrected }">
+                  <div v-if="essay.corrected_text" class="content-text corrected-content">
+                    <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                  </div>
+                  <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+                  <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
                 </div>
-                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-                <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
               </div>
             </div>
             <!-- 重新上传面板（修改后：仅文字输入） -->
@@ -289,11 +294,12 @@
             </template>
           </van-cell>
           <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
-            <img v-for="(img, i) in images" :key="i" :src="img" @click="previewImage(img, 'original')" class="essay-image" />
+            <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
           </div>
           <div v-if="essay.content_text" class="content-text">
             <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
           </div>
+          <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
         </van-cell-group>
 
         <!-- 修改后 -->
@@ -354,7 +360,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -391,6 +397,7 @@ const selectedFile = ref(null)
 const uploading = ref(false)
 const fileInput = ref(null)
 const images = ref([])
+const expandedImage = ref('')
 const showPreview = ref(false)
 const previewIndex = ref(0)
 const previewImages = ref([])
@@ -542,7 +549,7 @@ async function doOcr() {
 async function doAiCorrect() {
   aiLoading.value = true
   try {
-    const res = await api.post(`/essays/${route.params.id}/ai-correct`)
+    const res = await api.post(`/essays/${route.params.id}/ai-correct`, null, { timeout: 120000 })
     const meta = res.data.metadata
     showToast(`AI 修正完成，标题：${meta.title}，作者：${meta.author}`)
     await loadEssay()
@@ -556,7 +563,6 @@ async function doAiCorrect() {
 function autoResizeTextarea() {
   const el = editTextareaRef.value
   if (el) {
-    el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
   }
 }
@@ -567,7 +573,12 @@ function toggleEditOriginal() {
   } else {
     editOriginalText.value = essay.value.content_text || ''
     editingOriginal.value = true
-    setTimeout(autoResizeTextarea, 0)
+    nextTick(() => {
+      const el = editTextareaRef.value
+      if (el) {
+        el.style.height = el.scrollHeight + 'px'
+      }
+    })
   }
 }
 
@@ -597,7 +608,6 @@ async function saveOriginalEdit() {
 function autoResizeCorrected() {
   const el = editCorrectedRef.value
   if (el) {
-    el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
   }
 }
@@ -608,7 +618,10 @@ function toggleEditCorrected() {
   } else {
     editCorrectedText.value = essay.value.corrected_text || ''
     editingCorrected.value = true
-    setTimeout(autoResizeCorrected, 0)
+    nextTick(() => {
+      const el = editCorrectedRef.value
+      if (el) el.style.height = el.scrollHeight + 'px'
+    })
   }
 }
 
@@ -620,12 +633,15 @@ function cancelCorrectedEdit() {
 async function doAiRewrite() {
   aiRewriteLoading.value = true
   try {
-    const res = await api.post(`/essays/${route.params.id}/ai-rewrite`)
+    const res = await api.post(`/essays/${route.params.id}/ai-rewrite`, null, { timeout: 180000 })
+    console.log('AI 改写返回:', res.data)
     const msg = res.data.char_count ? `AI 改写完成（${res.data.char_count}字）` : 'AI 改写完成'
     showToast(msg)
     await loadEssay()
   } catch(err) {
-    showToast(err.response?.data?.detail || 'AI 改写失败')
+    console.error('AI 改写失败:', err)
+    const detail = err.response?.data?.detail || err.message || 'AI 改写失败'
+    showToast(detail)
   } finally {
     aiRewriteLoading.value = false
   }
@@ -696,6 +712,10 @@ async function loadTasks() {
     const res = await api.get('/essays/tasks')
     taskList.value = res.data
   } catch {}
+}
+
+function toggleExpandImage(url) {
+  expandedImage.value = expandedImage.value === url ? '' : url
 }
 
 function previewImage(url) {
@@ -1000,6 +1020,18 @@ async function doReupload() {
   transition: transform 0.2s;
 }
 .essay-image:hover { transform: scale(1.05); }
+.essay-image-selected { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.3); }
+
+.expanded-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
 
 /* ===== 重新上传区域 ===== */
 .reupload-area {
@@ -1043,7 +1075,9 @@ async function doReupload() {
 
 .picker-list { max-height: 300px; overflow-y: auto; }
 
-.edit-area { padding: 8px 0; }
+.edit-wrapper { position: relative; }
+.content-hidden { visibility: hidden; }
+.edit-area { position: absolute; top: 0; left: 0; right: 0; z-index: 5; padding: 8px 0; background: #fff; }
 .edit-textarea {
   width: 100%;
   padding: 12px;

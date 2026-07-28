@@ -15,6 +15,9 @@ class ActionEnum(str, enum.Enum):
     EDIT = "编辑"
     UPLOAD = "上传"
     CORRECT = "批改"
+    OCR = "OCR"
+    _legacy_edit = "EDIT"
+    _legacy_correct = "CORRECT"
 
 
 class EssayTask(Base):

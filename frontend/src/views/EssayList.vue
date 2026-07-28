@@ -16,8 +16,9 @@
       <div class="filter-row"><span class="filter-label">状态</span>
         <select v-model="filters.status" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
-          <option value="pending">未改</option>
-          <option value="corrected">已批</option>
+          <option value="pending">未修改</option>
+          <option value="confirming">待确认</option>
+          <option value="corrected">已修改</option>
         </select>
       </div>
       <div class="filter-row"><span class="filter-label">提交方式</span>
@@ -675,6 +676,7 @@ onMounted(async () => {
 
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag-pending { background: #fff7e6; color: #d46b08; }
+.tag-confirming { background: #e6f4ff; color: #1677ff; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 
