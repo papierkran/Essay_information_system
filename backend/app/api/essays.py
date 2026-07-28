@@ -262,7 +262,13 @@ async def upload_essay(
         essay.is_supplement = is_supplement
         essay.teaching_mode = teaching_mode
         essay.remark = remark
-        essay.content_text = content_text
+        if content_text:  # 只有提供了文字才更新
+            essay.content_text = content_text
+        # 删除旧的图片/文件
+        if essay.content_file and files:
+            old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+            if os.path.exists(old_dir) and get_upload_dir() in old_dir:
+                shutil.rmtree(old_dir, ignore_errors=True)
     else:
         try:
             essay = Essay(

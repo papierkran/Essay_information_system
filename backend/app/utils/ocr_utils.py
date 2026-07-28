@@ -46,9 +46,23 @@ def ocr_image(image_path: str, config: dict, timeout: int = 30) -> list[str]:
     data = {"image": base64.b64encode(img_data).decode("utf-8")}
     headers = _get_xfyun_header(config)
 
-    resp = requests.post(url, headers=headers, data=data, timeout=timeout)
-    resp.raise_for_status()
-    result = resp.json()
+    max_retries = 3
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, headers=headers, data=data, timeout=timeout)
+            resp.raise_for_status()
+            result = resp.json()
+            break
+        except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ReadTimeout, requests.exceptions.Timeout) as e:
+            last_error = e
+            logger.warning(f"OCR 请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            continue
+    else:
+        raise RuntimeError(f"OCR 请求失败，已重试 {max_retries} 次: {last_error}")
 
     if result.get("code") != "0":
         raise RuntimeError(f"OCR 失败: {result.get('desc', '未知错误')}")
