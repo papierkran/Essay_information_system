@@ -364,7 +364,7 @@ import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api, { useAuth } from '../api'
+import api, { useAuth, getBaseUrl } from '../api'
 import { formatDateTime } from '../utils/format'
 
 const route = useRoute()
@@ -691,8 +691,9 @@ async function loadEssay() {
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
-      const base = window.location.origin
-      images.value = imgRes.data.images.map(u => base + u)
+      const baseUrl = getBaseUrl().replace(/\/api\/?$/, '')
+      const origin = baseUrl.startsWith('http') ? baseUrl : window.location.origin
+      images.value = imgRes.data.images.map(u => origin + u)
     }
   } catch {
     showToast('加载失败')

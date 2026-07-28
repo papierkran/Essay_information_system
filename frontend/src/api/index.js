@@ -75,4 +75,5 @@ export function useAuth() {
   }
 }
 
+export { getBaseUrl }
 export default api
