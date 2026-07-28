@@ -88,15 +88,15 @@ class OrganizationOut(BaseModel):
         from_attributes = True
 
 
-# ===== 班级 =====
+# ===== 课程 =====
 class ClassCreate(BaseModel):
-    org_id: int
+    org_id: Optional[int] = None
     name: str
 
 
 class ClassOut(BaseModel):
     id: int
-    org_id: int
+    org_id: Optional[int] = None
     name: str
     created_at: datetime
 

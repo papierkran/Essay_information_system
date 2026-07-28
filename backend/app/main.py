@@ -11,7 +11,6 @@ app = FastAPI(title="作文修改收集信息系统", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

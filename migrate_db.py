@@ -78,13 +78,13 @@ MIGRATIONS = [
                 ) THEN
                     -- 先修正不符合约束的数据
                     UPDATE essays SET status = 'corrected'
-                        WHERE status NOT IN ('pending', 'corrected');
+                        WHERE status NOT IN ('pending', 'confirming', 'corrected');
                     UPDATE essays SET status = 'pending'
                         WHERE status IS NULL OR status = '';
 
                     ALTER TABLE essays
                     ADD CONSTRAINT ck_essays_status
-                    CHECK (status IN ('pending', 'corrected'));
+                    CHECK (status IN ('pending', 'confirming', 'corrected'));
                 END IF;
             END $$;
         """,
@@ -224,6 +224,25 @@ MIGRATIONS = [
             CREATE INDEX idx_operation_logs_essay_id ON operation_logs (essay_id);
             CREATE INDEX idx_operation_logs_created_at ON operation_logs (created_at);
             CREATE INDEX idx_operation_logs_user_id ON operation_logs (user_id);
+        """,
+    },
+    # 9. 允许 classes.org_id 为空
+    {
+        "name": "make_classes_org_id_nullable",
+        "sql": "ALTER TABLE classes ALTER COLUMN org_id DROP NOT NULL;",
+    },
+    # 10. essay_tasks.name 唯一约束
+    {
+        "name": "uq_essay_tasks_name",
+        "sql": """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_essay_tasks_name'
+                ) THEN
+                    ALTER TABLE essay_tasks ADD CONSTRAINT uq_essay_tasks_name UNIQUE (name);
+                END IF;
+            END $$;
         """,
     },
 ]

@@ -102,6 +102,49 @@ def ocr_essay_images(essay_dir: str, ocr_config: dict) -> str:
     return "\n".join(all_paragraphs)
 
 
+DEFAULT_EDITOR_PROMPT = (
+    "下面是一篇中文文章，请你【对文章进行改写】。\n"
+    "要求：\n"
+    "1. 可以改变原意，但要保持文章主题不变\n"
+    "2. 可以润色文风\n"
+    "3. 可以增删内容，但要保持文章结构合理\n"
+    "4. 保持原有段落结构\n"
+    "5. 只输出修改后的完整文章正文\n"
+    "6. 格式应该是  标题  （\\n）下一行  ——xx(替换为姓名)  然后文章内容\n"
+    "标题不要出现 题目： 标题：等字样\n\n"
+    "{text}"
+)
+
+
+def _create_llm_client(llm_config: dict):
+    base_url = (llm_config.get("base_url") or "").strip() or "https://api.deepseek.com/v1"
+    api_key = (llm_config.get("api_key") or "").strip()
+    model = (llm_config.get("model") or "").strip() or "deepseek-chat"
+    provider_name = llm_config.get("provider", "deepseek")
+
+    if not api_key:
+        raise RuntimeError(f"LLM API Key 未配置 (provider: {provider_name})")
+
+    proxy_env_vars = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
+    saved_proxy = {}
+    for var in proxy_env_vars:
+        if var in os.environ:
+            saved_proxy[var] = os.environ.pop(var)
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+    finally:
+        os.environ.update(saved_proxy)
+
+    return client, model
+
+
+def _build_prompt(prompt_template: str, text: str) -> str:
+    if "{text}" in prompt_template:
+        return prompt_template.replace("{text}", text)
+    return prompt_template + "\n\n" + text
+
+
 # ========== AI 错别字修正 (OpenAI-compatible) ==========
 
 DEFAULT_TYPO_FIX_PROMPT = (
@@ -134,33 +177,11 @@ DEFAULT_TYPO_FIX_PROMPT = (
 )
 
 
-def ai_correct_text(text: str, llm_config: dict) -> dict:
-    provider_name = llm_config.get("provider", "deepseek")
-    providers = llm_config.get("providers", {})
-    provider = providers.get(provider_name, {})
-    base_url = (provider.get("base_url") or "").strip() or "https://api.deepseek.com/v1"
-    api_key = (provider.get("api_key") or "").strip()
-    model = (provider.get("model") or "").strip() or "deepseek-chat"
-    prompt_template = llm_config.get("prompt", DEFAULT_TYPO_FIX_PROMPT)
-
-    if not api_key:
-        raise RuntimeError(f"LLM API Key 未配置 (provider: {provider_name})")
-
-    proxy_env_vars = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
-    saved_proxy = {}
-    for var in proxy_env_vars:
-        if var in os.environ:
-            saved_proxy[var] = os.environ.pop(var)
-
-    try:
-        client = OpenAI(api_key=api_key, base_url=base_url)
-    finally:
-        os.environ.update(saved_proxy)
-
-    if "{text}" in prompt_template:
-        prompt = prompt_template.replace("{text}", text)
-    else:
-        prompt = prompt_template + "\n\n" + text
+def ai_correct_text(text: str, llm_config: dict, prompt_template: str = None) -> dict:
+    client, model = _create_llm_client(llm_config)
+    if not prompt_template:
+        prompt_template = llm_config.get("prompt") or DEFAULT_TYPO_FIX_PROMPT
+    prompt = _build_prompt(prompt_template, text)
 
     response = client.chat.completions.create(
         model=model,
@@ -196,3 +217,57 @@ def ai_correct_text(text: str, llm_config: dict) -> dict:
             "线上或线下": "未知",
             "修改后内容": result_text,
         }
+
+
+def count_cjk_chars(text: str) -> int:
+    count = 0
+    for char in text:
+        if '\u4e00' <= char <= '\u9fff' or '\u3400' <= char <= '\u4dbf':
+            count += 1
+    return count
+
+
+def ai_rewrite_text(text: str, llm_config: dict, prompt_template: str = None, count_min: int = None, count_max: int = None) -> str:
+    client, model = _create_llm_client(llm_config)
+    if not prompt_template:
+        prompt_template = DEFAULT_EDITOR_PROMPT
+
+    max_attempts = 3
+    last_result = None
+
+    for attempt in range(1, max_attempts + 1):
+        prompt = _build_prompt(prompt_template, text)
+
+        if attempt > 1 and count_min is not None and count_max is not None:
+            hint = (
+                f"\n\n注意：你上次返回的内容字数不符合要求（{last_count}字），"
+                f"请确保中文字数在 {count_min}-{count_max} 之间，重新修改。"
+            )
+            prompt += hint
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "你是一名优秀的中文写作编辑助手"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            stream=False,
+        )
+
+        result_text = response.choices[0].message.content.strip()
+        last_result = result_text
+
+        if count_min is not None and count_max is not None:
+            last_count = count_cjk_chars(result_text)
+            if last_count < count_min or last_count > count_max:
+                if attempt >= max_attempts:
+                    raise RuntimeError(
+                        f"AI 改写后字数 {last_count} 不在 {count_min}-{count_max} 范围内，"
+                        f"已重试 {max_attempts} 次仍不符合要求"
+                    )
+                continue
+
+        return result_text
+
+    return last_result

@@ -29,7 +29,7 @@
             </div>
             <div class="stat-item">
               <div class="stat-value">{{ tpl._stats?.pending || 0 }}</div>
-              <div class="stat-label">待批改</div>
+              <div class="stat-label">未改</div>
             </div>
           </div>
         </div>
@@ -117,7 +117,7 @@ function getDeadlineDaysLeft(deadline) {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
-function statusLabel(s) { return { pending: '待修改', correcting: '修改中', corrected: '已修改' }[s] || s }
+function statusLabel(s) { return { pending: '未修改', confirming: '待确认', corrected: '已修改' }[s] || s }
 
 function goUpload() { router.push('/essay/upload') }
 function goList() { router.push('/essay/list') }

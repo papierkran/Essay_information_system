@@ -78,6 +78,9 @@
             <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()" style="width:100%">
                 {{ uploading ? '提交中...' : '提交修改' }}
             </button>
+            <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="width:100%;margin-top:8px">
+              ✅ 确认修改
+            </button>
           </template>
           <template v-else>
             <div class="card-header"><h3>✅ 已修改</h3></div>
@@ -105,47 +108,62 @@
         <div class="essay-split">
           <!-- 左：修改前 -->
           <div class="essay-pane" :class="{ 'fullscreen-pane': fullscreenMode === 'original' }">
-            <div class="pane-header">
-              <div class="pane-header-left">
-                <span class="pane-title">✏️ 修改前</span>
-                <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
-                <button v-if="essay.content_file && !isGuest" class="btn-mini" @click="downloadOriginal">📥 下载原文</button>
-                <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
-                <button class="btn-mini" @click="doOcr" :disabled="ocrLoading" v-if="essay.file_type === 'image' && canEdit">
-                  {{ ocrLoading ? '⏳ OCR中...' : '🔍 OCR识别' }}
-                </button>
-                <button class="btn-mini" @click="doAiCorrect" :disabled="aiLoading" v-if="essay.content_text && canEdit">
-                  {{ aiLoading ? '⏳ AI修正中...' : '🤖 AI错别字修正' }}
-                </button>
+              <div class="pane-header">
+                <div class="pane-header-left">
+                  <span class="pane-title">✏️ 修改前</span>
+                  <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
+                  <button v-if="essay.content_file && !isGuest" class="btn-mini" @click="downloadOriginal">📥 下载原文</button>
+                  <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
+                  <button class="btn-mini" @click="doOcr" :disabled="ocrLoading" v-if="essay.file_type === 'image' && canEdit">
+                    {{ ocrLoading ? '⏳ OCR中...' : '🔍 OCR识别' }}
+                  </button>
+                  <button class="btn-mini" @click="doAiCorrect" :disabled="aiLoading" v-if="essay.content_text && canEdit">
+                    {{ aiLoading ? '⏳ AI修正中...' : '🤖 AI错别字修正' }}
+                  </button>
+                </div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn-mini" @click="toggleEditOriginal" v-if="essay.content_text && canEdit">{{ editingOriginal ? '✕ 取消' : '✏️ 编辑' }}</button>
+                  <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
+                </div>
               </div>
-              <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
-            </div>
             <div class="pane-body">
-              <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
-                <img v-for="(img, i) in images" :key="i" :src="img" @click="previewImage(img, 'original')" class="essay-image" />
+              <div v-if="editingOriginal" class="edit-area">
+                <textarea ref="editTextareaRef" v-model="editOriginalText" class="edit-textarea" @input="autoResizeTextarea"></textarea>
+                <div class="edit-actions">
+                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveOriginalEdit" :disabled="savingOriginalEdit">💾 保存</button>
+                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelOriginalEdit">取消</button>
+                </div>
               </div>
-              <div v-if="essay.content_text" class="content-text">
-                <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+              <div v-else>
+                <div v-if="essay.content_text" class="content-text">
+                  <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                </div>
+                <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
+                <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
+                  <img v-for="(img, i) in images" :key="i" :src="img" @click="previewImage(img, 'original')" class="essay-image" />
+                </div>
+                <div v-if="showWordCount" class="word-count">{{ (essay.content_text || '').length }} 字</div>
               </div>
-              <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
-              <div v-if="showWordCount" class="word-count">{{ (essay.content_text || '').length }} 字</div>
             </div>
             <!-- 重新上传面板（修改前） -->
             <div v-if="showReuploadOriginal" class="reupload-area">
               <div class="form-group">
-                <label>上传文件（docx/图片，可多选）</label>
-                <div class="upload-preview">
-                  <div v-for="(item, i) in desktopFileList" :key="i" class="upload-preview-item">
-                    <img v-if="previewable(item)" :src="item.url" class="upload-thumb" @click="previewDesktopImage(item)" />
-                    <div v-else class="upload-file-icon">📄</div>
-                    <span class="upload-name">{{ item.name }}</span>
-                    <button class="upload-remove" @click="removeDesktopFile(i)">✕</button>
+                <label>上传文件（docx/图片，可多选，支持拖拽）</label>
+                <div class="drop-zone" @dragover.prevent @dragenter.prevent @drop.prevent="onDropFiles">
+                  <div v-if="desktopFileList.length === 0" class="drop-hint">拖拽文件到此处，或点击下方按钮选择</div>
+                  <div class="upload-preview">
+                    <div v-for="(item, i) in desktopFileList" :key="i" class="upload-preview-item">
+                      <img v-if="previewable(item)" :src="item.url" class="upload-thumb" @click="previewDesktopImage(item)" />
+                      <div v-else class="upload-file-icon">📄</div>
+                      <span class="upload-name">{{ item.name }}</span>
+                      <button class="upload-remove" @click="removeDesktopFile(i)">✕</button>
+                    </div>
                   </div>
+                  <label class="btn" style="cursor:pointer;display:inline-flex;margin-top:8px">
+                    选择文件
+                    <input type="file" multiple accept=".docx,.doc,.jpg,.jpeg,.png" style="display:none" @change="onDesktopFiles" />
+                  </label>
                 </div>
-                <label class="btn" style="cursor:pointer;display:inline-flex">
-                  选择文件
-                  <input type="file" multiple accept=".docx,.doc,.jpg,.jpeg,.png" style="display:none" @change="onDesktopFiles" />
-                </label>
               </div>
               <div class="form-group">
                 <label>或粘贴文字</label>
@@ -163,15 +181,30 @@
               <div class="pane-header-left">
                 <span class="pane-title">✅ 修改后</span>
                 <button class="btn-mini" @click="toggleReuploadCorrected" v-if="canEdit">📤 重新上传</button>
+                <button class="btn-mini" @click="doAiRewrite" :disabled="aiRewriteLoading" v-if="essay.content_text && canEdit">
+                  {{ aiRewriteLoading ? '⏳ AI改写中...' : '🤖 一键修改' }}
+                </button>
               </div>
-              <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
+              <div style="display:flex;gap:4px">
+                <button class="btn-mini" @click="toggleEditCorrected" v-if="essay.corrected_text && canEdit">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
+                <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
+              </div>
             </div>
             <div class="pane-body">
-              <div v-if="essay.corrected_text" class="content-text corrected-content">
-                <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+              <div v-if="editingCorrected" class="edit-area">
+                <textarea ref="editCorrectedRef" v-model="editCorrectedText" class="edit-textarea" @input="autoResizeCorrected"></textarea>
+                <div class="edit-actions">
+                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
+                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
+                </div>
               </div>
-              <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-              <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
+              <div v-else>
+                <div v-if="essay.corrected_text" class="content-text corrected-content">
+                  <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                </div>
+                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+                <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
+              </div>
             </div>
             <!-- 重新上传面板（修改后：仅文字输入） -->
             <div v-if="showReuploadCorrected" class="reupload-area">
@@ -186,6 +219,9 @@
               </div>
               <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()">
               {{ uploading ? '提交中...' : '提交修改' }}
+              </button>
+              <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="margin-top:8px;width:100%">
+                ✅ 确认修改
               </button>
             </div>
           </div>
@@ -275,6 +311,7 @@
           <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
           <div style="margin:16px">
             <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
+            <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
           </div>
         </van-cell-group>
 
@@ -381,6 +418,15 @@ const fullscreenMode = ref(null) // 'original' | 'corrected' | 'both' | null
 const showWordCount = ref(true)
 const ocrLoading = ref(false)
 const aiLoading = ref(false)
+const editingOriginal = ref(false)
+const editOriginalText = ref('')
+const savingOriginalEdit = ref(false)
+const editTextareaRef = ref(null)
+const editingCorrected = ref(false)
+const editCorrectedText = ref('')
+const savingCorrectedEdit = ref(false)
+const editCorrectedRef = ref(null)
+const aiRewriteLoading = ref(false)
 
 const originalParagraphs = computed(() => {
   return (essay.value?.content_text || '').split('\n').filter(s => s.trim())
@@ -425,6 +471,14 @@ function previewDesktopImage(item) {
   const idx = previewImages.value.findIndex(u => u === item.url)
   previewIndex.value = idx >= 0 ? idx : 0
   showPreview.value = true
+}
+
+function onDropFiles(e) {
+  const files = Array.from(e.dataTransfer.files)
+  files.forEach(f => {
+    const url = URL.createObjectURL(f)
+    desktopFileList.value.push({ file: f, name: f.name, type: f.type, url })
+  })
 }
 
 async function showOriginalImages() {
@@ -496,6 +550,102 @@ async function doAiCorrect() {
     showToast(err.response?.data?.detail || 'AI 修正失败')
   } finally {
     aiLoading.value = false
+  }
+}
+
+function autoResizeTextarea() {
+  const el = editTextareaRef.value
+  if (el) {
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+}
+
+function toggleEditOriginal() {
+  if (editingOriginal.value) {
+    cancelOriginalEdit()
+  } else {
+    editOriginalText.value = essay.value.content_text || ''
+    editingOriginal.value = true
+    setTimeout(autoResizeTextarea, 0)
+  }
+}
+
+function cancelOriginalEdit() {
+  editingOriginal.value = false
+  editOriginalText.value = ''
+}
+
+async function saveOriginalEdit() {
+  if (!canEdit.value) {
+    showToast('无权修改')
+    return
+  }
+  savingOriginalEdit.value = true
+  try {
+    await api.put(`/essays/${route.params.id}`, null, { params: { content_text: editOriginalText.value } })
+    showToast('保存成功')
+    editingOriginal.value = false
+    await loadEssay()
+  } catch(err) {
+    showToast(err.response?.data?.detail || '保存失败')
+  } finally {
+    savingOriginalEdit.value = false
+  }
+}
+
+function autoResizeCorrected() {
+  const el = editCorrectedRef.value
+  if (el) {
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+}
+
+function toggleEditCorrected() {
+  if (editingCorrected.value) {
+    cancelCorrectedEdit()
+  } else {
+    editCorrectedText.value = essay.value.corrected_text || ''
+    editingCorrected.value = true
+    setTimeout(autoResizeCorrected, 0)
+  }
+}
+
+function cancelCorrectedEdit() {
+  editingCorrected.value = false
+  editCorrectedText.value = ''
+}
+
+async function doAiRewrite() {
+  aiRewriteLoading.value = true
+  try {
+    const res = await api.post(`/essays/${route.params.id}/ai-rewrite`)
+    const msg = res.data.char_count ? `AI 改写完成（${res.data.char_count}字）` : 'AI 改写完成'
+    showToast(msg)
+    await loadEssay()
+  } catch(err) {
+    showToast(err.response?.data?.detail || 'AI 改写失败')
+  } finally {
+    aiRewriteLoading.value = false
+  }
+}
+
+async function saveCorrectedEdit() {
+  if (!canEdit.value) {
+    showToast('无权修改')
+    return
+  }
+  savingCorrectedEdit.value = true
+  try {
+    await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: editCorrectedText.value } })
+    showToast('保存成功')
+    editingCorrected.value = false
+    await loadEssay()
+  } catch(err) {
+    showToast(err.response?.data?.detail || '保存失败')
+  } finally {
+    savingCorrectedEdit.value = false
   }
 }
 
@@ -634,6 +784,14 @@ async function uploadCorrection() {
   finally { uploading.value = false }
 }
 
+async function confirmEssay() {
+  try {
+    await api.post(`/essays/${route.params.id}/confirm`)
+    showToast('已确认修改')
+    await loadEssay()
+  } catch (err) { showToast(err.response?.data?.detail || '确认失败') }
+}
+
 async function saveEdit() {
   if (!canEdit.value) {
     showToast('无权修改此作文')
@@ -643,9 +801,18 @@ async function saveEdit() {
   try {
     const res = await api.put(`/essays/${route.params.id}`, null, { params: editForm.value })
     essay.value = { ...essay.value, ...res.data }
-    // 同步 editForm，让下拉框也更新显示
-    editForm.value.task_id = res.data.task_id || 0
-    editForm.value.collected_by = res.data.collected_by
+    // 同步 editForm 全部字段
+    Object.assign(editForm.value, {
+      student_name: res.data.student_name,
+      grade: res.data.grade,
+      essay_title: res.data.essay_title,
+      essay_number: res.data.essay_number,
+      teaching_mode: res.data.teaching_mode || '线下',
+      remark: res.data.remark,
+      collected_by: res.data.collected_by,
+      is_supplement: res.data.is_supplement || false,
+      task_id: res.data.task_id || 0,
+    })
     showToast('保存成功')
   } catch(err) {
     showToast(err.response?.data?.detail || '保存失败')
@@ -875,6 +1042,36 @@ async function doReupload() {
 }
 
 .picker-list { max-height: 300px; overflow-y: auto; }
+
+.edit-area { padding: 8px 0; }
+.edit-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  font-family: inherit;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  box-sizing: border-box;
+}
+.edit-textarea:focus { border-color: #4096ff; }
+.edit-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+.drop-zone {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  background: #fafafa;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: default;
+}
+.drop-zone:hover { border-color: #4096ff; background: #f0f5ff; }
+.drop-hint { color: #999; font-size: 13px; padding: 12px 0; }
+.drop-zone .upload-preview { margin-top: 0; }
 
 /* ===== 全屏遮罩 ===== */
 .fullscreen-overlay {

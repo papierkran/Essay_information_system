@@ -16,7 +16,7 @@
       <div class="filter-row"><span class="filter-label">状态</span>
         <select v-model="filters.status" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
-          <option value="pending">待批</option>
+          <option value="pending">未改</option>
           <option value="corrected">已批</option>
         </select>
       </div>
@@ -55,6 +55,8 @@
           <option value="false">否</option>
         </select>
       </div>
+      <div class="filter-row"><span class="filter-label">收集时间</span><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:130px" @change="applyFilter" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:130px" @change="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">修改时间</span><input v-model="filters.correctedFrom" type="date" class="filter-input" style="width:130px" @change="applyFilter" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model="filters.correctedTo" type="date" class="filter-input" style="width:130px" @change="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
@@ -64,7 +66,7 @@
     <!-- 统计行 -->
     <div class="stats-bar">
       <span>共 <strong>{{ total }}</strong> 条</span>
-      <span class="stat-pending">待修改 <strong>{{ pendingTotal }}</strong></span>
+      <span class="stat-pending">未改 <strong>{{ pendingTotal }}</strong></span>
       <span class="stat-corrected">已修改 <strong>{{ correctedTotal }}</strong></span>
       <template v-if="!isGuest">
         <span style="color:#d9d9d9">|</span>
@@ -271,7 +273,7 @@ const defaultCollectedBy = computed(() => {
   if (isAdmin.value) return ''
   return currentUser.value.id || ''
 })
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '' })
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '' })
 
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
@@ -338,7 +340,7 @@ const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
 
-function statusLabel(s) { return { pending:'待修改', correcting:'修改中', corrected:'已修改' }[s] || s }
+function statusLabel(s) { return { pending:'未修改', confirming:'待确认', corrected:'已修改' }[s] || s }
 function sortIcon(field) { if (sortBy.value !== field) return '⇅'; return sortOrder.value === 'asc' ? '↑' : '↓' }
 
 function toggleSort(field) {
@@ -360,6 +362,10 @@ function buildParams() {
   if (filters.value.taskId) p.task_id = Number(filters.value.taskId)
   if (filters.value.reviewerId) p.reviewer_id = Number(filters.value.reviewerId)
   if (filters.value.isSupplement) p.is_supplement = filters.value.isSupplement === 'true'
+  if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
+  if (filters.value.dateTo) p.date_to = filters.value.dateTo
+  if (filters.value.correctedFrom) p.corrected_from = filters.value.correctedFrom
+  if (filters.value.correctedTo) p.corrected_to = filters.value.correctedTo
   return p
 }
 
@@ -414,7 +420,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '' }; filterTaskSearch.value = ''; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
   const idx = selectedIds.value.indexOf(id)

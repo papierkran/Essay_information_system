@@ -29,17 +29,20 @@
             </van-radio-group>
           </template>
         </van-field>
+        <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
+          @click="showCollectorPicker = true" />
         <van-field v-model="form.remark" label="备注" placeholder="备注信息（可选）" />
       </van-cell-group>
       <van-cell-group inset style="margin-top:12px">
         <van-field name="uploader" label="上传文件（docx/图片，可多选）">
           <template #input>
             <div>
-              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple :before-read="beforeRead" />
+              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple :before-read="beforeRead" :after-read="afterRead" />
               <div style="font-size:12px;color:#999;margin-top:4px">图片大小不超过 4MB</div>
             </div>
           </template>
         </van-field>
+        <van-image-preview v-model:show="showPreview" :images="previewImages" :closeable="true" />
         <van-field v-model="form.content_text" label="或粘贴文字" type="textarea" placeholder="粘贴文字..." rows="4" autosize />
       </van-cell-group>
       <div style="margin:16px">
@@ -68,26 +71,44 @@
         </van-cell>
       </div>
     </van-action-sheet>
+
+    <!-- 收集者选择器 -->
+    <van-action-sheet v-model:show="showCollectorPicker" title="选择收集者">
+      <div class="picker-list">
+        <van-cell title="默认（当前用户）" @click="selectCollector(null)" />
+        <van-cell v-for="c in collectorList" :key="c.id" :title="c.nickname || c.username" @click="selectCollector(c)" />
+      </div>
+    </van-action-sheet>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast, showDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
+const currentUser = computed(() => getAuth()?.user || {})
+const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
+
 const fileList = ref([])
 const loading = ref(false)
 const showGradePicker = ref(false)
 const showTaskPicker = ref(false)
+const showCollectorPicker = ref(false)
+const showPreview = ref(false)
+const previewImages = ref([])
 const selectedGrade = ref('')
 const selectedTaskName = ref('')
 const selectedTaskTopic = ref('')
 const selectedTaskId = ref(null)
+const selectedCollector = ref(null)
+const selectedCollectorName = ref('')
+const collectorList = ref([])
 const grades = ['初一','初二','初三','高一','高二','高三']
 const tasks = ref([])
 
@@ -108,12 +129,29 @@ onMounted(async () => {
       }
     }
   } catch {}
+  if (isAdmin.value) {
+    try {
+      const res = await api.get('/admin/users')
+      collectorList.value = (res.data || []).filter(u => u.role?.includes('collector') || u.role?.includes('admin'))
+    } catch {}
+  }
 })
 
 function selectGrade(g) {
   form.value.grade = g
   selectedGrade.value = g
   showGradePicker.value = false
+}
+
+function selectCollector(c) {
+  if (c) {
+    selectedCollector.value = c.id
+    selectedCollectorName.value = c.nickname || c.username
+  } else {
+    selectedCollector.value = null
+    selectedCollectorName.value = ''
+  }
+  showCollectorPicker.value = false
 }
 
 function beforeRead(file) {
@@ -124,6 +162,12 @@ function beforeRead(file) {
     return false
   }
   return true
+}
+
+function afterRead(file) {
+  previewImages.value = fileList.value
+    .filter(item => item.file?.type?.startsWith('image/'))
+    .map(item => item.objectUrl || URL.createObjectURL(item.file))
 }
 
 function selectTask(tpl) {
@@ -156,6 +200,9 @@ async function onSubmit() {
     fd.append('class_id', '1')
     if (selectedTaskId.value) {
       fd.append('task_id', String(selectedTaskId.value))
+    }
+    if (selectedCollector.value) {
+      fd.append('collected_by', String(selectedCollector.value))
     }
     fd.append('grade', form.value.grade)
     fd.append('essay_number', form.value.essay_number || 1)

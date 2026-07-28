@@ -603,6 +603,9 @@ def create_task(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
+    existing = db.query(EssayTask).filter(EssayTask.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="任务名称已存在")
     task = EssayTask(
         name=data.name,
         grade=data.grade,
@@ -640,6 +643,12 @@ def update_task(
     task = db.query(EssayTask).filter(EssayTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    dup = db.query(EssayTask).filter(
+        EssayTask.name == data.name,
+        EssayTask.id != task_id
+    ).first()
+    if dup:
+        raise HTTPException(status_code=400, detail="任务名称已存在")
     task.name = data.name
     task.grade = data.grade
     task.essay_number = data.essay_number

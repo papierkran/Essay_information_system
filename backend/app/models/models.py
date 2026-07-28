@@ -22,7 +22,7 @@ class EssayTask(Base):
     __tablename__ = "essay_tasks"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)  # 任务名称
+    name = Column(String(100), unique=True, nullable=False)  # 任务名称
     grade = Column(String(20), nullable=False)  # 年级
     essay_number = Column(Integer, default=1)  # 第几次作文
     essay_topic = Column(String(200), default="")  # 文章主题
@@ -80,7 +80,7 @@ class Class(Base):
     __tablename__ = "classes"
 
     id = Column(Integer, primary_key=True, index=True)
-    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     name = Column(String(100), nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -144,7 +144,7 @@ class Essay(Base):
         UniqueConstraint("class_id", "task_id", "student_name", "essay_number", "is_supplement",
                          name="uq_essay_task_student"),
         CheckConstraint(
-            "status IN ('pending', 'corrected')",
+            "status IN ('pending', 'confirming', 'corrected')",
             name="ck_essays_status",
         ),
     )

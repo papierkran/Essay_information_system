@@ -112,42 +112,80 @@
     </div>
 
     <div class="card" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>🤖 AI 错别字修正配置</h3></div>
+      <div class="card-header"><h3>✏️ 修改前 - AI 错别字修正</h3></div>
       <div class="form-group">
-        <label>
-          <input type="checkbox" v-model="llmEnabled" />
-          启用 AI 错别字修正
-        </label>
+        <label><input type="checkbox" v-model="fixEnabled" /> 启用</label>
       </div>
       <div class="form-group">
         <label>服务商</label>
-        <select v-model="llmProvider" class="input">
+        <select v-model="fixProvider" class="input">
           <option value="deepseek">DeepSeek</option>
           <option value="openai">OpenAI</option>
         </select>
       </div>
       <div class="form-group">
-        <label>API 地址 (BASE_URL)</label>
-        <input v-model="llmBaseUrl" :placeholder="llmProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" class="input" />
+        <label>API 地址</label>
+        <input v-model="fixBaseUrl" :placeholder="fixProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" class="input" />
       </div>
       <div class="form-group">
         <label>API Key</label>
-        <input v-model="llmApiKey" type="password" :placeholder="llmProvider + ' API Key'" class="input" />
+        <input v-model="fixApiKey" type="password" placeholder="API Key" class="input" />
       </div>
       <div class="form-group">
         <label>模型</label>
-        <input v-model="llmModel" :placeholder="llmProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" class="input" />
+        <input v-model="fixModel" :placeholder="fixProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" class="input" />
       </div>
       <div class="form-group">
-        <label>提示词模板</label>
-        <textarea v-model="llmPrompt" rows="4" class="input" style="resize:vertical;font-family:monospace"></textarea>
-        <p style="font-size:12px;color:#999;margin-top:4px">使用 <code>{text}</code> 作为文章内容占位符</p>
+        <label>提示词</label>
+        <textarea v-model="fixPrompt" rows="4" class="input" style="resize:vertical;font-family:monospace"></textarea>
+        <p style="font-size:12px;color:#999;margin-top:4px"><code>{text}</code> 为文章占位符</p>
       </div>
       <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveLlmConfig" :disabled="llmSaving">
-          {{ llmSaving ? '保存中...' : '💾 保存 AI 配置' }}
-        </button>
-        <span v-if="llmSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
+        <button class="btn btn-primary" @click="saveFixConfig" :disabled="fixSaving">{{ fixSaving ? '保存中...' : '💾 保存' }}</button>
+        <span v-if="fixSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:600px;margin-top:20px">
+      <div class="card-header"><h3>✅ 修改后 - AI 改作文</h3></div>
+      <div class="form-group">
+        <label><input type="checkbox" v-model="editEnabled" /> 启用</label>
+      </div>
+      <div class="form-group">
+        <label>服务商</label>
+        <select v-model="editProvider" class="input">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>API 地址</label>
+        <input v-model="editBaseUrl" :placeholder="editProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" class="input" />
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input v-model="editApiKey" type="password" placeholder="API Key" class="input" />
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <input v-model="editModel" :placeholder="editProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" class="input" />
+      </div>
+      <div class="form-group">
+        <label>提示词</label>
+        <textarea v-model="editPrompt" rows="4" class="input" style="resize:vertical;font-family:monospace"></textarea>
+        <p style="font-size:12px;color:#999;margin-top:4px"><code>{text}</code> 为文章占位符</p>
+      </div>
+      <div class="form-group">
+        <label>字数范围（留空则不限制）</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input v-model="editMinCount" type="number" min="0" placeholder="最小字数" class="input" style="width:120px;flex:none" />
+          <span style="color:#999">~</span>
+          <input v-model="editMaxCount" type="number" min="0" placeholder="最大字数" class="input" style="width:120px;flex:none" />
+        </div>
+      </div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button class="btn btn-primary" @click="saveEditConfig" :disabled="editSaving">{{ editSaving ? '保存中...' : '💾 保存' }}</button>
+        <span v-if="editSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
       </div>
     </div>
 
@@ -203,14 +241,25 @@ const ocrLanguage = ref('cn|en')
 const ocrSaved = ref(false)
 const ocrSaving = ref(false)
 
-const llmEnabled = ref(false)
-const llmProvider = ref('deepseek')
-const llmBaseUrl = ref('')
-const llmApiKey = ref('')
-const llmModel = ref('')
-const llmPrompt = ref('')
-const llmSaved = ref(false)
-const llmSaving = ref(false)
+const fixEnabled = ref(false)
+const fixProvider = ref('deepseek')
+const fixBaseUrl = ref('')
+const fixApiKey = ref('')
+const fixModel = ref('')
+const fixPrompt = ref('')
+const fixSaved = ref(false)
+const fixSaving = ref(false)
+
+const editEnabled = ref(false)
+const editProvider = ref('deepseek')
+const editBaseUrl = ref('')
+const editApiKey = ref('')
+const editModel = ref('')
+const editPrompt = ref('')
+const editMinCount = ref('')
+const editMaxCount = ref('')
+const editSaved = ref(false)
+const editSaving = ref(false)
 
 function saveApiUrl() {
   apiSaving.value = true
@@ -312,47 +361,72 @@ async function saveOcrConfig() {
   }
 }
 
-async function loadLlmConfig() {
+async function loadFixConfig() {
   try {
-    const res = await api.get('/admin/config/llm')
+    const res = await api.get('/admin/config/llm_typo_fix')
     const cfg = res.data.config_value || {}
-    llmEnabled.value = !!cfg.enabled
-    llmProvider.value = cfg.typo_fix?.provider || 'deepseek'
-    const prov = (cfg.providers || {})[llmProvider.value] || {}
-    llmBaseUrl.value = prov.base_url || ''
-    llmApiKey.value = prov.api_key || ''
-    llmModel.value = prov.model || ''
-    llmPrompt.value = cfg.typo_fix?.prompt || ''
+    fixEnabled.value = !!cfg.enabled
+    fixProvider.value = cfg.provider || 'deepseek'
+    fixBaseUrl.value = cfg.base_url || ''
+    fixApiKey.value = cfg.api_key || ''
+    fixModel.value = cfg.model || ''
+    fixPrompt.value = cfg.prompt || ''
   } catch {}
 }
 
-async function saveLlmConfig() {
-  llmSaving.value = true
-  llmSaved.value = false
+async function saveFixConfig() {
+  fixSaving.value = true; fixSaved.value = false
   try {
-    const cfg = {
-      enabled: llmEnabled.value,
-      providers: {
-        [llmProvider.value]: {
-          base_url: llmBaseUrl.value,
-          api_key: llmApiKey.value,
-          model: llmModel.value,
-        },
-      },
-      typo_fix: {
-        provider: llmProvider.value,
-        prompt: llmPrompt.value,
-      },
-    }
-    await api.put('/admin/config/llm', { config_key: 'llm', config_value: cfg })
-    llmSaved.value = true
-    showToast('AI 配置已保存')
-    setTimeout(() => llmSaved.value = false, 3000)
-  } catch(err) {
-    showToast(err.response?.data?.detail || '保存失败')
-  } finally {
-    llmSaving.value = false
+    await api.put('/admin/config/llm_typo_fix', {
+      config_key: 'llm_typo_fix',
+      config_value: { enabled: fixEnabled.value, provider: fixProvider.value, base_url: fixBaseUrl.value, api_key: fixApiKey.value, model: fixModel.value, prompt: fixPrompt.value },
+    })
+    fixSaved.value = true; showToast('错别字修正配置已保存')
+    setTimeout(() => fixSaved.value = false, 3000)
+  } catch(err) { showToast(err.response?.data?.detail || '保存失败') }
+  finally { fixSaving.value = false }
+}
+
+async function loadEditConfig() {
+  try {
+    const res = await api.get('/admin/config/llm_editor')
+    const cfg = res.data.config_value || {}
+    editEnabled.value = !!cfg.enabled
+    editProvider.value = cfg.provider || 'deepseek'
+    editBaseUrl.value = cfg.base_url || ''
+    editApiKey.value = cfg.api_key || ''
+    editModel.value = cfg.model || ''
+    editPrompt.value = cfg.prompt || ''
+    editMinCount.value = cfg.count_min !== undefined && cfg.count_min !== null ? String(cfg.count_min) : ''
+    editMaxCount.value = cfg.count_max !== undefined && cfg.count_max !== null ? String(cfg.count_max) : ''
+  } catch {}
+}
+
+async function saveEditConfig() {
+  editSaving.value = true; editSaved.value = false
+  const cfg = {
+    enabled: editEnabled.value,
+    provider: editProvider.value,
+    base_url: editBaseUrl.value,
+    api_key: editApiKey.value,
+    model: editModel.value,
+    prompt: editPrompt.value,
   }
+  if (editMinCount.value !== '' && editMinCount.value !== null) {
+    cfg.count_min = parseInt(editMinCount.value, 10)
+  }
+  if (editMaxCount.value !== '' && editMaxCount.value !== null) {
+    cfg.count_max = parseInt(editMaxCount.value, 10)
+  }
+  try {
+    await api.put('/admin/config/llm_editor', {
+      config_key: 'llm_editor',
+      config_value: cfg,
+    })
+    editSaved.value = true; showToast('改作文配置已保存')
+    setTimeout(() => editSaved.value = false, 3000)
+  } catch(err) { showToast(err.response?.data?.detail || '保存失败') }
+  finally { editSaving.value = false }
 }
 
 onMounted(async () => {
@@ -367,7 +441,8 @@ onMounted(async () => {
     dbName.value = dbInfo.database || ''
   } catch {}
   await loadOcrConfig()
-  await loadLlmConfig()
+  await loadFixConfig()
+  await loadEditConfig()
 })
 
 async function saveSettings() {
