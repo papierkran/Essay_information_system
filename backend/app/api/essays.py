@@ -586,7 +586,7 @@ def list_essays(
     }
 
 
-@router.get("/pending", response_model=list[EssayOut])
+@router.get("/pending")
 def pending_essays(
     name: str = None,
     grade: str = None,
@@ -600,10 +600,12 @@ def pending_essays(
     date_to: str = None,
     sort_by: str = "created_at",
     sort_order: str = "asc",
+    page: int = 1,
+    page_size: int = 50,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取待修改的作文列表（修改者/游客用），支持筛选"""
+    """获取待修改的作文列表（修改者/游客用），支持筛选和分页"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
@@ -647,9 +649,10 @@ def pending_essays(
     else:
         q = q.order_by(order_col.asc())
 
-    essays = q.all()
+    total = q.count()
+    essays = q.offset((page - 1) * page_size).limit(page_size).all()
     result = [_essay_to_out(e, db) for e in essays]
-    return result
+    return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/trash")

@@ -51,7 +51,7 @@
 
     <!-- 批量操作工具栏 -->
     <div v-if="isDesktop && list.length" class="batch-bar">
-      <span style="font-size:13px;color:#666">共 <strong>{{ sortedList.length }}</strong> 条 / 已选 {{ selectedIds.length }} 条</span>
+      <span style="font-size:13px;color:#666">共 <strong>{{ total }}</strong> 条（本页 {{ sortedList.length }}）/ 已选 {{ selectedIds.length }} 条</span>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
@@ -97,12 +97,28 @@
         </tr>
       </tbody>
     </table>
+    <!-- 分页 -->
+    <div class="pagination" v-if="isDesktop && total > 0">
+      <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
+      <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+      <span class="page-info">{{ page }} / {{ totalPages }}</span>
+      <button class="btn" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+      <button class="btn" :disabled="page >= totalPages" @click="goPage(totalPages)">末页</button>
+      <span style="margin-left:12px;font-size:13px;color:#666">每页
+        <select v-model.number="pageSize" @change="onPageSizeChange" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px">
+          <option :value="20">20</option>
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+          <option :value="200">200</option>
+        </select> 条
+      </span>
+    </div>
     <div v-if="isDesktop && !list.length && !loading" class="empty-state">
       <div class="icon">✅</div><p>没有待批作文</p>
     </div>
 
     <!-- 手机端：卡片列表 -->
-    <van-list v-if="!isDesktop" v-model:loading="loading" finished-text="没有待批作文" @load="load">
+    <van-list v-if="!isDesktop" v-model:loading="loading" :finished="mobileFinished" finished-text="没有待批作文" @load="loadMobile">
       <van-card v-for="e in list" :key="e.id"
         :title="e.student_name"
         :desc="`第${e.essay_number}次 · ${e.essay_title || ''}`"
@@ -137,6 +153,11 @@ const loading = ref(false)
 const selectedIds = ref([])
 const collectorList = ref([])
 const taskList = ref([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(50)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const mobileFinished = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 
 const filters = ref({
@@ -208,6 +229,8 @@ function toggleSelect(id) {
 
 function buildParams() {
   const p = {}
+  p.page = page.value
+  p.page_size = pageSize.value
   if (filters.value.name) p.name = filters.value.name
   if (filters.value.essayTitle) p.essay_title = filters.value.essayTitle
   if (filters.value.status) p.status = filters.value.status
@@ -225,6 +248,7 @@ function buildParams() {
 
 let loadTimer = null
 function applyFilter() {
+  page.value = 1
   clearTimeout(loadTimer)
   loadTimer = setTimeout(load, 300)
 }
@@ -233,7 +257,22 @@ async function load() {
   loading.value = true
   try {
     const res = await api.get('/essays/pending', { params: buildParams() })
-    list.value = res.data
+    list.value = res.data.items
+    total.value = res.data.total
+  }
+  catch { showToast('加载失败') }
+  finally { loading.value = false }
+}
+
+function goPage(p) { page.value = p; load() }
+function onPageSizeChange() { page.value = 1; load() }
+
+async function loadMobile() {
+  loading.value = true
+  try {
+    const res = await api.get('/essays/pending', { params: { ...buildParams(), page: 1, page_size: 200 } })
+    list.value = res.data.items
+    mobileFinished.value = true
   }
   catch { showToast('加载失败') }
   finally { loading.value = false }
@@ -241,6 +280,7 @@ async function load() {
 
 function clearFilter() {
   filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: 0, dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
+  page.value = 1
   load()
 }
 
@@ -378,6 +418,16 @@ onMounted(() => { load(); fetchCollectorsAndTasks() })
 .row-selected { background-color: #e6f4ff !important; }
 .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .sortable:hover { background: #f0f0f0; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 0;
+}
+.page-info { font-size: 14px; color: #333; }
 
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag-pending { background: #fff7e6; color: #d46b08; }
