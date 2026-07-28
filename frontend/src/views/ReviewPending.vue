@@ -139,15 +139,18 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
+import { showToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
+import { useTaskMonitor } from '../composables/useTaskMonitor'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
+const isAdmin = computed(() => ((getAuth()?.user?.role) || '').includes('admin'))
+const { addTask } = useTaskMonitor()
 const list = ref([])
 const loading = ref(false)
 const selectedIds = ref([])
@@ -288,73 +291,37 @@ function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
 async function batchOcr() {
   if (!selectedIds.value.length) return
-  const toast = showLoadingToast({ message: 'OCR 识别中...', duration: 0, forbidClick: true })
   try {
-    const res = await api.post('/essays/batch-ocr', { ids: selectedIds.value })
-    const d = res.data
-    closeToast()
-    let msg = `OCR 完成：成功 ${d.success} 条`
-    if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
-    if (d.success === 0 && d.errors.length === 0) msg = `选中 ${d.total} 条，全部非图片类型，无需 OCR`
-    if (d.success === 0 && d.errors.length > 0) {
-      showFailToast(`OCR 全部失败：${d.errors[0]?.reason || '未知'}`)
-    } else {
-      showSuccessToast(msg)
-    }
-    if (d.errors.length) console.warn('OCR 失败明细:', d.errors)
+    const res = await api.post('/essays/batch-task/ocr/start', { ids: selectedIds.value })
+    addTask(res.data.task_id, 'ocr', res.data.total)
     selectedIds.value = []
     await load()
   } catch (err) {
-    closeToast()
-    showFailToast(err.response?.data?.detail || '批量 OCR 失败（请确认系统设置中 OCR 已启用）')
+    showFailToast(err.response?.data?.detail || '启动 OCR 任务失败')
   }
 }
 
 async function batchAiCorrect() {
   if (!selectedIds.value.length) return
-  const toast = showLoadingToast({ message: 'AI 错别字修正中...', duration: 0, forbidClick: true })
   try {
-    const res = await api.post('/essays/batch-ai-correct', { ids: selectedIds.value })
-    const d = res.data
-    closeToast()
-    if (d.success === 0 && d.errors.length > 0) {
-      showFailToast(`AI 修正全部失败：${d.errors[0]?.reason || '未知'}`)
-    } else {
-      let msg = `AI 修正完成：成功 ${d.success} 条`
-      if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
-      showSuccessToast(msg)
-    }
-    if (d.errors.length) console.warn('AI 修正失败明细:', d.errors)
+    const res = await api.post('/essays/batch-task/ai-correct/start', { ids: selectedIds.value })
+    addTask(res.data.task_id, 'ai_correct', res.data.total)
     selectedIds.value = []
     await load()
   } catch (err) {
-    closeToast()
-    showFailToast(err.response?.data?.detail || '批量 AI 修正失败')
+    showFailToast(err.response?.data?.detail || '启动 AI 修正任务失败')
   }
 }
 
 async function batchAiRewrite() {
   if (!selectedIds.value.length) return
-  const toast = showLoadingToast({ message: 'AI 一键修改中...', duration: 0, forbidClick: true })
   try {
-    const res = await api.post('/essays/batch-ai-rewrite', { ids: selectedIds.value })
-    const d = res.data
-    closeToast()
-    if (d.success === 0 && d.errors.length > 0) {
-      showFailToast(`AI 改写全部失败：${d.errors[0]?.reason || '未知原因'}`)
-    } else if (d.success === 0 && d.errors.length === 0) {
-      showFailToast(`选中 ${d.total} 条，全部无文字内容，请先进行 🔍 OCR识别`)
-    } else {
-      let msg = `AI 改写完成：成功 ${d.success} 条`
-      if (d.errors.length) msg += `，失败 ${d.errors.length} 条`
-      showSuccessToast(msg)
-    }
-    if (d.errors.length) console.warn('AI 改写失败明细:', d.errors)
+    const res = await api.post('/essays/batch-task/ai-rewrite/start', { ids: selectedIds.value })
+    addTask(res.data.task_id, 'ai_rewrite', res.data.total)
     selectedIds.value = []
     await load()
   } catch (err) {
-    closeToast()
-    showFailToast(err.response?.data?.detail || '批量 AI 改写失败（请确认系统设置中 AI 改作文已启用）')
+    showFailToast(err.response?.data?.detail || '启动 AI 改写任务失败')
   }
 }
 

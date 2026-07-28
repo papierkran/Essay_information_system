@@ -3,6 +3,8 @@ import json
 import shutil
 import tempfile
 import zipfile
+import uuid
+import threading
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -985,8 +987,31 @@ def download_essay_file(
 
     dl_name = _build_download_filename(essay)
 
-    # 有文字内容 → 从 DB 生成 docx
-    if essay.content_text and essay.content_text.strip():
+    # 收集图片文件（如果存在）
+    img_files = []
+    dir_path = ""
+    if essay.content_file:
+        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+        if os.path.exists(dir_path):
+            all_files = os.listdir(dir_path)
+            img_files = [f for f in all_files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_')]
+
+    has_text = bool(essay.content_text and essay.content_text.strip())
+
+    # 既有文字又有图片 → docx + 图片打包 zip
+    if has_text and img_files:
+        tmp_docx = _generate_docx(essay, show_corrected=False)
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(tmp_docx, f"{dl_name}.docx")
+            for img in sorted(img_files):
+                zf.write(os.path.join(dir_path, img), img)
+        zip_buffer.close()
+        os.unlink(tmp_docx)
+        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
+
+    # 只有文字 → 从 DB 生成 docx
+    if has_text:
         tmp_path = _generate_docx(essay, show_corrected=False)
         return FileResponse(
             tmp_path,
@@ -995,18 +1020,13 @@ def download_essay_file(
         )
 
     # 纯图片 → 打包 zip
-    if essay.content_file:
-        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-        if os.path.exists(dir_path):
-            files = os.listdir(dir_path)
-            images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and not f.startswith('改_')]
-            if images:
-                zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for img in sorted(images):
-                        zf.write(os.path.join(dir_path, img), img)
-                zip_buffer.close()
-                return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
+    if essay.content_file and img_files:
+        zip_buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for img in sorted(img_files):
+                zf.write(os.path.join(dir_path, img), img)
+        zip_buffer.close()
+        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
 
     # 兜底：返回原始文件
     if essay.content_file:
@@ -1462,6 +1482,124 @@ def batch_confirm_essays(
             count += 1
     db.commit()
     return {"success": count, "total": len(essays)}
+
+
+# ===== 异步批量任务（后台运行，页面离开后继续执行） =====
+
+def _get_ocr_config(db):
+    cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "ocr").first()
+    if cfg_row:
+        try:
+            return json.loads(cfg_row.config_value)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+def _get_llm_config(db, key):
+    cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+    if cfg_row:
+        try:
+            return json.loads(cfg_row.config_value)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+@router.post("/batch-task/ocr/start")
+def start_batch_ocr(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """启动异步批量 OCR 任务"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    essay_ids = data.get("ids", [])
+    if not essay_ids:
+        raise HTTPException(status_code=400, detail="未选中任何作文")
+    ocr_cfg = _get_ocr_config(db)
+    if not ocr_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="OCR 功能未启用")
+
+    task_id = str(uuid.uuid4())[:8]
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
+    from ..services.task_manager import create_task, run_batch_ocr, update_task
+
+    task = create_task(task_id, "ocr", len(essays))
+    thread = threading.Thread(target=run_batch_ocr, args=(
+        task_id, essay_ids, current_user.id, ocr_cfg,
+        get_db, Essay, _log_operation,
+    ), daemon=True)
+    thread.start()
+    return {"task_id": task_id, "total": len(essays)}
+
+
+@router.post("/batch-task/ai-correct/start")
+def start_batch_ai_correct(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """启动异步批量 AI 错别字修正"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    essay_ids = data.get("ids", [])
+    if not essay_ids:
+        raise HTTPException(status_code=400, detail="未选中任何作文")
+    llm_cfg = _get_llm_config(db, "llm_typo_fix")
+    if not llm_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="AI 错别字修正未启用")
+
+    task_id = str(uuid.uuid4())[:8]
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
+    from ..services.task_manager import create_task, run_batch_ai_correct
+
+    create_task(task_id, "ai_correct", len(essays))
+    thread = threading.Thread(target=run_batch_ai_correct, args=(
+        task_id, essay_ids, current_user.id, llm_cfg,
+        get_db, Essay, _log_operation,
+    ), daemon=True)
+    thread.start()
+    return {"task_id": task_id, "total": len(essays)}
+
+
+@router.post("/batch-task/ai-rewrite/start")
+def start_batch_ai_rewrite(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """启动异步批量 AI 一键修改"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    essay_ids = data.get("ids", [])
+    if not essay_ids:
+        raise HTTPException(status_code=400, detail="未选中任何作文")
+    llm_cfg = _get_llm_config(db, "llm_editor")
+    if not llm_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="AI 改作文未启用")
+
+    task_id = str(uuid.uuid4())[:8]
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
+    from ..services.task_manager import create_task, run_batch_ai_rewrite
+
+    create_task(task_id, "ai_rewrite", len(essays))
+    thread = threading.Thread(target=run_batch_ai_rewrite, args=(
+        task_id, essay_ids, current_user.id, llm_cfg,
+        get_db, Essay, _log_operation,
+    ), daemon=True)
+    thread.start()
+    return {"task_id": task_id, "total": len(essays)}
+
+
+@router.get("/batch-task/{task_id}")
+def get_batch_task_status(task_id: str):
+    """查询批量任务进度"""
+    from ..services.task_manager import get_task
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    return task
 
 
 # ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====

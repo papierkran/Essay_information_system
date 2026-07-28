@@ -34,12 +34,15 @@
     <main :class="isLogin ? 'login-wrapper' : 'main-content'">
       <router-view />
     </main>
+
+    <TaskStatusBar v-if="isAdmin && !isLogin" />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import TaskStatusBar from './components/TaskStatusBar.vue'
 import { showToast } from 'vant'
 import { useAuth } from './api'
 

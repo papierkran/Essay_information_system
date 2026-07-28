@@ -458,12 +458,17 @@ async function batchExportDocx() {
     const disposition = res.headers['content-disposition']
     let filename = '作文导出.zip'
     if (disposition) {
-      const utf8Match = disposition.match(/filename\*=UTF-8''([^";]+)/i)
-      if (utf8Match) {
-        filename = decodeURIComponent(utf8Match[1])
-      } else {
-        const match = disposition.match(/filename="?([^";]+)"?/i)
-        if (match) filename = match[1]
+      const p = disposition.split(';')
+      for (const part of p) {
+        const trim = part.trim()
+        if (trim.startsWith('filename*=')) {
+          const val = trim.split("''").pop()
+          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+          break
+        } else if (trim.startsWith('filename=')) {
+          const val = trim.split('=')[1]
+          if (val) filename = val.replace(/"/g, '')
+        }
       }
     }
     

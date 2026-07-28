@@ -735,12 +735,21 @@ function onFileSelected(e) {
 async function downloadOriginal() {
   try {
     const res = await api.get(`/essays/${route.params.id}/download`, { responseType: 'blob' })
-    // 从 Content-Disposition 解析文件名
     const disposition = res.headers['content-disposition']
     let filename = '作文.docx'
     if (disposition) {
-      const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i)
-      if (match) filename = decodeURIComponent(match[1])
+      const p = disposition.split(';')
+      for (const part of p) {
+        const trim = part.trim()
+        if (trim.startsWith('filename*=')) {
+          const val = trim.split("''").pop()
+          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+          break
+        } else if (trim.startsWith('filename=')) {
+          const val = trim.split('=')[1]
+          if (val) filename = val.replace(/"/g, '')
+        }
+      }
     }
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
@@ -769,14 +778,17 @@ async function exportDocx() {
     const disposition = res.headers['content-disposition']
     let filename = '导出.docx'
     if (disposition) {
-      // 优先匹配 filename*=UTF-8''xxx（中文文件名）
-      const utf8Match = disposition.match(/filename\*=UTF-8''([^";]+)/i)
-      if (utf8Match) {
-        filename = decodeURIComponent(utf8Match[1])
-      } else {
-        // 匹配 filename="xxx" 或 filename=xxx
-        const match = disposition.match(/filename="?([^";]+)"?/i)
-        if (match) filename = match[1]
+      const p = disposition.split(';')
+      for (const part of p) {
+        const trim = part.trim()
+        if (trim.startsWith('filename*=')) {
+          const val = trim.split("''").pop()
+          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+          break
+        } else if (trim.startsWith('filename=')) {
+          const val = trim.split('=')[1]
+          if (val) filename = val.replace(/"/g, '')
+        }
       }
     }
     const url = window.URL.createObjectURL(new Blob([res.data]))
