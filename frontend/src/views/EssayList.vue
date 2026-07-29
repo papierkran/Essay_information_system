@@ -214,7 +214,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
@@ -252,6 +252,7 @@ const filteredTaskOptions = computed(() => {
 })
 
 const router = useRouter()
+const route = useRoute()
 const topScroll = ref(null)
 const topScrollContent = ref(null)
 const tableWrap = ref(null)
@@ -580,6 +581,13 @@ onMounted(async () => {
   // 同步任务搜索框文字
   if (filters.value.taskId && taskList.value.length) {
     const t = taskList.value.find(x => x.id == filters.value.taskId)
+    if (t) filterTaskSearch.value = t.name
+  }
+  // 从URL参数读取task_id
+  const taskIdFromQuery = Number(route.query.task_id)
+  if (taskIdFromQuery && !filters.value.taskId) {
+    filters.value.taskId = taskIdFromQuery
+    const t = taskList.value.find(x => x.id === taskIdFromQuery)
     if (t) filterTaskSearch.value = t.name
   }
   await applyFilter()

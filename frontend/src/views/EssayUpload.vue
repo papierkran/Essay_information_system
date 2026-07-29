@@ -17,6 +17,9 @@
         <van-field v-model="form.grade" v-show="false" />
         <van-field v-model="form.essay_number" label="第几次作文" placeholder="数字" type="digit" :rules="[{ required: true }]" />
         <van-field v-model="form.essay_title" label="作文标题" placeholder="输入标题" />
+        <div v-if="recentTitles.length" style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:6px">
+          <van-tag v-for="t in recentTitles" :key="t" plain size="medium" @click="form.essay_title = t" style="cursor:pointer">{{ t }}</van-tag>
+        </div>
         <van-field v-model="form.student_name" label="学生姓名" placeholder="输入姓名" :rules="[{ required: true }]" />
         <van-field name="is_supplement" label="是否补交">
           <template #input><van-switch v-model="form.is_supplement" size="24" /></template>
@@ -109,6 +112,7 @@ const selectedTaskId = ref(null)
 const selectedCollector = ref(null)
 const selectedCollectorName = ref('')
 const collectorList = ref([])
+const recentTitles = ref([])
 const grades = ['初一','初二','初三','高一','高二','高三']
 const tasks = ref([])
 
@@ -135,6 +139,10 @@ onMounted(async () => {
       collectorList.value = res.data || []
     } catch {}
   }
+  try {
+    const res = await api.get('/essays/recent-titles', { params: { limit: 5 } })
+    recentTitles.value = res.data || []
+  } catch {}
 })
 
 function selectGrade(g) {

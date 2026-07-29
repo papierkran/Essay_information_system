@@ -176,6 +176,31 @@ def list_collectors(
     return [{"id": u.id, "nickname": u.nickname or u.username} for u in collectors]
 
 
+@router.get("/recent-titles")
+def list_recent_titles(
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取最近上传的作文标题列表"""
+    rows = (
+        db.query(Essay.essay_title)
+        .filter(Essay.deleted_at == None, Essay.essay_title != None, Essay.essay_title != "")
+        .order_by(Essay.created_at.desc())
+        .limit(limit * 3)
+        .all()
+    )
+    seen = set()
+    result = []
+    for (title,) in rows:
+        if title not in seen:
+            seen.add(title)
+            result.append(title)
+        if len(result) >= limit:
+            break
+    return result
+
+
 @router.get("/reviewers")
 def list_reviewers(
     db: Session = Depends(get_db),

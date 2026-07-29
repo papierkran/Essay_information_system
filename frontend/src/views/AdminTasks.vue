@@ -27,7 +27,9 @@
         </thead>
         <tbody>
           <tr v-for="t in tasks" :key="t.id">
-            <td>{{ t.name }}</td>
+            <td>
+              <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
+            </td>
             <td>{{ t.grade }}</td>
             <td>第{{ t.essay_number }}次</td>
             <td>{{ t.essay_topic || '-' }}</td>
@@ -129,10 +131,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
 
+const router = useRouter()
 const { isDesktop } = useScreen()
 
 const tasks = ref([])
@@ -242,10 +246,22 @@ function confirmDelTask(tpl) {
       showToast('已删除')
     }).catch(() => {})
 }
+
+function viewEssays(tpl) {
+  router.push({ path: '/essay/list', query: { task_id: tpl.id } })
+}
 </script>
 
 <style scoped>
 .page { padding: 0; }
 @media (max-width: 767px) { .page { min-height: 100vh; } }
 .picker-list { max-height: 300px; overflow-y: auto; }
+.task-name-link {
+  color: #1677ff;
+  cursor: pointer;
+  font-weight: 500;
+}
+.task-name-link:hover {
+  text-decoration: underline;
+}
 </style>
