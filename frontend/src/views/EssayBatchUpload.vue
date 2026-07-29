@@ -144,12 +144,12 @@
     <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
       <div class="picker-list">
         <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
-        <van-cell v-for="t in tasks" :key="t.id"
+        <van-cell v-for="t in sortedTasks" :key="t.id"
           :title="t.name"
           :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
           @click="selectTask(t)">
           <template #right-icon>
-            <van-tag v-if="t.is_active" type="primary" style="margin-right:8px">收集中</van-tag>
+            <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
           </template>
         </van-cell>
       </div>
@@ -194,6 +194,19 @@ const grades = ['初一', '初二', '初三', '高一', '高二', '高三']
 const folderInput = ref(null)
 const corFolderInput = ref(null)
 const tasks = ref([])
+
+const sortedTasks = computed(() => {
+  return [...tasks.value].sort((a, b) => {
+    const aActive = taskIsActive(a)
+    const bActive = taskIsActive(b)
+    if (aActive !== bActive) return aActive ? -1 : 1
+    return 0
+  })
+})
+
+function taskIsActive(t) {
+  return t.is_active && (!t.deadline || new Date(t.deadline) >= new Date())
+}
 
 const form = ref({ grade: '', essay_number: '', teaching_mode: '线上' })
 const corForm = ref({ grade: '', essay_number: '', teaching_mode: '线下' })

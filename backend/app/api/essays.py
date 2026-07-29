@@ -40,7 +40,11 @@ def get_active_tasks(
     db: Session = Depends(get_db),
 ):
     """获取所有活跃的收集任务（公开接口）"""
-    tasks = db.query(EssayTask).filter(EssayTask.is_active == True).all()
+    now = datetime.now()
+    tasks = db.query(EssayTask).filter(
+        EssayTask.is_active == True,
+        (EssayTask.deadline == None) | (EssayTask.deadline >= now)
+    ).all()
     return [TaskOut.model_validate(t) for t in tasks]
 
 
@@ -55,17 +59,23 @@ def get_task_stats(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     
-    total = db.query(func.count(Essay.id)).filter(Essay.task_id == task_id).scalar() or 0
+    total = db.query(func.count(Essay.id)).filter(
+        Essay.task_id == task_id,
+        Essay.deleted_at == None
+    ).scalar() or 0
     pending = db.query(func.count(Essay.id)).filter(
         Essay.task_id == task_id,
+        Essay.deleted_at == None,
         Essay.status.in_(["pending", "confirming"])
     ).scalar() or 0
     confirming = db.query(func.count(Essay.id)).filter(
         Essay.task_id == task_id,
+        Essay.deleted_at == None,
         Essay.status == "confirming"
     ).scalar() or 0
     corrected = db.query(func.count(Essay.id)).filter(
         Essay.task_id == task_id,
+        Essay.deleted_at == None,
         Essay.status == "corrected"
     ).scalar() or 0
     
@@ -79,13 +89,14 @@ def get_task_stats(
 
 
 def _build_download_filename(essay: Essay) -> str:
-    """构建规范的下载文件名：标题——学生姓名第N次线上/线下补交"""
+    """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交"""
     title = essay.essay_title or "无标题"
     student = essay.student_name or "未知"
+    grade = essay.grade or ""
     n = essay.essay_number or 1
     mode = essay.teaching_mode or "线下"
     supp = "补交" if essay.is_supplement else ""
-    return f"{title}——{student}第{n}次{mode}{supp}"
+    return f"{title}——{student}{grade}第{n}次{mode}{supp}"
 
 
 def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
@@ -530,6 +541,11 @@ def list_essays(
     task_id: int = None,
     reviewer_id: int = None,
     is_supplement: bool = None,
+    task_name: str = None,
+    word_count_min: int = None,
+    word_count_max: int = None,
+    corrected_word_count_min: int = None,
+    corrected_word_count_max: int = None,
     date_from: str = None,
     date_to: str = None,
     corrected_from: str = None,
@@ -573,6 +589,16 @@ def list_essays(
         q = q.filter(Essay.reviewer_id == reviewer_id)
     if is_supplement is not None:
         q = q.filter(Essay.is_supplement == is_supplement)
+    if task_name:
+        q = q.join(EssayTask, Essay.task_id == EssayTask.id, isouter=True).filter(EssayTask.name.like(f"%{task_name}%"))
+    if word_count_min is not None:
+        q = q.filter(func.char_length(Essay.content_text) >= word_count_min)
+    if word_count_max is not None:
+        q = q.filter(func.char_length(Essay.content_text) <= word_count_max)
+    if corrected_word_count_min is not None:
+        q = q.filter(func.char_length(Essay.corrected_text) >= corrected_word_count_min)
+    if corrected_word_count_max is not None:
+        q = q.filter(func.char_length(Essay.corrected_text) <= corrected_word_count_max)
     if date_from:
         q = q.filter(Essay.created_at >= date_from)
     if date_to:
@@ -586,13 +612,17 @@ def list_essays(
     from sqlalchemy import case
     allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark, "is_supplement": Essay.is_supplement}
     
-    # 处理collector_name排序
+    # 处理特殊排序字段
     if sort_by == "collector_name":
         q = q.outerjoin(User, User.id == Essay.collected_by)
         order_col = User.nickname
     elif sort_by == "reviewer_name":
         q = q.outerjoin(User, User.id == Essay.reviewer_id)
         order_col = User.nickname
+    elif sort_by == "word_count":
+        order_col = func.char_length(Essay.content_text)
+    elif sort_by == "corrected_word_count":
+        order_col = func.char_length(Essay.corrected_text)
     else:
         order_col = allowed_sort.get(sort_by, Essay.created_at)
     

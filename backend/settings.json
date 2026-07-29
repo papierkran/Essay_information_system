@@ -4,6 +4,8 @@
     "host": "192.168.31.245",
     "port": "54321",
     "user": "postgres",
-    "database": "essay_system"
+    "password": "",
+    "database": "essay_system",
+    "docker_container": "pg"
   }
 }

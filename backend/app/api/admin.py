@@ -406,6 +406,7 @@ def get_settings(current_user: User = Depends(get_current_user)):
         "port": db_info["port"],
         "user": db_info["user"],
         "database": db_info["database"],
+        "docker_container": db_info["docker_container"],
     }
 
     # 保护：返回时从原始设置中移除数据库密码
@@ -528,12 +529,13 @@ def export_database(current_user: User = Depends(get_current_user)):
     tmp.close()
     env = os.environ.copy()
     env["PGPASSWORD"] = DB_CONFIG["password"]
+    container = DB_CONFIG.get("docker_container", "pg")
     # 使用远程容器内的 pg_dump（保证版本匹配）
     result = subprocess.run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"],
-         "docker", "exec", "pg", "pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
+         "docker", "exec", container, "pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
          "--no-owner", "--no-acl"],
-        env=env, capture_output=True, text=True
+        env=env, capture_output=True, text=True, timeout=60
     )
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"导出失败: {result.stderr}")
@@ -559,21 +561,22 @@ async def import_database(
     tmp.close()
     env = os.environ.copy()
     env["PGPASSWORD"] = DB_CONFIG["password"]
+    container = DB_CONFIG.get("docker_container", "pg")
     # 通过 SSH 将 SQL 文件传到远程后导入
     remote_path = "/tmp/essay_import.sql"
     sp_run = subprocess.run
-    # 上传文件
-    sp_run(["scp", "-o", "StrictHostKeyChecking=no", tmp_path, f"root@{DB_CONFIG['host']}:{remote_path}"],
-           capture_output=True)
-    # 在容器中执行导入
+    # 上传文件（增加超时）
+    sp_run(["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", tmp_path, f"root@{DB_CONFIG['host']}:{remote_path}"],
+           capture_output=True, timeout=30)
+    # 在容器中执行导入（增加超时）
     result = sp_run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"],
-         "docker", "exec", "-i", "pg", "psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f", remote_path],
-        capture_output=True, text=True
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
+         "docker", "exec", "-i", container, "psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f", remote_path],
+        capture_output=True, text=True, timeout=120
     )
     os.unlink(tmp_path)
     # 清理远程临时文件
-    sp_run(["ssh", "-o", "StrictHostKeyChecking=no", "root@" + DB_CONFIG["host"], "rm", "-f", remote_path], capture_output=True)
+    sp_run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"], "rm", "-f", remote_path], capture_output=True, timeout=10)
     if result.returncode != 0 and "ERROR" in result.stderr:
         raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
     return {"message": "导入成功"}

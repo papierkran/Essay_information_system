@@ -4,16 +4,16 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @input="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @keyup.enter="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @keyup.enter="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">年级</span>
         <select v-model="filters.grade" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
           <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
         </select>
       </div>
-      <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @input="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">状态</span>
+      <div class="filter-row"><span class="filter-label">第几次</span><input v-model.number="filters.number" type="number" min="1" placeholder="不限制" class="filter-input" style="width:70px" @keyup.enter="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">是否修改</span>
         <select v-model="filters.status" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
           <option value="pending">未修改</option>
@@ -34,9 +34,9 @@
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
         </select>
       </div>
-      <div class="filter-row" style="position:relative">
+      <div ref="taskFilterRef" class="filter-row" style="position:relative">
         <span class="filter-label">任务</span>
-        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @blur="setTimeout(() => showTaskDropdown = false, 200)" />
+        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
         <div v-if="showTaskDropdown" class="task-dropdown">
           <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
           <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
@@ -58,7 +58,9 @@
       </div>
       <div class="filter-row"><span class="filter-label">收集时间</span><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:130px" @change="applyFilter" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:130px" @change="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">修改时间</span><input v-model="filters.correctedFrom" type="date" class="filter-input" style="width:130px" @change="applyFilter" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model="filters.correctedTo" type="date" class="filter-input" style="width:130px" @change="applyFilter" /></div>
-      <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @input="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">修改前字数</span><input v-model.number="filters.wordMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.wordMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
+      <div class="filter-row"><span class="filter-label">修改后字数</span><input v-model.number="filters.correctedMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.correctedMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
+      <div class="filter-row"><span class="filter-label">备注</span><input v-model="filters.remark" placeholder="搜备注" class="filter-input" @keyup.enter="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
       <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
@@ -102,7 +104,13 @@
           <tr>
             <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
             <template v-for="col in visibleColumns" :key="col.key">
-              <th :class="{ sortable: col.sortable }" @click="col.sortable && toggleSort(col.sort)">
+              <th :class="{ sortable: col.sortable, 'th-dragging': dragColKey === col.key }"
+                draggable="true"
+                @dragstart.stop="onColDragStart(col.key)"
+                @dragover.prevent="onColDragOver(col.key)"
+                @dragend="onColDragEnd"
+                @drop.prevent="onColDrop"
+                @click="col.sortable && toggleSort(col.sort)">
                 {{ col.label }} <template v-if="col.sortable">{{ sortIcon(col.sort) }}</template>
               </th>
             </template>
@@ -165,9 +173,16 @@
     </van-dialog>
 
     <!-- 列设置弹窗 -->
-    <van-dialog v-model:show="showColumnSettings" title="自定义表头" :show-cancel-button="false" :show-confirm-button="false">
+    <van-dialog v-model:show="showColumnSettings" title="自定义表头" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
       <div style="padding:12px 16px">
-        <div v-for="col in allColumns" :key="col.key" style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
+        <div v-for="(col, i) in allColumns" :key="col.key"
+          draggable="true"
+          @dragstart="dragColIndex = i"
+          @dragover.prevent="dragOverColIndex = i"
+          @dragend="dragColIndex = -1; dragOverColIndex = -1"
+          @drop="moveColumn"
+          :style="{ display:'flex', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #f5f5f5', cursor: col.fixed ? 'default' : 'grab', background: dragOverColIndex === i ? '#f0f0f0' : 'transparent' }">
+          <span style="margin-right:8px;color:#ccc;font-size:14px">⠿</span>
           <van-checkbox v-model="col.visible" :disabled="col.fixed" style="flex:1">
             <span :style="{ color: col.fixed ? '#999' : '#333' }">{{ col.label }}</span>
           </van-checkbox>
@@ -213,7 +228,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
@@ -238,6 +253,13 @@ const taskList = ref([])
 const reviewerList = ref([])
 const filterTaskSearch = ref('')
 const showTaskDropdown = ref(false)
+const taskFilterRef = ref(null)
+
+function closeTaskDropdown(e) {
+  if (taskFilterRef.value && !taskFilterRef.value.contains(e.target)) {
+    showTaskDropdown.value = false
+  }
+}
 
 const filteredTasks = computed(() => {
   if (!taskSearch.value) return taskList.value
@@ -247,8 +269,13 @@ const filteredTasks = computed(() => {
 
 const filteredTaskOptions = computed(() => {
   if (!filterTaskSearch.value) return taskList.value
-  const kw = filterTaskSearch.value.toLowerCase()
-  return taskList.value.filter(t => t.name.toLowerCase().includes(kw))
+  const kw = filterTaskSearch.value
+  // 智能分段匹配：将搜索词拆为 中文段 + 数字段，按顺序匹配（允许中间有任意字符）
+  const segments = kw.match(/[\u4e00-\u9fff]+|\d+/g)
+  if (!segments || segments.length === 0) return taskList.value.filter(t => t.name.toLowerCase().includes(kw.toLowerCase()))
+  const pattern = segments.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
+  const regex = new RegExp(pattern, 'i')
+  return taskList.value.filter(t => regex.test(t.name))
 })
 
 const router = useRouter()
@@ -275,7 +302,7 @@ const defaultCollectedBy = computed(() => {
   if (isAdmin.value) return ''
   return currentUser.value.id || ''
 })
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '' })
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' })
 
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
@@ -299,27 +326,79 @@ function loadFilters() {
 // ===== 列配置 =====
 const COLUMN_KEY = 'essay_list_columns_v2'
 const allColumns = ref([
-  { key: 'student_name', label: '学生', field: 'student_name', sortable: true, sort: 'student_name', visible: true, fixed: true },
+  { key: 'student_name', label: '学生姓名', field: 'student_name', sortable: true, sort: 'student_name', visible: true, fixed: true },
   { key: 'grade', label: '年级', field: 'grade', sortable: false, visible: true },
   { key: 'essay_title', label: '作文标题', field: 'essay_title', sortable: false, visible: true },
   { key: 'essay_number', label: '第几次', field: 'essay_number', sortable: true, sort: 'essay_number', visible: true },
   { key: 'teaching_mode', label: '提交方式', field: 'teaching_mode', sortable: false, visible: true },
-  { key: 'status', label: '状态', field: 'status', sortable: true, sort: 'status', visible: true },
+  { key: 'status', label: '是否修改', field: 'status', sortable: true, sort: 'status', visible: true },
   { key: 'collector_name', label: '收集者', field: 'collector_name', sortable: true, sort: 'collector_name', visible: true },
   { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
   { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
   { key: 'remark', label: '备注', field: 'remark', sortable: true, sort: 'remark', visible: true },
   { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: false },
-  { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: false, visible: false },
-  { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: false, visible: false },
+  { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: true, sort: 'word_count', visible: false },
+  { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: true, sort: 'corrected_word_count', visible: false },
   { key: 'created_at', label: '收集时间', field: 'created_at', sortable: true, sort: 'created_at', visible: true },
   { key: 'corrected_at', label: '修改时间', field: 'corrected_at', sortable: true, sort: 'corrected_at', visible: true },
   { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: true },
 ])
 const showColumnSettings = ref(false)
+const dragColIndex = ref(-1)
+const dragOverColIndex = ref(-1)
+const dragColKey = ref('')
+const dragOverColKey = ref('')
+
+function onColDragStart(key) {
+  dragColKey.value = key
+}
+function onColDragOver(key) {
+  dragOverColKey.value = key
+}
+function onColDragEnd() {
+  dragColKey.value = ''
+  dragOverColKey.value = ''
+}
+function onColDrop() {
+  const fromKey = dragColKey.value
+  const toKey = dragOverColKey.value
+  if (!fromKey || !toKey || fromKey === toKey) return
+  const cols = allColumns.value
+  const fromIdx = cols.findIndex(c => c.key === fromKey)
+  const toIdx = cols.findIndex(c => c.key === toKey)
+  if (fromIdx < 0 || toIdx < 0) return
+  const col = cols[fromIdx]
+  if (col.fixed) return
+  cols.splice(fromIdx, 1)
+  cols.splice(toIdx, 0, col)
+  // 持久化列顺序
+  saveColumnOrder()
+  dragColKey.value = ''
+  dragOverColKey.value = ''
+}
+function saveColumnOrder() {
+  const keys = allColumns.value.map(c => c.key)
+  localStorage.setItem('essay_list_column_order', JSON.stringify(keys))
+}
 
 function loadColumnSettings() {
   try {
+    // 恢复列顺序
+    const orderSaved = localStorage.getItem('essay_list_column_order')
+    if (orderSaved) {
+      const orderKeys = JSON.parse(orderSaved)
+      if (Array.isArray(orderKeys) && orderKeys.length) {
+        const sorted = []
+        const remaining = [...allColumns.value]
+        for (const key of orderKeys) {
+          const idx = remaining.findIndex(c => c.key === key)
+          if (idx >= 0) sorted.push(remaining.splice(idx, 1)[0])
+        }
+        sorted.push(...remaining)
+        allColumns.value = sorted
+      }
+    }
+    // 恢复列显隐
     const saved = localStorage.getItem(COLUMN_KEY)
     if (saved) {
       const map = JSON.parse(saved)
@@ -336,6 +415,20 @@ function saveColumns() {
 function resetColumns() {
   const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: false, remark: true, is_supplement: false, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: true }
   allColumns.value.forEach(c => { c.visible = defaults[c.key] !== undefined ? defaults[c.key] : false })
+}
+function moveColumn() {
+  const from = dragColIndex.value
+  const to = dragOverColIndex.value
+  if (from < 0 || to < 0 || from === to) return
+  const col = allColumns.value[from]
+  // 不允许拖动固定列
+  if (col.fixed) return
+  // 不允许拖动到固定列之前
+  if (allColumns.value[to]?.fixed) return
+  allColumns.value.splice(from, 1)
+  allColumns.value.splice(to, 0, col)
+  dragColIndex.value = -1
+  dragOverColIndex.value = -1
 }
 const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 
@@ -361,13 +454,17 @@ function buildParams() {
   if (filters.value.mode) p.teaching_mode = filters.value.mode
   if (filters.value.collectedBy) p.collected_by = Number(filters.value.collectedBy)
   if (filters.value.remark) p.remark = filters.value.remark
-  if (filters.value.taskId) p.task_id = Number(filters.value.taskId)
+  if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
   if (filters.value.reviewerId) p.reviewer_id = Number(filters.value.reviewerId)
   if (filters.value.isSupplement) p.is_supplement = filters.value.isSupplement === 'true'
   if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
   if (filters.value.dateTo) p.date_to = filters.value.dateTo
   if (filters.value.correctedFrom) p.corrected_from = filters.value.correctedFrom
   if (filters.value.correctedTo) p.corrected_to = filters.value.correctedTo
+  if (filters.value.wordMin) p.word_count_min = Number(filters.value.wordMin)
+  if (filters.value.wordMax) p.word_count_max = Number(filters.value.wordMax)
+  if (filters.value.correctedMin) p.corrected_word_count_min = Number(filters.value.correctedMin)
+  if (filters.value.correctedMax) p.corrected_word_count_max = Number(filters.value.correctedMax)
   return p
 }
 
@@ -422,7 +519,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '' }; filterTaskSearch.value = ''; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
   const idx = selectedIds.value.indexOf(id)
@@ -573,6 +670,8 @@ onMounted(async () => {
   loadColumnSettings()
   await loadTasks()
   loadReviewers()
+  // 点击外部关闭任务下拉框
+  document.addEventListener('click', closeTaskDropdown)
   // 恢复之前保存的筛选，如果没有则设置默认值
   const hasSaved = loadFilters()
   if (!hasSaved) {
@@ -591,6 +690,9 @@ onMounted(async () => {
     if (t) filterTaskSearch.value = t.name
   }
   await applyFilter()
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeTaskDropdown)
 })
 </script>
 
@@ -671,6 +773,7 @@ onMounted(async () => {
 
 .sortable { cursor: pointer; user-select: none; }
 .sortable:hover { background: #f0f0f0; }
+.th-dragging { opacity: 0.5; background: #e6f4ff !important; }
 
 .pagination {
   display: flex;

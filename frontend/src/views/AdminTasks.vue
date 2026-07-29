@@ -2,70 +2,90 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">任务列表</div>
 
-    <div v-if="isDesktop" style="margin-bottom:16px">
+    <div v-if="isDesktop" style="margin-bottom:16px;display:flex;gap:8px;align-items:center">
       <button class="btn btn-success" @click="openTaskDialog()">+ 创建收集任务</button>
     </div>
     <div v-else style="margin:12px">
       <van-button type="success" size="small" @click="openTaskDialog()">创建收集任务</van-button>
     </div>
 
+    <!-- 筛选栏 -->
+    <div v-if="isDesktop" class="filter-bar">
+      <input v-model="filters.name" placeholder="任务名称" class="filter-input" @input="applyFilter" />
+      <select v-model="filters.grade" class="filter-input" @change="applyFilter">
+        <option value="">全部年级</option>
+        <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+      </select>
+      <select v-model="filters.status" class="filter-input" @change="applyFilter">
+        <option value="">全部状态</option>
+        <option value="active">收集中</option>
+        <option value="expired">已过期</option>
+        <option value="ended">已结束</option>
+      </select>
+      <input v-model="filters.course" placeholder="课程名称" class="filter-input" @input="applyFilter" />
+    </div>
+    <div v-else style="display:flex;gap:8px;padding:0 12px;flex-wrap:wrap">
+      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" @input="applyFilter" />
+      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" @input="applyFilter" />
+    </div>
+
     <!-- 桌面端任务列表 -->
     <div v-if="isDesktop">
-      <table class="desktop-table" v-if="tasks.length">
+      <table class="desktop-table" v-if="filteredTasks.length">
         <thead>
           <tr>
-            <th>任务名称</th>
-            <th>年级</th>
-            <th>第几次</th>
-            <th>文章主题</th>
-            <th>课程名称</th>
-            <th>提交方式</th>
-            <th>截止时间</th>
-            <th>状态</th>
-            <th>操作</th>
+            <th v-for="(col, ci) in columns" :key="col.key"
+              draggable="true"
+              @dragstart="onDragStart($event, ci)"
+              @dragover.prevent="onDragOver($event, ci)"
+              @drop="onDrop($event, ci)"
+              @click="toggleSort(col.key)"
+              :class="{ sortable: col.sortable, sorted: sortKey === col.key }"
+              :style="{ cursor: col.sortable ? 'pointer' : 'default' }">
+              {{ col.label }}
+              <span v-if="col.sortable && sortKey === col.key" class="sort-arrow">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tasks" :key="t.id">
-            <td>
-              <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
-            </td>
-            <td>{{ t.grade }}</td>
-            <td>第{{ t.essay_number }}次</td>
-            <td>{{ t.essay_topic || '-' }}</td>
-            <td>{{ t.course_name || '-' }}</td>
-            <td>{{ t.teaching_mode || '线下' }}</td>
-            <td>{{ t.deadline ? formatDeadline(t.deadline) : '无限制' }}</td>
-            <td>
-              <span :class="['tag', t.is_active ? 'tag-pending' : 'tag-corrected']">
-                {{ t.is_active ? '收集中' : '已结束' }}
-              </span>
-            </td>
-            <td style="white-space:nowrap">
-              <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
-              <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">
-                {{ t.is_active ? '结束收集' : '开始收集' }}
-              </button>
-              <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
+          <tr v-for="t in sortedTasks" :key="t.id">
+            <td v-for="col in columns" :key="col.key">
+              <template v-if="col.key === 'name'">
+                <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
+              </template>
+              <template v-else-if="col.key === 'number'">第{{ t.essay_number }}次</template>
+              <template v-else-if="col.key === 'topic'">{{ t.essay_topic || '-' }}</template>
+              <template v-else-if="col.key === 'course'">{{ t.course_name || '-' }}</template>
+              <template v-else-if="col.key === 'deadline'">{{ t.deadline ? formatDeadline(t.deadline) : '无限制' }}</template>
+              <template v-else-if="col.key === 'status'">
+                <span :class="['tag', getTaskStatus(t).active ? 'tag-pending' : 'tag-corrected']">{{ getTaskStatus(t).label }}</span>
+              </template>
+              <template v-else-if="col.key === 'actions'">
+                <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
+                <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
+                <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
+              </template>
+              <template v-else-if="col.key === 'teaching_mode'">{{ t.teaching_mode || '线下' }}</template>
+              <template v-else>{{ t[col.key] }}</template>
             </td>
           </tr>
         </tbody>
       </table>
       <div v-else class="card" style="padding:32px;text-align:center;color:#999">
-        暂无收集任务，点击上方按钮创建
+        {{ tasks.length ? '无匹配任务' : '暂无收集任务，点击上方按钮创建' }}
       </div>
     </div>
 
     <!-- 手机端任务列表 -->
     <template v-else>
-      <van-cell-group inset v-if="tasks.length" style="margin-top:12px">
-        <van-cell v-for="t in tasks" :key="t.id"
+      <van-cell-group inset v-if="filteredTasks.length" style="margin-top:12px">
+        <van-cell v-for="t in filteredTasks" :key="t.id"
           :title="t.name"
           :label="`${t.grade} 第${t.essay_number}次 ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''}`"
           is-link @click="openTaskDialog(t)">
           <template #right-icon>
-            <van-tag :type="t.is_active ? 'primary' : 'default'" style="margin-right:8px">
-              {{ t.is_active ? '收集中' : '已结束' }}
+            <van-tag :type="getTaskStatus(t).active ? 'primary' : 'default'" style="margin-right:8px">
+              {{ getTaskStatus(t).label }}
             </van-tag>
           </template>
         </van-cell>
@@ -130,7 +150,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -141,6 +161,99 @@ const { isDesktop } = useScreen()
 
 const tasks = ref([])
 const courses = ref([])
+const filters = ref({ name: '', grade: '', status: '', course: '' })
+const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束' }
+
+const columnDefs = [
+  { key: 'name', label: '任务名称', sortable: true },
+  { key: 'grade', label: '年级', sortable: true },
+  { key: 'number', label: '第几次', sortable: true },
+  { key: 'topic', label: '文章主题', sortable: false },
+  { key: 'course', label: '课程名称', sortable: true },
+  { key: 'teaching_mode', label: '提交方式', sortable: true },
+  { key: 'deadline', label: '截止时间', sortable: true },
+  { key: 'status', label: '状态', sortable: false },
+  { key: 'actions', label: '操作', sortable: false },
+]
+
+const columns = ref([])
+const sortKey = ref('')
+const sortDir = ref('asc')
+let draggedIndex = null
+
+function initColumns() {
+  const saved = localStorage.getItem('taskColumns')
+  if (saved) {
+    try { columns.value = JSON.parse(saved); return } catch {}
+  }
+  columns.value = columnDefs.map(c => ({ ...c }))
+}
+
+function saveColumns() {
+  localStorage.setItem('taskColumns', JSON.stringify(columns.value))
+}
+
+function onDragStart(e, ci) { draggedIndex = ci; e.dataTransfer.effectAllowed = 'move' }
+function onDragOver(e, ci) {
+  e.dataTransfer.dropEffect = 'move'
+  const ths = e.currentTarget.parentElement.children
+  for (let i = 0; i < ths.length; i++) ths[i].classList.remove('drag-over')
+  ths[ci].classList.add('drag-over')
+}
+function onDrop(e, ci) {
+  const ths = e.currentTarget.parentElement.children
+  for (let i = 0; i < ths.length; i++) ths[i].classList.remove('drag-over')
+  if (draggedIndex === null || draggedIndex === ci) return
+  const item = columns.value.splice(draggedIndex, 1)[0]
+  columns.value.splice(ci, 0, item)
+  saveColumns()
+  draggedIndex = null
+}
+
+function toggleSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+const filteredTasks = computed(() => {
+  const kw = filters.value.name.toLowerCase()
+  return tasks.value.filter(t => {
+    if (kw && !t.name.toLowerCase().includes(kw)) return false
+    if (filters.value.grade && t.grade !== filters.value.grade) return false
+    if (filters.value.course && !(t.course_name || '').toLowerCase().includes(filters.value.course.toLowerCase())) return false
+    const taskStatus = getTaskStatus(t).label
+    if (filters.value.status && taskStatus !== statusFilterLabel[filters.value.status]) return false
+    return true
+  })
+})
+
+const sortedTasks = computed(() => {
+  const list = filteredTasks.value
+  if (!sortKey.value) return list
+  return [...list].sort((a, b) => {
+    let va = getSortValue(a, sortKey.value)
+    let vb = getSortValue(b, sortKey.value)
+    if (va == null) va = ''
+    if (vb == null) vb = ''
+    const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
+
+function getSortValue(t, key) {
+  if (key === 'number') return t.essay_number || 0
+  if (key === 'deadline') return t.deadline || ''
+  if (key === 'status') return getTaskStatus(t).label
+  if (key === 'course') return t.course_name || ''
+  if (key === 'teaching_mode') return t.teaching_mode || ''
+  if (key === 'topic') return t.essay_topic || ''
+  return t[key] || ''
+}
+function applyFilter() {}
 const showTaskDialog = ref(false)
 const editingTask = ref({})
 const showTaskGradePicker = ref(false)
@@ -151,7 +264,7 @@ const taskForm = ref({
   teaching_mode: '线下', deadlineStr: '', is_active: false
 })
 
-onMounted(loadData)
+onMounted(() => { initColumns(); loadData() })
 
 async function loadData() {
   try {
@@ -175,6 +288,17 @@ function formatDeadline(deadline) {
   if (!deadline) return '无限制'
   const d = new Date(deadline)
   return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
+}
+
+function isExpired(tpl) {
+  if (!tpl.deadline) return false
+  return new Date(tpl.deadline) < new Date()
+}
+
+function getTaskStatus(tpl) {
+  if (isExpired(tpl)) return { active: false, label: '已过期' }
+  if (tpl.is_active) return { active: true, label: '收集中' }
+  return { active: false, label: '已结束' }
 }
 
 function openTaskDialog(tpl) {
@@ -263,5 +387,40 @@ function viewEssays(tpl) {
 }
 .task-name-link:hover {
   text-decoration: underline;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.filter-input {
+  padding: 6px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  min-width: 120px;
+}
+.filter-input:focus {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(24,144,255,0.1);
+}
+
+.sort-arrow {
+  font-size: 10px;
+  margin-left: 2px;
+}
+.desktop-table th.sortable {
+  user-select: none;
+}
+.desktop-table th.sorted {
+  color: #1677ff;
+}
+.desktop-table th.drag-over {
+  border-left: 2px solid #1677ff;
+  border-right: 2px solid #1677ff;
 }
 </style>

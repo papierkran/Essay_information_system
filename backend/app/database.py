@@ -24,6 +24,7 @@ def _load_db_settings():
         "user": os.environ.get("ESSAY_DB_USER", db.get("user", "")),
         "password": os.environ.get("ESSAY_DB_PASS", db.get("password", "")),
         "database": os.environ.get("ESSAY_DB_NAME", db.get("database", "")),
+        "docker_container": os.environ.get("ESSAY_DOCKER_CONTAINER", db.get("docker_container", "pg")),
     }
 
 

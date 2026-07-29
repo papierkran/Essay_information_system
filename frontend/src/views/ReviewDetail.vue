@@ -27,12 +27,14 @@
             </div>
             <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
-            <div class="info-item">
+            <div ref="detailTaskFilterRef" class="info-item" style="position:relative">
               <span class="info-label">任务</span>
-              <select v-model="editForm.task_id" class="edit-input" :disabled="!canEdit">
-                <option :value="0">无任务</option>
-                <option v-for="t in taskList" :key="t.id" :value="t.id">{{ t.name }}</option>
-              </select>
+              <input v-model="detailTaskSearch" placeholder="搜索选择任务" class="edit-input" :disabled="!canEdit" @focus="showDetailTaskDropdown = true" @input="showDetailTaskDropdown = true" />
+              <div v-if="showDetailTaskDropdown" class="task-dropdown-detail">
+                <div @mousedown.prevent @click="editForm.task_id = 0; detailTaskSearch = ''; showDetailTaskDropdown = false" :class="{ 'task-item-active': !editForm.task_id }" class="task-item">无任务</div>
+                <div v-for="t in filteredDetailTasks" :key="t.id" @mousedown.prevent @click="editForm.task_id = t.id; detailTaskSearch = t.name; showDetailTaskDropdown = false" :class="{ 'task-item-active': editForm.task_id == t.id }" class="task-item">{{ t.name }}</div>
+                <div v-if="!filteredDetailTasks.length" class="task-item" style="color:#999">无匹配任务</div>
+              </div>
             </div>
             <div class="info-item">
               <span class="info-label">收集者</span>
@@ -240,7 +242,7 @@
           <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
           <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
           <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
-          <van-field v-model="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
+          <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
           <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" :disabled="!canEdit" />
           <van-field label="是否补交">
             <template #input>
@@ -279,9 +281,13 @@
         </van-action-sheet>
 
         <van-action-sheet v-model:show="showMobileTask" title="选择任务">
-          <div class="picker-list">
-            <van-cell title="无任务" @click="editForm.task_id = 0; showMobileTask = false" />
-            <van-cell v-for="t in taskList" :key="t.id" :title="t.name" @click="editForm.task_id = t.id; showMobileTask = false" />
+          <div style="padding:8px 16px">
+            <input v-model="detailTaskSearch" placeholder="搜索任务..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box" @input="showDetailTaskDropdown = true" />
+          </div>
+          <div class="picker-list" style="max-height:300px;overflow-y:auto">
+            <van-cell title="无任务" @click="editForm.task_id = 0; detailTaskSearch = ''; showMobileTask = false" />
+            <van-cell v-for="t in filteredDetailTasks" :key="t.id" :title="t.name" @click="editForm.task_id = t.id; detailTaskSearch = t.name; showMobileTask = false" />
+            <van-cell v-if="!filteredDetailTasks.length && detailTaskSearch" title="无匹配任务" />
           </div>
         </van-action-sheet>
 
@@ -360,7 +366,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -415,6 +421,24 @@ const editForm = ref({})
 const grades = ['初一','初二','初三','高一','高二','高三']
 const collectorList = ref([])
 const taskList = ref([])
+const detailTaskSearch = ref('')
+const showDetailTaskDropdown = ref(false)
+const detailTaskFilterRef = ref(null)
+
+function closeDetailTaskDropdown(e) {
+  if (detailTaskFilterRef.value && !detailTaskFilterRef.value.contains(e.target)) {
+    showDetailTaskDropdown.value = false
+  }
+}
+const filteredDetailTasks = computed(() => {
+  if (!detailTaskSearch.value) return taskList.value
+  const kw = detailTaskSearch.value
+  const segments = kw.match(/[\u4e00-\u9fff]+|\d+/g)
+  if (!segments || segments.length === 0) return taskList.value.filter(t => t.name.toLowerCase().includes(kw.toLowerCase()))
+  const pattern = segments.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
+  const regex = new RegExp(pattern, 'i')
+  return taskList.value.filter(t => regex.test(t.name))
+})
 const selectedTaskName = computed(() => {
   if (!editForm.value.task_id) return '无任务'
   const t = taskList.value.find(x => x.id === editForm.value.task_id)
@@ -666,11 +690,16 @@ async function saveCorrectedEdit() {
 }
 
 onMounted(async () => {
-  await loadEssay()
   await loadTasks()
+  await loadEssay()
   if (isAdmin.value) {
     await loadCollectors()
   }
+  // 点击外部关闭任务下拉框
+  document.addEventListener('click', closeDetailTaskDropdown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeDetailTaskDropdown)
 })
 
 async function loadEssay() {
@@ -688,6 +717,11 @@ async function loadEssay() {
       collected_by: essay.value.collected_by,
       is_supplement: essay.value.is_supplement || false,
       task_id: essay.value.task_id || 0,
+    }
+    // 初始化任务搜索框文字
+    if (essay.value.task_id && taskList.value.length) {
+      const t = taskList.value.find(x => x.id === essay.value.task_id)
+      if (t) detailTaskSearch.value = t.name
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
@@ -846,6 +880,13 @@ async function saveEdit() {
       is_supplement: res.data.is_supplement || false,
       task_id: res.data.task_id || 0,
     })
+    // 同步任务搜索框文字
+    if (res.data.task_id && taskList.value.length) {
+      const t = taskList.value.find(x => x.id === res.data.task_id)
+      if (t) detailTaskSearch.value = t.name
+    } else {
+      detailTaskSearch.value = ''
+    }
     showToast('保存成功')
   } catch(err) {
     showToast(err.response?.data?.detail || '保存失败')
@@ -949,6 +990,29 @@ async function doReupload() {
   transition: border-color 0.2s;
 }
 .edit-input:focus { border-color: #4096ff; }
+
+.task-dropdown-detail {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 4px;
+}
+.task-dropdown-detail .task-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.task-dropdown-detail .task-item:hover { background: #f0f0f0; }
+.task-dropdown-detail .task-item-active { background: #e6f4ff; color: #1677ff; }
 
 /* ===== 作文内容大卡片 ===== */
 .essay-content-card { margin: 0; }

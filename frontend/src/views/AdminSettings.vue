@@ -24,6 +24,13 @@
         <label>数据库名</label>
         <input v-model="dbName" placeholder="essay_system" class="input" />
       </div>
+      <div class="form-group">
+        <label>Docker 容器名</label>
+        <input v-model="dockerContainer" placeholder="pg" class="input" />
+        <p style="font-size:12px;color:#999;margin-top:6px">
+          数据库备份/恢复使用的 Docker 容器名称，默认为 pg
+        </p>
+      </div>
       <p style="font-size:12px;color:#999;margin-top:6px">
         修改后需重启后端服务生效。密码字段不会回显，留空则不修改。
       </p>
@@ -221,6 +228,7 @@ const dbPort = ref('5432')
 const dbUser = ref('')
 const dbPass = ref('')
 const dbName = ref('')
+const dockerContainer = ref('pg')
 const saving = ref(false)
 const saved = ref(false)
 const exporting = ref(false)
@@ -439,6 +447,7 @@ onMounted(async () => {
     dbPort.value = dbInfo.port || '5432'
     dbUser.value = dbInfo.user || ''
     dbName.value = dbInfo.database || ''
+    dockerContainer.value = dbInfo.docker_container || 'pg'
   } catch {}
   await loadOcrConfig()
   await loadFixConfig()
@@ -453,6 +462,7 @@ async function saveSettings() {
   if (dbUser.value) payload.database.user = dbUser.value
   if (dbPass.value) payload.database.password = dbPass.value
   if (dbName.value) payload.database.database = dbName.value
+  if (dockerContainer.value) payload.database.docker_container = dockerContainer.value
   try {
     await api.put('/admin/settings', payload)
     saved.value = true; showToast('设置已保存（重启后端生效）')
