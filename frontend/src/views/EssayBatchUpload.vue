@@ -226,8 +226,8 @@ onMounted(async () => {
   } catch {}
   if (isAdmin.value) {
     try {
-      const res = await api.get('/admin/users')
-      collectorList.value = (res.data || []).filter(u => u.role?.includes('collector') || u.role?.includes('admin'))
+      const res = await api.get('/essays/collectors')
+      collectorList.value = res.data || []
     } catch {}
   }
 })

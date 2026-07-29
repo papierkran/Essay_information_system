@@ -176,6 +176,19 @@ def list_collectors(
     return [{"id": u.id, "nickname": u.nickname or u.username} for u in collectors]
 
 
+@router.get("/reviewers")
+def list_reviewers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取修改者列表（用于筛选下拉）"""
+    reviewers = db.query(User).filter(
+        User.deleted_at == None,
+        (User.role.like('%reviewer%') | User.role.like('%admin%'))
+    ).all()
+    return [{"id": u.id, "nickname": u.nickname or u.username} for u in reviewers]
+
+
 def get_collector_classes(user: User, db: Session) -> list[int]:
     """获取用户负责的班级 ID 列表"""
     ucs = db.query(UserClass).filter(

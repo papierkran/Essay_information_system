@@ -703,8 +703,8 @@ async function loadEssay() {
 
 async function loadCollectors() {
   try {
-    const res = await api.get('/admin/users')
-    collectorList.value = res.data.filter(u => u.role && (u.role.includes('collector') || u.role.includes('admin')))
+    const res = await api.get('/essays/collectors')
+    collectorList.value = res.data || []
   } catch {}
 }
 

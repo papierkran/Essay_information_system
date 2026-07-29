@@ -518,8 +518,8 @@ async function loadTasks() {
 
 async function loadReviewers() {
   try {
-    const res = await api.get('/admin/users')
-    reviewerList.value = res.data.filter(u => u.role && (u.role.includes('reviewer') || u.role.includes('admin')))
+    const res = await api.get('/essays/reviewers')
+    reviewerList.value = res.data || []
   } catch {}
 }
 
