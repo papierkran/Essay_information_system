@@ -61,3 +61,36 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_existing_columns()
+
+
+def _migrate_existing_columns():
+    """为已存在的表补充新增的列（轻量迁移，幂等）"""
+    from sqlalchemy import text, inspect
+
+    inspector = inspect(engine)
+    existing_cols = set()
+    try:
+        if "operation_logs" in inspector.get_table_names():
+            existing_cols = {c["name"] for c in inspector.get_columns("operation_logs")}
+    except Exception:
+        pass
+
+    stmts = []
+    if "batch_id" not in existing_cols:
+        stmts.append('ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS batch_id VARCHAR(50)')
+    if "essay_ids" not in existing_cols:
+        stmts.append('ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS essay_ids TEXT')
+
+    with engine.begin() as conn:
+        for stmt in stmts:
+            conn.execute(text(stmt))
+
+    # 补充索引
+    try:
+        existing_idx = {i["name"] for i in inspector.get_indexes("operation_logs")}
+        with engine.begin() as conn:
+            if "batch_id" not in existing_cols and "idx_operation_logs_batch_id" not in existing_idx:
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operation_logs_batch_id ON operation_logs(batch_id)"))
+    except Exception:
+        pass

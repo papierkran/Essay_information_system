@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog, SystemConfig
+from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog, SystemConfig, EssayImage
 from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
@@ -320,6 +320,7 @@ async def upload_essay(
             old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
             if os.path.exists(old_dir) and get_upload_dir() in old_dir:
                 shutil.rmtree(old_dir, ignore_errors=True)
+            db.query(EssayImage).filter(EssayImage.essay_id == essay.id).delete()
         try:
             db.commit()
         except IntegrityError:
@@ -392,6 +393,8 @@ async def upload_essay(
                 with open(img_path, "wb") as fw:
                     fw.write(content)
                 uploaded_files.append(img_name)
+                essay_image = EssayImage(essay_id=essay.id, filename=img_name, image_data=content)
+                db.add(essay_image)
             elif ext in [".docx", ".doc"]:
                 essay.file_type = "docx"
                 safe_filename = generate_essay_filename(
@@ -962,11 +965,7 @@ def delete_essay(
     if permanent:
         if "admin" not in current_user.role:
             raise HTTPException(status_code=403, detail="仅管理员可彻底删除")
-        if essay.content_file:
-            dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-            if os.path.exists(dir_path) and not delete_file:
-                # 如果还没删文件，现在删
-                pass  # delete_file 已经处理了
+        db.query(EssayImage).filter(EssayImage.essay_id == essay_id).delete()
         db.delete(essay)
         _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
         db.commit()
@@ -1035,20 +1034,25 @@ def get_essay_images(
 ):
     """获取作文目录下的所有图片（返回URL列表）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay or not essay.content_file:
+    if not essay:
         return {"images": []}
 
-    dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-    if not os.path.exists(dir_path):
-        return {"images": []}
+    images = set()
 
-    images = sorted([
-        f for f in os.listdir(dir_path)
-        if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp'))
-    ])
+    if essay.content_file:
+        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+        if os.path.exists(dir_path):
+            for f in os.listdir(dir_path):
+                if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                    images.add(f)
 
+    db_images = db.query(EssayImage).filter(EssayImage.essay_id == essay_id).all()
+    for img in db_images:
+        images.add(img.filename)
+
+    sorted_images = sorted(images)
     base_url = "/api/essays/" + str(essay_id) + "/file/"
-    return {"images": [base_url + img for img in images], "dir": dir_path}
+    return {"images": [base_url + img for img in sorted_images], "dir": ""}
 
 
 @router.get("/{essay_id}/file/{filename}")
@@ -1059,17 +1063,28 @@ def get_essay_file(
 ):
     """获取作文目录下的单个文件（无需 JWT，图片显示用）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay or not essay.content_file:
+    if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
 
-    dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-    file_path = os.path.join(dir_path, filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
+    if essay.content_file:
+        dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+        file_path = os.path.join(dir_path, filename)
+        if os.path.exists(file_path):
+            import mimetypes
+            media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+            return FileResponse(file_path, media_type=media_type)
 
-    import mimetypes
-    media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-    return FileResponse(file_path, media_type=media_type)
+    db_img = db.query(EssayImage).filter(
+        EssayImage.essay_id == essay_id,
+        EssayImage.filename == filename,
+    ).first()
+    if db_img:
+        import mimetypes
+        media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        from fastapi.responses import Response
+        return Response(content=db_img.image_data, media_type=media_type)
+
+    raise HTTPException(status_code=404, detail="文件不存在")
 
 
 @router.get("/{essay_id}/download")

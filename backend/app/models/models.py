@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Enum as SAEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Enum as SAEnum, LargeBinary
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -160,6 +160,18 @@ class Essay(Base):
                             foreign_keys=[reviewer_id])
     operations = relationship("OperationLog", back_populates="essay",
                               primaryjoin="and_(OperationLog.essay_id==Essay.id, Essay.deleted_at==None)")
+
+
+class EssayImage(Base):
+    __tablename__ = "essay_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    essay_id = Column(Integer, ForeignKey("essays.id"), nullable=False, index=True)
+    filename = Column(String(200), nullable=False)
+    image_data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    essay = relationship("Essay", backref="images")
 
 
 class SystemConfig(Base):

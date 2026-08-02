@@ -531,16 +531,26 @@ def export_database(current_user: User = Depends(get_current_user)):
     env["PGPASSWORD"] = DB_CONFIG["password"]
     container = DB_CONFIG.get("docker_container", "pg")
     # 使用远程容器内的 pg_dump（保证版本匹配）
+    # --no-sync: 避免 \restrict 命令（PG16+，PG18 默认启用但显式指定更安全）
+    # --clean: DROP 已有对象后重建（替代 --create，避免事务块冲突）
+    # --rows-per-insert=1: 逐行 INSERT（PG14+，跨版本兼容）
+    # --no-security-labels: 跳过安全标签（避免跨版本策略冲突）
+    # --no-subscriptions: 跳过逻辑订阅对象（避免跨库环境问题）
     result = subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
          "docker", "exec", container, "pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
-         "--no-owner", "--no-acl"],
+         "--no-owner", "--no-acl", "--no-sync", "--clean",
+         "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions"],
         env=env, capture_output=True, text=True, timeout=60
     )
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"导出失败: {result.stderr}")
+    # 清理可能残留的 \restrict 命令（兼容旧备份文件）
+    output = result.stdout
+    if output.startswith("\\restrict"):
+        output = output[output.index("\n") + 1:]
     with open(tmp_path, "w") as f:
-        f.write(result.stdout)
+        f.write(output)
     return FileResponse(tmp_path, filename=f"essay_system_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql", media_type="application/octet-stream")
 
 
@@ -568,7 +578,7 @@ async def import_database(
     # 上传文件（增加超时）
     sp_run(["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", tmp_path, f"root@{DB_CONFIG['host']}:{remote_path}"],
            capture_output=True, timeout=30)
-    # 在容器中执行导入（增加超时）
+    # 在容器中执行导入（连接目标库）
     result = sp_run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
          "docker", "exec", "-i", container, "psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f", remote_path],
