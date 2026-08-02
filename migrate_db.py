@@ -217,6 +217,8 @@ MIGRATIONS = [
                 old_value TEXT DEFAULT '',
                 new_value TEXT DEFAULT '',
                 detail VARCHAR(500) DEFAULT '',
+                batch_id VARCHAR(50),
+                essay_ids TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 CONSTRAINT fk_operation_logs_essay FOREIGN KEY (essay_id) REFERENCES essays(id) ON DELETE SET NULL,
                 CONSTRAINT fk_operation_logs_user FOREIGN KEY (user_id) REFERENCES users(id)
@@ -224,6 +226,7 @@ MIGRATIONS = [
             CREATE INDEX idx_operation_logs_essay_id ON operation_logs (essay_id);
             CREATE INDEX idx_operation_logs_created_at ON operation_logs (created_at);
             CREATE INDEX idx_operation_logs_user_id ON operation_logs (user_id);
+            CREATE INDEX idx_operation_logs_batch_id ON operation_logs (batch_id);
         """,
     },
     # 9. 允许 classes.org_id 为空

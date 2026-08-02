@@ -176,6 +176,8 @@ class OperationLogOut(BaseModel):
     old_value: str = ""
     new_value: str = ""
     detail: str = ""
+    batch_id: Optional[str] = None
+    essay_ids: Optional[str] = None
     student_name: str = ""
     essay_title: str = ""
     essay_number: int = 0

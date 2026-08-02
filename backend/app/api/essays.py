@@ -234,7 +234,8 @@ def get_collector_classes(user: User, db: Session) -> list[int]:
     return [uc.class_id for uc in ucs]
 
 
-def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = "", old_value: str = "", new_value: str = ""):
+def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = "",
+                   old_value: str = "", new_value: str = "", batch_id: str = "", essay_ids: str = ""):
     try:
         log = OperationLog(
             essay_id=essay_id,
@@ -242,7 +243,9 @@ def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail
             action=action,
             detail=detail,
             old_value=old_value,
-            new_value=new_value
+            new_value=new_value,
+            batch_id=batch_id or None,
+            essay_ids=essay_ids or None,
         )
         db.add(log)
     except Exception:
@@ -1699,6 +1702,184 @@ def get_batch_task_status(task_id: str):
     return task
 
 
+@router.post("/operations/{log_id}/undo")
+def undo_operation(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """撤回指定的操作记录"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+
+    log = db.query(OperationLog).filter(OperationLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="操作记录不存在")
+
+    action_str = log.action.value if hasattr(log.action, 'value') else str(log.action)
+    undone_count = 0
+    essay_ids_list = []
+
+    # 解析批量作文ID
+    if log.essay_ids:
+        try:
+            essay_ids_list = json.loads(log.essay_ids)
+        except Exception:
+            essay_ids_list = []
+    elif log.essay_id:
+        essay_ids_list = [log.essay_id]
+
+    for eid in essay_ids_list:
+        essay = db.query(Essay).filter(Essay.id == eid).first()
+        if not essay:
+            continue
+
+        if action_str in ("删除", "DELETE"):
+            essay.deleted_at = None
+            _log_operation(db, eid, current_user.id, "恢复",
+                           f"撤回删除操作", batch_id=log.batch_id)
+            undone_count += 1
+
+        elif action_str in ("恢复", "RECOVER"):
+            essay.deleted_at = datetime.now()
+            _log_operation(db, eid, current_user.id, "删除",
+                           f"撤回恢复操作", batch_id=log.batch_id)
+            undone_count += 1
+
+        elif action_str in ("上传", "UPLOAD"):
+            essay.deleted_at = datetime.now()
+            _log_operation(db, eid, current_user.id, "删除",
+                           f"撤回上传操作", batch_id=log.batch_id)
+            undone_count += 1
+
+        elif action_str in ("修改", "UPDATE", "批改", "CORRECT"):
+            data = {}
+            if log.old_value:
+                try:
+                    data = json.loads(log.old_value)
+                except Exception:
+                    data = {"corrected_text": "", "status": "pending"}
+            essay.corrected_text = data.get("corrected_text", "")
+            essay.corrected_at = None
+            essay.reviewer_id = None
+            essay.status = "pending"
+            _log_operation(db, eid, current_user.id, "编辑",
+                           f"撤回修改操作", batch_id=log.batch_id)
+            undone_count += 1
+
+        elif action_str in ("编辑", "EDIT"):
+            if log.old_value:
+                try:
+                    data = json.loads(log.old_value)
+                    for field, val in data.items():
+                        if hasattr(essay, field):
+                            setattr(essay, field, val)
+                except Exception:
+                    pass
+            _log_operation(db, eid, current_user.id, "编辑",
+                           f"撤回编辑操作", batch_id=log.batch_id)
+            undone_count += 1
+
+        elif action_str in ("OCR",):
+            essay.content_text = ""
+            _log_operation(db, eid, current_user.id, "编辑",
+                           f"撤回OCR操作", batch_id=log.batch_id)
+            undone_count += 1
+
+    db.commit()
+    return {"message": f"已撤回 {undone_count} 条", "undone_count": undone_count}
+
+
+@router.post("/batch-upload")
+async def batch_upload_essays(
+    grade: str = Form(...),
+    essay_number: int = Form(...),
+    teaching_mode: str = Form("线下"),
+    data_list: str = Form(...),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量上传：在单个请求中上传多个作文，记录为一条操作日志"""
+    if "collector" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+
+    import uuid as _uuid
+    batch_uuid = _uuid.uuid4().hex[:12]
+
+    try:
+        items = json.loads(data_list)
+    except Exception:
+        raise HTTPException(status_code=400, detail="数据格式错误，需要 JSON 数组")
+
+    cls = db.query(Class).filter(Class.id == 1).first()
+    if not cls:
+        raise HTTPException(status_code=400, detail="班级不存在（请先创建班级）")
+
+    now = datetime.now()
+    grade_name = f"{grade}{teaching_mode}" if teaching_mode else grade
+
+    dir_path = os.path.join(
+        get_upload_dir(), str(now.year), f"{now.month}月", str(now.day),
+        f"{grade_name}第{essay_number}次" if essay_number else grade_name,
+    )
+    os.makedirs(dir_path, exist_ok=True)
+
+    if file and file.filename:
+        safe_filename = os.path.basename(file.filename)
+        file_path = os.path.join(dir_path, safe_filename)
+        content = await file.read()
+        with open(file_path, "wb") as fw:
+            fw.write(content)
+
+    created_ids = []
+    for item in items:
+        try:
+            essay = Essay(
+                class_id=1,
+                grade=grade,
+                essay_number=essay_number,
+                essay_title=item.get("essay_title", ""),
+                student_name=item.get("student_name", ""),
+                is_supplement=item.get("is_supplement", False),
+                teaching_mode=teaching_mode,
+                remark=item.get("remark", ""),
+                content_text=item.get("content_text", ""),
+                corrected_text=item.get("corrected_text", ""),
+                file_type="docx",
+                collected_by=current_user.id,
+                task_id=item.get("task_id"),
+                status="pending",
+            )
+            db.add(essay)
+            db.flush()
+            created_ids.append(essay.id)
+        except IntegrityError:
+            db.rollback()
+            continue
+
+    db.commit()
+
+    detail_text = f"批量上传 {len(created_ids)} 篇 ({grade}第{essay_number}次)"
+
+    # 插入批量操作日志
+    try:
+        batch_log = OperationLog(
+            essay_id=None,
+            user_id=current_user.id,
+            action="上传",
+            detail=detail_text,
+            batch_id=batch_uuid,
+            essay_ids=json.dumps(created_ids),
+        )
+        db.add(batch_log)
+        db.commit()
+    except Exception:
+        pass
+
+    return {"message": detail_text, "count": len(created_ids), "ids": created_ids, "batch_id": batch_uuid}
+
+
 # ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====
 
 
@@ -1730,6 +1911,8 @@ def list_operations(
             old_value=log.old_value or "",
             new_value=log.new_value or "",
             detail=log.detail or "",
+            batch_id=log.batch_id,
+            essay_ids=log.essay_ids,
             student_name=essay.student_name if essay else "",
             essay_title=essay.essay_title if essay else "",
             essay_number=essay.essay_number if essay else 0,

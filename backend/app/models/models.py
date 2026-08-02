@@ -182,12 +182,15 @@ class OperationLog(Base):
     old_value = Column(Text, default="")  # 变更前的值（JSON格式）
     new_value = Column(Text, default="")  # 变更后的值（JSON格式）
     detail = Column(String(500), default="")
+    batch_id = Column(String(50), nullable=True)   # 批量操作分组ID
+    essay_ids = Column(Text, nullable=True)        # 批量操作涉及的作文ID列表（JSON数组）
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
         Index("idx_operation_logs_essay_id", "essay_id"),
         Index("idx_operation_logs_created_at", "created_at"),
         Index("idx_operation_logs_user_id", "user_id"),
+        Index("idx_operation_logs_batch_id", "batch_id"),
     )
 
     essay = relationship("Essay", back_populates="operations", foreign_keys=[essay_id])
