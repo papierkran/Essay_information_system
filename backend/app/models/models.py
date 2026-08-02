@@ -144,7 +144,7 @@ class Essay(Base):
         Index("idx_essays_created_at", "created_at"),
         Index("idx_essays_task_id", "task_id"),
         Index("idx_essays_deleted_at", "deleted_at"),
-        UniqueConstraint("class_id", "task_id", "student_name", "essay_number", "is_supplement",
+        UniqueConstraint("class_id", "task_id", "student_name", "essay_number", "is_supplement", "essay_title",
                          name="uq_essay_task_student"),
         CheckConstraint(
             "status IN ('pending', 'confirming', 'corrected')",

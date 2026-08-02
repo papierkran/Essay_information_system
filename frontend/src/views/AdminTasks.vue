@@ -11,10 +11,19 @@
 
     <!-- 筛选栏 -->
     <div v-if="isDesktop" class="filter-bar">
-      <input v-model="filters.name" placeholder="任务名称" class="filter-input" @input="applyFilter" />
+      <input v-model="filters.name" placeholder="任务名称" class="filter-input" @keyup.enter="applyFilter" />
       <select v-model="filters.grade" class="filter-input" @change="applyFilter">
         <option value="">全部年级</option>
         <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+      </select>
+      <select v-model="filters.number" class="filter-input" @change="applyFilter">
+        <option value="">全部第几次</option>
+        <option v-for="n in 10" :key="n" :value="n">第{{ n }}次</option>
+      </select>
+      <select v-model="filters.teachingMode" class="filter-input" @change="applyFilter">
+        <option value="">全部提交方式</option>
+        <option value="线下">线下</option>
+        <option value="线上">线上</option>
       </select>
       <select v-model="filters.status" class="filter-input" @change="applyFilter">
         <option value="">全部状态</option>
@@ -22,11 +31,16 @@
         <option value="expired">已过期</option>
         <option value="ended">已结束</option>
       </select>
-      <input v-model="filters.course" placeholder="课程名称" class="filter-input" @input="applyFilter" />
+      <input v-model="filters.topic" placeholder="文章主题" class="filter-input" @keyup.enter="applyFilter" />
+      <input v-model="filters.course" placeholder="课程名称" class="filter-input" @keyup.enter="applyFilter" />
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
     </div>
     <div v-else style="display:flex;gap:8px;padding:0 12px;flex-wrap:wrap">
-      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" @input="applyFilter" />
-      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" @input="applyFilter" />
+      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" @keyup.enter="applyFilter" />
+      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" @keyup.enter="applyFilter" />
+      <van-button size="small" type="primary" @click="applyFilter">查询</van-button>
+      <van-button size="small" @click="clearFilter">重置</van-button>
     </div>
 
     <!-- 桌面端任务列表 -->
@@ -53,7 +67,7 @@
               <template v-if="col.key === 'name'">
                 <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
               </template>
-              <template v-else-if="col.key === 'number'">第{{ t.essay_number }}次</template>
+              <template v-else-if="col.key === 'number'">{{ t.essay_number ? `第${t.essay_number}次` : '无' }}</template>
               <template v-else-if="col.key === 'topic'">{{ t.essay_topic || '-' }}</template>
               <template v-else-if="col.key === 'course'">{{ t.course_name || '-' }}</template>
               <template v-else-if="col.key === 'deadline'">{{ t.deadline ? formatDeadline(t.deadline) : '无限制' }}</template>
@@ -62,10 +76,12 @@
               </template>
               <template v-else-if="col.key === 'actions'">
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
+                <button class="btn btn-primary" style="font-size:12px;padding:2px 8px" @click="goBatchUpload(t)">批量上传</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
               </template>
               <template v-else-if="col.key === 'teaching_mode'">{{ t.teaching_mode || '线下' }}</template>
+              <template v-else-if="col.key === 'submitted'"><span style="font-weight:600;color:#1677ff">{{ t.submitted_count || 0 }}</span></template>
               <template v-else>{{ t[col.key] }}</template>
             </td>
           </tr>
@@ -81,9 +97,10 @@
       <van-cell-group inset v-if="filteredTasks.length" style="margin-top:12px">
         <van-cell v-for="t in filteredTasks" :key="t.id"
           :title="t.name"
-          :label="`${t.grade} 第${t.essay_number}次 ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''}`"
+          :label="`${t.grade || '未定年级'} ${t.essay_number ? '第' + t.essay_number + '次' : '无第几次'} ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''}`"
           is-link @click="openTaskDialog(t)">
           <template #right-icon>
+            <span style="font-size:12px;color:#1677ff;margin-right:8px">{{ t.submitted_count || 0 }}人已交</span>
             <van-tag :type="getTaskStatus(t).active ? 'primary' : 'default'" style="margin-right:8px">
               {{ getTaskStatus(t).label }}
             </van-tag>
@@ -102,8 +119,8 @@
         <van-form @submit="saveTask">
           <van-cell-group inset>
             <van-field v-model="taskForm.name" label="任务名称" placeholder="如：高二第三次作文" :rules="[{required:true}]" />
-            <van-field :model-value="taskForm.grade" is-link readonly label="年级" placeholder="请选择年级" @click="showTaskGradePicker=true" :rules="[{required:true}]" />
-            <van-field v-model="taskForm.essay_number" label="第几次作文" type="digit" :rules="[{required:true}]" />
+            <van-field :model-value="taskForm.grade || '暂不选择'" is-link readonly label="年级" placeholder="请选择年级（可暂不选择）" @click="showTaskGradePicker=true" />
+            <van-field v-model="taskForm.essay_number" label="第几次作文" type="digit" placeholder="不填或0表示无第几次" />
             <van-field v-model="taskForm.essay_topic" label="文章主题" placeholder="如：议论文写作" />
             <van-field :model-value="taskForm.course_name || '请选择课程'" is-link readonly label="课程名称" placeholder="请选择课程" @click="showCoursePicker=true" />
             <van-field name="teaching_mode" label="提交方式">
@@ -132,6 +149,7 @@
     <!-- 年级选择器 -->
     <van-action-sheet v-model:show="showTaskGradePicker" title="选择年级">
       <div class="picker-list">
+        <van-cell title="暂不选择年级" @click="selectTaskGrade('')" style="color:#999" />
         <van-cell v-for="g in grades" :key="g" :title="g" @click="selectTaskGrade(g)" />
       </div>
     </van-action-sheet>
@@ -161,7 +179,7 @@ const { isDesktop } = useScreen()
 
 const tasks = ref([])
 const courses = ref([])
-const filters = ref({ name: '', grade: '', status: '', course: '' })
+const filters = ref({ name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' })
 const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束' }
 
 const columnDefs = [
@@ -171,6 +189,7 @@ const columnDefs = [
   { key: 'topic', label: '文章主题', sortable: false },
   { key: 'course', label: '课程名称', sortable: true },
   { key: 'teaching_mode', label: '提交方式', sortable: true },
+  { key: 'submitted', label: '已交学生数', sortable: true },
   { key: 'deadline', label: '截止时间', sortable: true },
   { key: 'status', label: '状态', sortable: false },
   { key: 'actions', label: '操作', sortable: false },
@@ -184,7 +203,19 @@ let draggedIndex = null
 function initColumns() {
   const saved = localStorage.getItem('taskColumns')
   if (saved) {
-    try { columns.value = JSON.parse(saved); return } catch {}
+    try {
+      const savedCols = JSON.parse(saved)
+      // 合并：保留已保存的顺序，同时补充新增的列
+      const merged = []
+      for (const def of columnDefs) {
+        const found = savedCols.find(c => c && c.key === def.key)
+        merged.push(found ? { ...def, ...found } : { ...def })
+      }
+      // 去除已不存在的列（不在columnDefs中的旧列）
+      const validKeys = new Set(columnDefs.map(c => c.key))
+      columns.value = merged.filter(c => validKeys.has(c.key))
+      return
+    } catch {}
   }
   columns.value = columnDefs.map(c => ({ ...c }))
 }
@@ -224,6 +255,9 @@ const filteredTasks = computed(() => {
   return tasks.value.filter(t => {
     if (kw && !t.name.toLowerCase().includes(kw)) return false
     if (filters.value.grade && t.grade !== filters.value.grade) return false
+    if (filters.value.number && String(t.essay_number) !== String(filters.value.number)) return false
+    if (filters.value.teachingMode && t.teaching_mode !== filters.value.teachingMode) return false
+    if (filters.value.topic && !(t.essay_topic || '').toLowerCase().includes(filters.value.topic.toLowerCase())) return false
     if (filters.value.course && !(t.course_name || '').toLowerCase().includes(filters.value.course.toLowerCase())) return false
     const taskStatus = getTaskStatus(t).label
     if (filters.value.status && taskStatus !== statusFilterLabel[filters.value.status]) return false
@@ -251,9 +285,13 @@ function getSortValue(t, key) {
   if (key === 'course') return t.course_name || ''
   if (key === 'teaching_mode') return t.teaching_mode || ''
   if (key === 'topic') return t.essay_topic || ''
+  if (key === 'submitted') return t.submitted_count || 0
   return t[key] || ''
 }
 function applyFilter() {}
+function clearFilter() {
+  filters.value = { name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' }
+}
 const showTaskDialog = ref(false)
 const editingTask = ref({})
 const showTaskGradePicker = ref(false)
@@ -313,7 +351,7 @@ function openTaskDialog(tpl) {
   } else {
     editingTask.value = {}
     taskForm.value = {
-      name: '', grade: '', essay_number: 1, essay_topic: '', course_name: '',
+      name: '', grade: '', essay_number: '', essay_topic: '', course_name: '',
       teaching_mode: '线下', deadlineStr: '', is_active: false
     }
   }
@@ -335,7 +373,7 @@ async function saveTask() {
     const payload = {
       name: taskForm.value.name,
       grade: taskForm.value.grade,
-      essay_number: parseInt(taskForm.value.essay_number) || 1,
+      essay_number: parseInt(taskForm.value.essay_number) || 0,
       essay_topic: taskForm.value.essay_topic,
       course_name: taskForm.value.course_name,
       teaching_mode: taskForm.value.teaching_mode,
@@ -372,7 +410,13 @@ function confirmDelTask(tpl) {
 }
 
 function viewEssays(tpl) {
+  // 重置作文列表的筛选，再按当前任务筛选
+  localStorage.removeItem('essay_list_filters')
   router.push({ path: '/essay/list', query: { task_id: tpl.id } })
+}
+
+function goBatchUpload(tpl) {
+  router.push({ path: '/essay/batch-upload', query: { task_id: tpl.id } })
 }
 </script>
 

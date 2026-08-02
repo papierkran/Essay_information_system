@@ -245,6 +245,25 @@ MIGRATIONS = [
             END $$;
         """,
     },
+    # 11. 修改 essays 唯一约束，添加 essay_title（支持作文次数为0或空时同学生不同标题）
+    {
+        "name": "update_uq_essay_task_student_add_title",
+        "sql": """
+            DO $$
+            BEGIN
+                -- 删除旧约束
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_essay_task_student'
+                ) THEN
+                    ALTER TABLE essays DROP CONSTRAINT uq_essay_task_student;
+                END IF;
+                -- 添加新约束（包含 essay_title）
+                ALTER TABLE essays
+                ADD CONSTRAINT uq_essay_task_student
+                UNIQUE NULLS NOT DISTINCT (class_id, task_id, student_name, essay_number, is_supplement, essay_title);
+            END $$;
+        """,
+    },
 ]
 
 

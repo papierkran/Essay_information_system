@@ -672,22 +672,26 @@ onMounted(async () => {
   loadReviewers()
   // 点击外部关闭任务下拉框
   document.addEventListener('click', closeTaskDropdown)
-  // 恢复之前保存的筛选，如果没有则设置默认值
-  const hasSaved = loadFilters()
-  if (!hasSaved) {
-    filters.value.collectedBy = defaultCollectedBy.value
-  }
-  // 同步任务搜索框文字
-  if (filters.value.taskId && taskList.value.length) {
-    const t = taskList.value.find(x => x.id == filters.value.taskId)
-    if (t) filterTaskSearch.value = t.name
-  }
-  // 从URL参数读取task_id
+  // 从URL参数读取task_id（优先：重置筛选后再按任务筛选）
   const taskIdFromQuery = Number(route.query.task_id)
-  if (taskIdFromQuery && !filters.value.taskId) {
+  if (taskIdFromQuery) {
+    // 重置所有筛选
+    Object.keys(filters.value).forEach(k => { filters.value[k] = '' })
+    filters.value.collectedBy = defaultCollectedBy.value
     filters.value.taskId = taskIdFromQuery
     const t = taskList.value.find(x => x.id === taskIdFromQuery)
     if (t) filterTaskSearch.value = t.name
+  } else {
+    // 恢复之前保存的筛选，如果没有则设置默认值
+    const hasSaved = loadFilters()
+    if (!hasSaved) {
+      filters.value.collectedBy = defaultCollectedBy.value
+    }
+    // 同步任务搜索框文字
+    if (filters.value.taskId && taskList.value.length) {
+      const t = taskList.value.find(x => x.id == filters.value.taskId)
+      if (t) filterTaskSearch.value = t.name
+    }
   }
   await applyFilter()
 })

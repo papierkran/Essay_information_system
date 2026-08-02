@@ -44,7 +44,7 @@ def get_essay_dir(
     grade_name = grade if grade else "未定年级"
     if teaching_mode:
         grade_name = f"{grade_name}{teaching_mode}"
-    task_dir = f"{grade_name}第{essay_number}次"
+    task_dir = grade_name if essay_number in (None, 0) else f"{grade_name}第{essay_number}次"
 
     if task_name and task_created_at:
         task_year = str(task_created_at.year)
@@ -82,7 +82,8 @@ def generate_essay_filename(
     suppl = "补交" if is_supplement else ""
     rm = f"_{remark}" if remark else ""
     safe_title = essay_title.replace("/", "_").replace("\\", "_") if essay_title else "无标题"
-    return f"{safe_title}_{student_name}_第{essay_number}次_{suppl}{rm}_{timestamp}{ext}"
+    num_part = "" if essay_number in (None, 0) else f"_第{essay_number}次"
+    return f"{safe_title}_{student_name}{num_part}_{suppl}{rm}_{timestamp}{ext}"
 
 
 def generate_correction_filename(original_filename: str) -> str:

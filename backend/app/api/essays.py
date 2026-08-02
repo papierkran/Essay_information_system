@@ -311,13 +311,21 @@ async def upload_essay(
         essay.is_supplement = is_supplement
         essay.teaching_mode = teaching_mode
         essay.remark = remark
-        if content_text:  # 只有提供了文字才更新
+        if content_text:
             essay.content_text = content_text
-        # 删除旧的图片/文件
         if essay.content_file and files:
             old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
             if os.path.exists(old_dir) and get_upload_dir() in old_dir:
                 shutil.rmtree(old_dir, ignore_errors=True)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=f"学生「{student_name}」的同一篇作文已存在（第{essay_number}次{'补交' if is_supplement else '正篇'}），请先删除重复记录"
+            )
+        db.refresh(essay)
     else:
         try:
             essay = Essay(
@@ -360,7 +368,7 @@ async def upload_essay(
         str(now.year),
         f"{now.month}月",
         str(now.day),
-        f"{grade_name}第{essay_number}次",
+        f"{grade_name}第{essay_number}次" if essay_number not in (None, 0) else grade_name,
         student_name,
     )
     os.makedirs(dir_path, exist_ok=True)
@@ -426,6 +434,8 @@ async def upload_correction_docx(
     essay_title: str = Form(""),
     content_text: str = Form(""),
     corrected_text: str = Form(""),
+    is_supplement: bool = Form(False),
+    task_id: int = Form(None),
     collected_by: int = Form(None),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
@@ -454,7 +464,7 @@ async def upload_correction_docx(
         str(now.year),
         f"{now.month}月",
         str(now.day),
-        f"{grade_name}第{essay_number}次",
+        f"{grade_name}第{essay_number}次" if essay_number not in (None, 0) else grade_name,
     )
 
     try:
@@ -475,14 +485,17 @@ async def upload_correction_docx(
             raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
     try:
-        # 检查是否已存在同一条记录（同一学生同一次作文）
-        existing = db.query(Essay).filter(
+        # 检查是否已存在同一条记录（同一学生同一次作文，优先匹配同一任务）
+        existing_query = db.query(Essay).filter(
             Essay.class_id == 1,
             Essay.student_name == student_name,
             Essay.essay_number == essay_number,
-            Essay.is_supplement == False,
+            Essay.is_supplement == is_supplement,
             Essay.deleted_at == None,
-        ).first()
+        )
+        if task_id is not None:
+            existing_query = existing_query.filter(Essay.task_id == task_id)
+        existing = existing_query.first()
 
         if existing:
             # 更新已有记录
@@ -494,6 +507,9 @@ async def upload_correction_docx(
             existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
             existing.teaching_mode = teaching_mode or existing.teaching_mode
             existing.collected_by = collector_id
+            existing.is_supplement = is_supplement
+            if task_id is not None:
+                existing.task_id = task_id
             essay = existing
         else:
             # 新建记录
@@ -503,13 +519,14 @@ async def upload_correction_docx(
                 essay_number=essay_number,
                 essay_title=essay_title,
                 student_name=student_name,
-                is_supplement=False,
+                is_supplement=is_supplement,
                 teaching_mode=teaching_mode,
                 remark="",
                 content_text=content_text,
                 corrected_text=corrected_text if corrected_text else "",
                 file_type="docx",
                 collected_by=collector_id,
+                task_id=task_id,
                 status="confirming" if corrected_text and content_text and content_text.strip() else "pending",
                 corrected_at=datetime.now() if corrected_text else None,
                 reviewer_id=current_user.id if corrected_text else None,
@@ -520,6 +537,12 @@ async def upload_correction_docx(
         _log_operation(db, essay.id, current_user.id, "修改", student_name)
         db.commit()
         db.refresh(essay)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"学生「{student_name}」第{essay_number}次作文在所选任务下已存在，请先删除重复记录"
+        )
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"创建记录失败: {str(e)}")

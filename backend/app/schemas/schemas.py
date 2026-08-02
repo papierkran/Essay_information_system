@@ -6,8 +6,8 @@ from datetime import datetime
 # ===== 作文收集任务 =====
 class TaskCreate(BaseModel):
     name: str
-    grade: str
-    essay_number: int = 1
+    grade: str = ""
+    essay_number: Optional[int] = None
     essay_topic: str = ""
     course_name: str = ""
     teaching_mode: str = "线下"
@@ -25,6 +25,7 @@ class TaskOut(BaseModel):
     teaching_mode: str
     deadline: Optional[datetime] = None
     is_active: bool
+    submitted_count: int = 0
     created_at: datetime
 
     class Config:

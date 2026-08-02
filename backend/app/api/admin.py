@@ -612,7 +612,7 @@ def create_task(
     task = EssayTask(
         name=data.name,
         grade=data.grade,
-        essay_number=data.essay_number,
+        essay_number=data.essay_number or 0,
         essay_topic=data.essay_topic,
         course_name=data.course_name,
         teaching_mode=data.teaching_mode,
@@ -632,7 +632,20 @@ def list_tasks(
 ):
     require_admin(current_user)
     tasks = db.query(EssayTask).filter(EssayTask.deleted_at == None).order_by(EssayTask.created_at.desc()).all()
-    return [TaskOut.model_validate(t) for t in tasks]
+    # 统计每个任务下已提交的作文数量
+    from sqlalchemy import func
+    counts = dict(
+        db.query(Essay.task_id, func.count(Essay.id))
+        .filter(Essay.task_id.isnot(None), Essay.deleted_at == None)
+        .group_by(Essay.task_id)
+        .all()
+    )
+    result = []
+    for t in tasks:
+        out = TaskOut.model_validate(t)
+        out.submitted_count = counts.get(t.id, 0)
+        result.append(out)
+    return result
 
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)
@@ -654,7 +667,7 @@ def update_task(
         raise HTTPException(status_code=400, detail="任务名称已存在")
     task.name = data.name
     task.grade = data.grade
-    task.essay_number = data.essay_number
+    task.essay_number = data.essay_number or 0
     task.essay_topic = data.essay_topic
     task.course_name = data.course_name
     task.teaching_mode = data.teaching_mode

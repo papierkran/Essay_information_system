@@ -347,13 +347,13 @@ body {
     left: 50% !important;
     right: auto !important;
     width: 90%;
-    max-width: 480px;
+    max-width: 680px;
     transform: translate(-50%, -50%);
     border-radius: 12px;
-    max-height: 70vh;
+    max-height: 85vh;
   }
-  .van-action-sheet { max-height: 70vh; }
+  .van-action-sheet { max-height: 85vh; }
   .van-action-sheet__header { text-align: center; }
-  .van-dialog { width: 90%; max-width: 480px; }
+  .van-dialog { width: 90%; max-width: 560px; }
 }
 </style>

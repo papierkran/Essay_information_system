@@ -13,9 +13,9 @@
     <van-form @submit="onSubmit">
       <van-cell-group inset>
         <van-field :model-value="selectedGrade" is-link readonly label="年级"
-          :placeholder="selectedGrade || '请选择年级'" @click="showGradePicker = true" :rules="[{ required: true }]" />
+          :placeholder="selectedGrade || '请选择年级（可暂不选择）'" @click="showGradePicker = true" />
         <van-field v-model="form.grade" v-show="false" />
-        <van-field v-model="form.essay_number" label="第几次作文" placeholder="数字" type="digit" :rules="[{ required: true }]" />
+        <van-field v-model="form.essay_number" label="第几次作文" placeholder="数字（不填表示无）" type="digit" />
         <van-field v-model="form.essay_title" label="作文标题" placeholder="输入标题" />
         <div v-if="recentTitles.length" style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:6px">
           <van-tag v-for="t in recentTitles" :key="t" plain size="medium" @click="form.essay_title = t" style="cursor:pointer">{{ t }}</van-tag>
@@ -56,6 +56,7 @@
     <!-- 年级选择器 -->
     <van-action-sheet v-model:show="showGradePicker" title="选择年级">
       <div class="picker-list">
+        <van-cell title="暂不选择" @click="selectGrade('')" style="color:#999" />
         <van-cell v-for="g in grades" :key="g" :title="g" @click="selectGrade(g)" />
       </div>
     </van-action-sheet>
@@ -63,15 +64,36 @@
     <!-- 模板选择器 -->
     <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
       <div class="picker-list">
+        <div style="padding:8px 16px">
+          <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+        </div>
         <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
-        <van-cell v-for="t in sortedTasks" :key="t.id"
-          :title="t.name"
-          :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
-          @click="selectTask(t)">
-          <template #right-icon>
-            <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
-          </template>
-        </van-cell>
+        <div class="task-split">
+          <div class="task-col">
+            <div class="task-col-title">线上</div>
+            <van-cell v-for="t in filteredOnlineTasks" :key="t.id"
+              :title="t.name"
+              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
+              @click="selectTask(t)">
+              <template #right-icon>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+              </template>
+            </van-cell>
+            <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
+          </div>
+          <div class="task-col">
+            <div class="task-col-title">线下</div>
+            <van-cell v-for="t in filteredOfflineTasks" :key="t.id"
+              :title="t.name"
+              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
+              @click="selectTask(t)">
+              <template #right-icon>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+              </template>
+            </van-cell>
+            <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
+          </div>
+        </div>
       </div>
     </van-action-sheet>
 
@@ -123,6 +145,21 @@ const sortedTasks = computed(() => {
     if (aActive !== bActive) return aActive ? -1 : 1
     return 0
   })
+})
+
+const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode === '线上'))
+const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
+
+const taskSearch = ref('')
+const filteredOnlineTasks = computed(() => {
+  const kw = taskSearch.value.trim().toLowerCase()
+  if (!kw) return onlineTasks.value
+  return onlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+})
+const filteredOfflineTasks = computed(() => {
+  const kw = taskSearch.value.trim().toLowerCase()
+  if (!kw) return offlineTasks.value
+  return offlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 
 function taskIsActive(t) {
@@ -219,7 +256,7 @@ function selectTask(tpl) {
 }
 
 async function onSubmit() {
-  if (!form.value.grade) { showToast('请选择年级'); return }
+  if (!form.value.student_name) { showToast('请填写学生姓名'); return }
   loading.value = true
   try {
     const fd = new FormData()
@@ -230,8 +267,9 @@ async function onSubmit() {
     if (selectedCollector.value) {
       fd.append('collected_by', String(selectedCollector.value))
     }
-    fd.append('grade', form.value.grade)
-    fd.append('essay_number', form.value.essay_number || 1)
+    fd.append('grade', form.value.grade || '')
+    const essayNumber = parseInt(form.value.essay_number)
+    fd.append('essay_number', isNaN(essayNumber) || essayNumber <= 0 ? '0' : String(essayNumber))
     fd.append('essay_title', form.value.essay_title)
     fd.append('student_name', form.value.student_name)
     fd.append('is_supplement', form.value.is_supplement ? 'true' : 'false')
@@ -244,7 +282,7 @@ async function onSubmit() {
     await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     showDialog({
       title: '✅ 上传成功',
-      message: `学生：${form.value.student_name}\n年级：${form.value.grade}\n第${form.value.essay_number || 1}次\n提交方式：${form.value.teaching_mode}`,
+      message: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
       confirmButtonText: '继续上传',
       className: 'upload-success-dialog',
     })
@@ -292,10 +330,33 @@ async function onSubmit() {
 
 <style scoped>
 .page { padding: 16px; }
-.picker-list { max-height: 300px; overflow-y: auto; }
+.picker-list { max-height: 70vh; overflow-y: auto; }
 
 :deep(.upload-msg-dialog) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.task-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #f0f0f0;
+}
+
+.task-col {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.task-col + .task-col {
+  border-left: 1px solid #f0f0f0;
+}
+
+.task-col-title {
+  padding: 8px 16px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
 }
 
 :deep(.upload-msg-dialog .van-dialog__message) {
