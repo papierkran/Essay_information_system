@@ -35,6 +35,7 @@
         <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
           @click="showCollectorPicker = true" />
         <van-field v-model="form.remark" label="备注" placeholder="备注信息（可选）" />
+        <van-field v-model="form.collector_note" label="收集者备注" placeholder="收集者自定义备注（可选）" />
       </van-cell-group>
       <van-cell-group inset style="margin-top:12px">
         <van-field name="uploader" label="上传文件（docx/图片，可多选）">
@@ -168,7 +169,7 @@ function taskIsActive(t) {
 
 const form = ref({
   class_id: 1, grade: '', essay_number: '', essay_title: '',
-  student_name: '', is_supplement: false, teaching_mode: '线上', remark: '', content_text: '',
+  student_name: '', is_supplement: false, teaching_mode: '线上', remark: '', collector_note: '', content_text: '',
 })
 
 onMounted(async () => {
@@ -275,6 +276,7 @@ async function onSubmit() {
     fd.append('is_supplement', form.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', form.value.teaching_mode)
     fd.append('remark', form.value.remark)
+    fd.append('collector_note', form.value.collector_note || '')
     fd.append('content_text', form.value.content_text)
     if (fileList.value.length > 0) {
       fileList.value.forEach(item => fd.append('files', item.file))
@@ -286,7 +288,7 @@ async function onSubmit() {
       confirmButtonText: '继续上传',
       className: 'upload-success-dialog',
     })
-    form.value = { class_id: 1, grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, remark: '', content_text: '' }
+    form.value = { class_id: 1, grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, remark: '', collector_note: '', content_text: '' }
     fileList.value = []
     selectedGrade.value = ''
     selectedTaskName.value = ''

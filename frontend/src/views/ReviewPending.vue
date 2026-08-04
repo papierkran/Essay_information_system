@@ -33,11 +33,14 @@
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
         </select>
       </div>
-      <div class="filter-row"><span class="filter-label">任务</span>
-        <select v-model.number="filters.taskId" class="filter-input" @change="applyFilter">
-          <option :value="0">全部</option>
-          <option v-for="t in taskList" :key="t.id" :value="t.id">{{ t.name }}</option>
-        </select>
+      <div ref="taskFilterRef" class="filter-row" style="position:relative">
+        <span class="filter-label">任务</span>
+        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
+        <div v-if="showTaskDropdown" class="task-dropdown">
+          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
+          <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
+          <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
+        </div>
       </div>
       <div class="filter-row"><span class="filter-label">上传起始</span><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">上传截止</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
@@ -137,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -156,6 +159,9 @@ const loading = ref(false)
 const selectedIds = ref([])
 const collectorList = ref([])
 const taskList = ref([])
+const filterTaskSearch = ref('')
+const showTaskDropdown = ref(false)
+const taskFilterRef = ref(null)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
@@ -179,6 +185,23 @@ const filters = ref({
 })
 
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', corrected: '已修改' }[s] || s }
+
+function closeTaskDropdown(e) {
+  if (taskFilterRef.value && !taskFilterRef.value.contains(e.target)) {
+    showTaskDropdown.value = false
+  }
+}
+
+const filteredTaskOptions = computed(() => {
+  if (!filterTaskSearch.value) return taskList.value
+  const kw = filterTaskSearch.value
+  // 智能分段匹配：将搜索词拆为 中文段 + 数字段，按顺序匹配（允许中间有任意字符）
+  const segments = kw.match(/[\u4e00-\u9fff]+|\d+/g)
+  if (!segments || segments.length === 0) return taskList.value.filter(t => t.name.toLowerCase().includes(kw.toLowerCase()))
+  const pattern = segments.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
+  const regex = new RegExp(pattern, 'i')
+  return taskList.value.filter(t => regex.test(t.name))
+})
 
 const sortBy = ref('')
 const sortOrder = ref('asc')
@@ -242,6 +265,7 @@ function buildParams() {
   if (filters.value.teachingMode) p.teaching_mode = filters.value.teachingMode
   if (filters.value.collectedBy) p.collected_by = filters.value.collectedBy
   if (filters.value.taskId) p.task_id = filters.value.taskId
+  if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
   if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
   if (filters.value.dateTo) p.date_to = filters.value.dateTo
   if (filters.value.wordCountMin) p.word_count_min = filters.value.wordCountMin
@@ -283,6 +307,7 @@ async function loadMobile() {
 
 function clearFilter() {
   filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: 0, dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
+  filterTaskSearch.value = ''
   page.value = 1
   load()
 }
@@ -357,7 +382,14 @@ async function fetchCollectorsAndTasks() {
   catch (err) { console.warn('获取任务列表失败:', err) }
 }
 
-onMounted(() => { load(); fetchCollectorsAndTasks() })
+onMounted(() => {
+  load()
+  fetchCollectorsAndTasks()
+  document.addEventListener('click', closeTaskDropdown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeTaskDropdown)
+})
 </script>
 
 <style scoped>
@@ -380,6 +412,29 @@ onMounted(() => { load(); fetchCollectorsAndTasks() })
 .filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
 .filter-input:focus { border-color: #4096ff; }
 .filter-input[type="number"] { width: 60px; }
+
+.task-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 4px;
+}
+.task-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.task-item:hover { background: #f0f0f0; }
+.task-item-active { background: #e6f4ff; color: #1677ff; }
 
 .batch-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
 .row-selected { background-color: #e6f4ff !important; }

@@ -133,6 +133,10 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
                 result = ai_correct_text(e.content_text, llm_cfg)
                 corrected_text = result.get("修改后内容", e.content_text)
                 e.content_text = corrected_text
+                if not e.essay_title or not e.essay_title.strip():
+                    title = result.get("作文标题", "")
+                    if title and title != "未知":
+                        e.essay_title = title.strip()
                 _log_operation(db, e.id, current_user_id, "编辑", "批量 AI 错别字修正")
                 success += 1
             except Exception as ex:

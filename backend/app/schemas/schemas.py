@@ -116,6 +116,7 @@ class EssayCreate(BaseModel):
     is_supplement: bool = False
     teaching_mode: str = "线下"
     remark: str = ""
+    collector_note: str = ""
     content_text: str = ""
 
 
@@ -132,6 +133,8 @@ class EssayOut(BaseModel):
     is_supplement: bool
     teaching_mode: str = "线下"
     remark: str
+    collector_note: str = ""
+    reviewer_note: str = ""
     content_text: str
     corrected_text: str = ""
     content_file: str

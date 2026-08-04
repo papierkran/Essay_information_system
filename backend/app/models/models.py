@@ -124,6 +124,8 @@ class Essay(Base):
     is_supplement = Column(Boolean, default=False)
     teaching_mode = Column(String(10), default="线下")  # 线下/线上
     remark = Column(Text, default="")
+    collector_note = Column(Text, default="")   # 收集者备注
+    reviewer_note = Column(Text, default="")    # 批改者备注
     content_text = Column(Text, default="")
     content_file = Column(String(500), default="")
     file_type = Column(String(10), default="text")

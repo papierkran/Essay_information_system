@@ -267,6 +267,21 @@ MIGRATIONS = [
             END $$;
         """,
     },
+    # 12. essays 添加 collector_note / reviewer_note 备注字段
+    {
+        "name": "add_essays_notes_columns",
+        "sql": """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='essays' AND column_name='collector_note') THEN
+                    ALTER TABLE essays ADD COLUMN collector_note TEXT DEFAULT '';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='essays' AND column_name='reviewer_note') THEN
+                    ALTER TABLE essays ADD COLUMN reviewer_note TEXT DEFAULT '';
+                END IF;
+            END $$;
+        """,
+    },
 ]
 
 

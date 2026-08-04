@@ -15,7 +15,7 @@ export default defineConfig({
     }),
   ],
   define: {
-    __API_BASE_URL__: JSON.stringify('https://zwhd.papierkran.top'),
+    __API_BASE_URL__: JSON.stringify('https://zuowen.papierkran.top/api'),
   },
   server: {
     host: '::',

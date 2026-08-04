@@ -280,6 +280,7 @@ async def upload_essay(
     is_supplement: bool = Form(False),
     teaching_mode: str = Form("线下"),
     remark: str = Form(""),
+    collector_note: str = Form(""),
     content_text: str = Form(""),
     collected_by: int = Form(None),
     files: list[UploadFile] = File(None),
@@ -315,6 +316,7 @@ async def upload_essay(
         essay.is_supplement = is_supplement
         essay.teaching_mode = teaching_mode
         essay.remark = remark
+        essay.collector_note = collector_note
         if content_text:
             essay.content_text = content_text
         if essay.content_file and files:
@@ -343,6 +345,7 @@ async def upload_essay(
                 is_supplement=is_supplement,
                 teaching_mode=teaching_mode,
                 remark=remark,
+                collector_note=collector_note,
                 content_text=content_text,
                 file_type=file_type,
                 collected_by=collector_id,
@@ -699,6 +702,7 @@ def pending_essays(
     essay_number: int = None,
     teaching_mode: str = None,
     task_id: int = None,
+    task_name: str = None,
     collected_by: int = None,
     essay_title: str = None,
     status: str = None,
@@ -734,6 +738,8 @@ def pending_essays(
         q = q.filter(Essay.teaching_mode == teaching_mode)
     if task_id is not None:
         q = q.filter(Essay.task_id == task_id)
+    if task_name:
+        q = q.join(EssayTask, Essay.task_id == EssayTask.id, isouter=True).filter(EssayTask.name.like(f"%{task_name}%"))
     if collected_by:
         q = q.filter(Essay.collected_by == collected_by)
     if essay_title:
@@ -983,6 +989,7 @@ async def upload_correction(
     essay_id: int,
     file: UploadFile = File(None),
     corrected_text: str = Form(""),
+    reviewer_note: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1016,6 +1023,9 @@ async def upload_correction(
     # 保存文字修改（如果有）
     if corrected_text.strip():
         essay.corrected_text = corrected_text.strip()
+
+    if reviewer_note.strip():
+        essay.reviewer_note = reviewer_note.strip()
 
     essay.reviewer_id = current_user.id
     if essay.status == "pending" and essay.content_text and essay.content_text.strip():
@@ -1268,11 +1278,16 @@ def ai_correct_essay(
         result = ai_correct_text(essay.content_text, llm_cfg)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
+        if not essay.essay_title or not essay.essay_title.strip():
+            title = result.get("作文标题", "")
+            if title and title != "未知":
+                essay.essay_title = title.strip()
         _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正")
         db.commit()
         db.refresh(essay)
         return {
             "content_text": corrected_text,
+            "essay_title": essay.essay_title,
             "metadata": {
                 "title": result.get("作文标题", "未知"),
                 "author": result.get("作者", "未知"),
@@ -1849,14 +1864,35 @@ async def batch_upload_essays(
             fw.write(content)
 
     created_ids = []
+    skipped_students = []
+
+    task_id_from_item = None
+    if items:
+        task_id_from_item = items[0].get("task_id")
+
+    existing_names = set()
+    if task_id_from_item:
+        existing = db.query(Essay.student_name).filter(
+            Essay.task_id == task_id_from_item,
+            Essay.grade == grade,
+            Essay.essay_number == essay_number,
+            Essay.deleted_at == None,
+        ).all()
+        existing_names = {row[0] for row in existing}
+
+    seen_in_batch = set()
     for item in items:
+        student_name = item.get("student_name", "")
+        if student_name in existing_names or student_name in seen_in_batch:
+            skipped_students.append(student_name)
+            continue
         try:
             essay = Essay(
                 class_id=1,
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=item.get("essay_title", ""),
-                student_name=item.get("student_name", ""),
+                student_name=student_name,
                 is_supplement=item.get("is_supplement", False),
                 teaching_mode=teaching_mode,
                 remark=item.get("remark", ""),
@@ -1864,19 +1900,23 @@ async def batch_upload_essays(
                 corrected_text=item.get("corrected_text", ""),
                 file_type="docx",
                 collected_by=current_user.id,
-                task_id=item.get("task_id"),
+                task_id=task_id_from_item,
                 status="pending",
             )
             db.add(essay)
             db.flush()
             created_ids.append(essay.id)
+            seen_in_batch.add(student_name)
         except IntegrityError:
             db.rollback()
+            skipped_students.append(student_name)
             continue
 
     db.commit()
 
     detail_text = f"批量上传 {len(created_ids)} 篇 ({grade}第{essay_number}次)"
+    if skipped_students:
+        detail_text += f"，跳过 {len(skipped_students)} 个已存在学生：{'、'.join(skipped_students)}"
 
     # 插入批量操作日志
     try:
@@ -1893,7 +1933,7 @@ async def batch_upload_essays(
     except Exception:
         pass
 
-    return {"message": detail_text, "count": len(created_ids), "ids": created_ids, "batch_id": batch_uuid}
+    return {"message": detail_text, "count": len(created_ids), "ids": created_ids, "batch_id": batch_uuid, "skipped": skipped_students}
 
 
 # ===== /{essay_id} 通用路由必须放在所有具名路由之后 =====
@@ -2099,6 +2139,8 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         is_supplement=essay.is_supplement or False,
         teaching_mode=essay.teaching_mode or "线下",
         remark=essay.remark or "",
+        collector_note=essay.collector_note or "",
+        reviewer_note=essay.reviewer_note or "",
         content_text=essay.content_text or "",
         corrected_text=essay.corrected_text or "",
         content_file=essay.content_file or "",

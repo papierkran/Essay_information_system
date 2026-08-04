@@ -336,6 +336,8 @@ const allColumns = ref([
   { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
   { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
   { key: 'remark', label: '备注', field: 'remark', sortable: true, sort: 'remark', visible: true },
+  { key: 'collector_note', label: '收集者备注', field: 'collector_note', sortable: false, visible: true },
+  { key: 'reviewer_note', label: '批改者备注', field: 'reviewer_note', sortable: false, visible: true },
   { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: false },
   { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: true, sort: 'word_count', visible: false },
   { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: true, sort: 'corrected_word_count', visible: false },
@@ -413,7 +415,7 @@ function saveColumns() {
   showColumnSettings.value = false
 }
 function resetColumns() {
-  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: false, remark: true, is_supplement: false, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: true }
+  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: false, remark: true, collector_note: true, reviewer_note: true, is_supplement: false, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: true }
   allColumns.value.forEach(c => { c.visible = defaults[c.key] !== undefined ? defaults[c.key] : false })
 }
 function moveColumn() {
@@ -653,10 +655,11 @@ async function doDelete() {
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
 function exportCSV() {
-  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','备注','收集时间','修改时间']
+  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','备注','收集者备注','批改者备注','收集时间','修改时间']
   const rows = list.value.map(e => [
     e.student_name, e.grade, e.essay_title, `第${e.essay_number}次`,
     e.teaching_mode, statusLabel(e.status), e.collector_name, e.remark,
+    e.collector_note || '', e.reviewer_note || '',
     e.created_at ? formatDateTime(e.created_at) : '', e.corrected_at ? formatDateTime(e.corrected_at) : '',
   ])
   const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')

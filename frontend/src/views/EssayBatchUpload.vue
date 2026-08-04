@@ -514,6 +514,7 @@ async function onSubmitEssays() {
       fd.append('is_supplement', 'false')
       fd.append('teaching_mode', form.value.teaching_mode)
       fd.append('remark', '')
+      fd.append('collector_note', form.value.collector_note || '')
       fd.append('content_text', '')
       files.forEach(f => fd.append('files', f))
 

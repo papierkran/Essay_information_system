@@ -50,6 +50,8 @@
             <div class="info-item"><span class="info-label">修改者</span><span>{{ essay.reviewer_name || '-' }}</span></div>
             <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
             <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" :disabled="!canEdit" /></div>
+            <div class="info-item"><span class="info-label">收集者备注</span><input v-model="editForm.collector_note" class="edit-input" :disabled="!canEdit" /></div>
+            <div class="info-item" v-if="editForm.reviewer_note"><span class="info-label">批改者备注</span><input v-model="editForm.reviewer_note" class="edit-input" disabled /></div>
             <div class="info-item"><span class="info-label">提交方式</span>
               <select v-model="editForm.teaching_mode" class="edit-input" :disabled="!canEdit">
                 <option value="线上">线上</option>
@@ -77,6 +79,10 @@
               <label>文字修改内容</label>
                 <textarea v-model="correctionText" rows="4" placeholder="输入修改文字..."></textarea>
             </div>
+            <div class="form-group">
+              <label>批改者备注</label>
+                <textarea v-model="correctionNote" rows="2" placeholder="批改者自定义备注（可选）..."></textarea>
+            </div>
             <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()" style="width:100%">
                 {{ uploading ? '提交中...' : '提交修改' }}
             </button>
@@ -87,6 +93,7 @@
           <template v-else>
             <div class="card-header"><h3>✅ 已修改</h3></div>
             <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
+            <p v-if="essay.reviewer_note" style="font-size:13px;color:#666;margin-top:8px;background:#f6ffed;padding:8px;border-radius:4px">📝 批改者备注：{{ essay.reviewer_note }}</p>
             <button v-if="essay.has_correction" class="btn btn-success" @click="downloadCorrection" style="margin-top:12px;width:100%">📥 下载修改结果</button>
           </template>
         </div>
@@ -244,6 +251,8 @@
           <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
           <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
           <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" :disabled="!canEdit" />
+          <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
+          <van-field v-if="editForm.reviewer_note" v-model="editForm.reviewer_note" label="批改者备注" type="textarea" rows="2" disabled />
           <van-field label="是否补交">
             <template #input>
               <van-radio-group v-model="editForm.is_supplement" :disabled="!canEdit" direction="horizontal">
@@ -321,6 +330,7 @@
         <van-cell-group inset style="margin-top:12px" v-if="canReview && essay.status !== 'corrected'">
           <van-field v-model="correctionFile" is-link readonly label="上传修改结果" placeholder="选择修改后的 docx 文件" @click="selectFile" />
           <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
+          <van-field v-model="correctionNote" label="批改者备注" type="textarea" rows="2" placeholder="批改者自定义备注（可选）..." />
           <div style="margin:16px">
             <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
             <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
@@ -399,6 +409,7 @@ const canEdit = computed(() => !isReadonly.value && isOwner.value)
 const essay = ref(null)
 const correctionFile = ref('')
 const correctionText = ref('')
+const correctionNote = ref('')
 const selectedFile = ref(null)
 const uploading = ref(false)
 const fileInput = ref(null)
@@ -539,6 +550,7 @@ async function doReuploadDesktop() {
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', editForm.value.teaching_mode || essay.value.teaching_mode || '线下')
     fd.append('remark', editForm.value.remark || essay.value.remark || '')
+    fd.append('collector_note', editForm.value.collector_note || essay.value.collector_note || '')
     desktopFileList.value.forEach(item => fd.append('files', item.file))
     if (reuploadText.value.trim()) {
       fd.append('content_text', reuploadText.value)
@@ -714,6 +726,8 @@ async function loadEssay() {
       essay_number: essay.value.essay_number,
       teaching_mode: essay.value.teaching_mode || '线下',
       remark: essay.value.remark,
+      collector_note: essay.value.collector_note || '',
+      reviewer_note: essay.value.reviewer_note || '',
       collected_by: essay.value.collected_by,
       is_supplement: essay.value.is_supplement || false,
       task_id: essay.value.task_id || 0,
@@ -841,11 +855,13 @@ async function uploadCorrection() {
     const fd = new FormData()
     if (selectedFile.value) fd.append('file', selectedFile.value)
     fd.append('corrected_text', correctionText.value)
+    fd.append('reviewer_note', correctionNote.value || '')
     await api.post(`/essays/${route.params.id}/upload-correction`, fd)
     showToast('修改提交成功')
     await loadEssay()
     selectedFile.value = null; correctionFile.value = ''
     correctionText.value = ''
+    correctionNote.value = ''
     showReuploadCorrected.value = false
   } catch (err) { showToast(err.response?.data?.detail || '上传失败') }
   finally { uploading.value = false }
@@ -876,6 +892,8 @@ async function saveEdit() {
       essay_number: res.data.essay_number,
       teaching_mode: res.data.teaching_mode || '线下',
       remark: res.data.remark,
+      collector_note: res.data.collector_note || '',
+      reviewer_note: res.data.reviewer_note || '',
       collected_by: res.data.collected_by,
       is_supplement: res.data.is_supplement || false,
       task_id: res.data.task_id || 0,
@@ -919,6 +937,7 @@ async function doReupload() {
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', editForm.value.teaching_mode || essay.value.teaching_mode || '线下')
     fd.append('remark', editForm.value.remark || essay.value.remark || '')
+    fd.append('collector_note', editForm.value.collector_note || essay.value.collector_note || '')
     for (const f of files) {
       fd.append('files', f)
     }
