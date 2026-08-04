@@ -611,7 +611,7 @@ def list_essays(
     if teaching_mode:
         q = q.filter(Essay.teaching_mode == teaching_mode)
     if remark:
-        q = q.filter(Essay.remark.like(f"%{remark}%"))
+        q = q.filter(Essay.collector_note.like(f"%{remark}%"))
     if collected_by:
         q = q.filter(Essay.collected_by == collected_by)
     if essay_title:

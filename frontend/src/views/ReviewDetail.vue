@@ -49,7 +49,6 @@
             </div>
             <div class="info-item"><span class="info-label">修改者</span><span>{{ essay.reviewer_name || '-' }}</span></div>
             <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
-            <div class="info-item"><span class="info-label">备注</span><input v-model="editForm.remark" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item"><span class="info-label">收集者备注</span><input v-model="editForm.collector_note" class="edit-input" :disabled="!canEdit" /></div>
             <div class="info-item" v-if="editForm.reviewer_note"><span class="info-label">批改者备注</span><input v-model="editForm.reviewer_note" class="edit-input" disabled /></div>
             <div class="info-item"><span class="info-label">提交方式</span>
@@ -250,7 +249,6 @@
           <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
           <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
           <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
-          <van-field v-model="editForm.remark" label="备注" type="textarea" rows="2" :disabled="!canEdit" />
           <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
           <van-field v-if="editForm.reviewer_note" v-model="editForm.reviewer_note" label="批改者备注" type="textarea" rows="2" disabled />
           <van-field label="是否补交">
@@ -549,7 +547,6 @@ async function doReuploadDesktop() {
     fd.append('student_name', editForm.value.student_name || essay.value.student_name)
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', editForm.value.teaching_mode || essay.value.teaching_mode || '线下')
-    fd.append('remark', editForm.value.remark || essay.value.remark || '')
     fd.append('collector_note', editForm.value.collector_note || essay.value.collector_note || '')
     desktopFileList.value.forEach(item => fd.append('files', item.file))
     if (reuploadText.value.trim()) {
@@ -725,7 +722,6 @@ async function loadEssay() {
       essay_title: essay.value.essay_title,
       essay_number: essay.value.essay_number,
       teaching_mode: essay.value.teaching_mode || '线下',
-      remark: essay.value.remark,
       collector_note: essay.value.collector_note || '',
       reviewer_note: essay.value.reviewer_note || '',
       collected_by: essay.value.collected_by,
@@ -891,7 +887,6 @@ async function saveEdit() {
       essay_title: res.data.essay_title,
       essay_number: res.data.essay_number,
       teaching_mode: res.data.teaching_mode || '线下',
-      remark: res.data.remark,
       collector_note: res.data.collector_note || '',
       reviewer_note: res.data.reviewer_note || '',
       collected_by: res.data.collected_by,
@@ -936,7 +931,6 @@ async function doReupload() {
     fd.append('student_name', editForm.value.student_name || essay.value.student_name)
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', editForm.value.teaching_mode || essay.value.teaching_mode || '线下')
-    fd.append('remark', editForm.value.remark || essay.value.remark || '')
     fd.append('collector_note', editForm.value.collector_note || essay.value.collector_note || '')
     for (const f of files) {
       fd.append('files', f)
