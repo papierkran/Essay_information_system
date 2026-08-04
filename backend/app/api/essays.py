@@ -89,14 +89,15 @@ def get_task_stats(
 
 
 def _build_download_filename(essay: Essay) -> str:
-    """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交"""
+    """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交（第几次为0或空时省略）"""
     title = essay.essay_title or "无标题"
     student = essay.student_name or "未知"
     grade = essay.grade or ""
-    n = essay.essay_number or 1
     mode = essay.teaching_mode or "线下"
     supp = "补交" if essay.is_supplement else ""
-    return f"{title}——{student}{grade}第{n}次{mode}{supp}"
+    if essay.essay_number:
+        return f"{title}——{student}{grade}第{essay.essay_number}次{mode}{supp}"
+    return f"{title}——{student}{grade}{mode}{supp}"
 
 
 def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
