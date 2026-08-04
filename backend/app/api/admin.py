@@ -519,7 +519,7 @@ def update_config(
 
 @router.get("/database/export")
 def export_database(current_user: User = Depends(get_current_user)):
-    """导出数据库为 SQL 文件"""
+    """导出数据库为 SQL 文件（支持 Docker 和非 Docker PostgreSQL）"""
     require_admin(current_user)
     import subprocess, tempfile
     from ..database import _load_db_settings
@@ -529,23 +529,32 @@ def export_database(current_user: User = Depends(get_current_user)):
     tmp.close()
     env = os.environ.copy()
     env["PGPASSWORD"] = DB_CONFIG["password"]
-    container = DB_CONFIG.get("docker_container", "pg")
-    # 使用远程容器内的 pg_dump（保证版本匹配）
-    # --no-sync: 避免 \restrict 命令（PG16+，PG18 默认启用但显式指定更安全）
-    # --clean: DROP 已有对象后重建（替代 --create，避免事务块冲突）
-    # --rows-per-insert=1: 逐行 INSERT（PG14+，跨版本兼容）
-    # --no-security-labels: 跳过安全标签（避免跨版本策略冲突）
-    # --no-subscriptions: 跳过逻辑订阅对象（避免跨库环境问题）
-    result = subprocess.run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
-         "docker", "exec", container, "pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
-         "--no-owner", "--no-acl", "--no-sync", "--clean",
-         "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions"],
-        env=env, capture_output=True, text=True, timeout=60
-    )
+    container = DB_CONFIG.get("docker_container", "")
+    host = DB_CONFIG["host"]
+
+    pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
+                   "--no-owner", "--no-acl", "--no-sync", "--clean",
+                   "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions"]
+
+    if host in ("localhost", "127.0.0.1", ""):
+        # 本地数据库，直接执行
+        if container:
+            cmd = ["docker", "exec", container] + pg_dump_cmd
+        else:
+            cmd = pg_dump_cmd
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+    else:
+        # 远程数据库，通过 SSH 执行
+        if container:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}", "docker", "exec", container] + pg_dump_cmd
+        else:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}"] + pg_dump_cmd
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"导出失败: {result.stderr}")
-    # 清理可能残留的 \restrict 命令（兼容旧备份文件）
     output = result.stdout
     if output.startswith("\\restrict"):
         output = output[output.index("\n") + 1:]
@@ -559,7 +568,7 @@ async def import_database(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    """导入 SQL 文件恢复数据库"""
+    """导入 SQL 文件恢复数据库（支持 Docker 和非 Docker PostgreSQL）"""
     require_admin(current_user)
     import subprocess, tempfile
     from ..database import _load_db_settings
@@ -571,22 +580,35 @@ async def import_database(
     tmp.close()
     env = os.environ.copy()
     env["PGPASSWORD"] = DB_CONFIG["password"]
-    container = DB_CONFIG.get("docker_container", "pg")
-    # 通过 SSH 将 SQL 文件传到远程后导入
-    remote_path = "/tmp/essay_import.sql"
+    container = DB_CONFIG.get("docker_container", "")
+    host = DB_CONFIG["host"]
     sp_run = subprocess.run
-    # 上传文件（增加超时）
-    sp_run(["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", tmp_path, f"root@{DB_CONFIG['host']}:{remote_path}"],
-           capture_output=True, timeout=30)
-    # 在容器中执行导入（连接目标库）
-    result = sp_run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"],
-         "docker", "exec", "-i", container, "psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f", remote_path],
-        capture_output=True, text=True, timeout=120
-    )
+
+    psql_cmd = ["psql", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"], "-f"]
+
+    if host in ("localhost", "127.0.0.1", ""):
+        # 本地数据库
+        if container:
+            cmd = ["docker", "exec", "-i", container] + psql_cmd + [tmp_path]
+        else:
+            cmd = psql_cmd + [tmp_path]
+        result = sp_run(cmd, env=env, capture_output=True, text=True, timeout=120)
+    else:
+        # 远程数据库，通过 SCP + SSH
+        remote_path = "/tmp/essay_import.sql"
+        sp_run(["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                tmp_path, f"root@{host}:{remote_path}"], capture_output=True, timeout=30)
+        if container:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}", "docker", "exec", "-i", container] + psql_cmd + [remote_path]
+        else:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}"] + psql_cmd + [remote_path]
+        result = sp_run(cmd, env=env, capture_output=True, text=True, timeout=120)
+        sp_run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                f"root@{host}", "rm", "-f", remote_path], capture_output=True, timeout=10)
+
     os.unlink(tmp_path)
-    # 清理远程临时文件
-    sp_run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "root@" + DB_CONFIG["host"], "rm", "-f", remote_path], capture_output=True, timeout=10)
     if result.returncode != 0 and "ERROR" in result.stderr:
         raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
     return {"message": "导入成功"}
