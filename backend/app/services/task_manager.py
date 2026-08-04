@@ -130,7 +130,15 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
                 update_task(task_id, success=success, errors=errors)
                 continue
             try:
-                result = ai_correct_text(e.content_text, llm_cfg)
+                essay_info = {
+                    "student_name": e.student_name,
+                    "grade": e.grade,
+                    "essay_number": e.essay_number,
+                    "essay_title": e.essay_title,
+                    "teaching_mode": e.teaching_mode,
+                    "task_name": e.task.name if e.task else None,
+                }
+                result = ai_correct_text(e.content_text, llm_cfg, essay_info=essay_info)
                 corrected_text = result.get("修改后内容", e.content_text)
                 e.content_text = corrected_text
                 if not e.essay_title or not e.essay_title.strip():

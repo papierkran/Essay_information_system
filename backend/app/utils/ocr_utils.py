@@ -153,10 +153,23 @@ def _create_llm_client(llm_config: dict):
     return client, model
 
 
-def _build_prompt(prompt_template: str, text: str) -> str:
-    if "{text}" in prompt_template:
-        return prompt_template.replace("{text}", text)
-    return prompt_template + "\n\n" + text
+def _build_prompt(prompt_template: str, text: str, essay_info: dict = None) -> str:
+    prompt = prompt_template.replace("{text}", text) if "{text}" in prompt_template else prompt_template + "\n\n" + text
+    if essay_info:
+        known = []
+        def _add(label, val):
+            if val: known.append(f"- {label}：{val}")
+        _add("学生姓名", essay_info.get("student_name"))
+        _add("年级", essay_info.get("grade"))
+        _add("第几次", f"第{essay_info['essay_number']}次" if essay_info.get("essay_number") else None)
+        _add("标题", essay_info.get("essay_title"))
+        _add("提交方式", essay_info.get("teaching_mode"))
+        _add("任务", essay_info.get("task_name"))
+        if known:
+            info_block = "\n系统已知的基本信息（优先参考）：\n" + "\n".join(known)
+            # 插入到文章内容之前
+            prompt = prompt.replace("\n文章内容如下：", info_block + "\n\n文章内容如下：")
+    return prompt
 
 
 # ========== AI 错别字修正 (OpenAI-compatible) ==========
@@ -191,11 +204,11 @@ DEFAULT_TYPO_FIX_PROMPT = (
 )
 
 
-def ai_correct_text(text: str, llm_config: dict, prompt_template: str = None) -> dict:
+def ai_correct_text(text: str, llm_config: dict, prompt_template: str = None, essay_info: dict = None) -> dict:
     client, model = _create_llm_client(llm_config)
     if not prompt_template:
         prompt_template = llm_config.get("prompt") or DEFAULT_TYPO_FIX_PROMPT
-    prompt = _build_prompt(prompt_template, text)
+    prompt = _build_prompt(prompt_template, text, essay_info)
 
     response = client.chat.completions.create(
         model=model,

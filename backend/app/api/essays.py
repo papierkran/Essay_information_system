@@ -1275,7 +1275,15 @@ def ai_correct_essay(
         raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请在系统设置的「修改前-AI错别字修正」中勾选启用并保存")
 
     try:
-        result = ai_correct_text(essay.content_text, llm_cfg)
+        essay_info = {
+            "student_name": essay.student_name,
+            "grade": essay.grade,
+            "essay_number": essay.essay_number,
+            "essay_title": essay.essay_title,
+            "teaching_mode": essay.teaching_mode,
+            "task_name": essay.task.name if essay.task else None,
+        }
+        result = ai_correct_text(essay.content_text, llm_cfg, essay_info=essay_info)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
         if not essay.essay_title or not essay.essay_title.strip():
