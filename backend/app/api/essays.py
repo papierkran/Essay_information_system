@@ -1999,6 +1999,8 @@ def update_essay(
     student_name: str = "",
     teaching_mode: str = "",
     remark: str = "",
+    collector_note: str = None,
+    reviewer_note: str = None,
     collected_by: int = None,
     is_supplement: bool = None,
     task_id: int = None,
@@ -2011,7 +2013,10 @@ def update_essay(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
-    if "admin" not in current_user.role and essay.collected_by != current_user.id:
+    # 收集者可修改大部分字段，批改者可修改 reviewer_note
+    can_edit = "admin" in current_user.role or essay.collected_by == current_user.id
+    can_edit_review_note = can_edit or essay.reviewer_id == current_user.id
+    if not can_edit and not can_edit_review_note:
         raise HTTPException(status_code=403, detail="无权限编辑此作文")
 
     # 记录修改前的路径关键字段
@@ -2040,8 +2045,12 @@ def update_essay(
         essay.task_id = task_id if task_id > 0 else None
     if content_text is not None:
         essay.content_text = content_text
-    if corrected_text is not None:
+    if corrected_text is not None and can_edit:
         essay.corrected_text = corrected_text
+    if collector_note is not None and can_edit:
+        essay.collector_note = collector_note
+    if reviewer_note is not None and can_edit_review_note:
+        essay.reviewer_note = reviewer_note
 
     # 如果年级/次数/学生/方式变了，移动文件
     new_grade = essay.grade

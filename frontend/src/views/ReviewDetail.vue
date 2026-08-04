@@ -92,7 +92,11 @@
           <template v-else>
             <div class="card-header"><h3>✅ 已修改</h3></div>
             <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
-            <p v-if="essay.reviewer_note" style="font-size:13px;color:#666;margin-top:8px;background:#f6ffed;padding:8px;border-radius:4px">📝 批改者备注：{{ essay.reviewer_note }}</p>
+            <div class="form-group" style="margin-top:8px">
+              <label>批改者备注</label>
+              <textarea v-model="editCorrectionNote" rows="2" placeholder="批改者备注（可修改）..."></textarea>
+              <button class="btn" style="margin-top:6px" @click="saveCorrectionNote" :disabled="savingNote">💾 保存备注</button>
+            </div>
             <button v-if="essay.has_correction" class="btn btn-success" @click="downloadCorrection" style="margin-top:12px;width:100%">📥 下载修改结果</button>
           </template>
         </div>
@@ -408,6 +412,8 @@ const essay = ref(null)
 const correctionFile = ref('')
 const correctionText = ref('')
 const correctionNote = ref('')
+const editCorrectionNote = ref('')
+const savingNote = ref(false)
 const selectedFile = ref(null)
 const uploading = ref(false)
 const fileInput = ref(null)
@@ -716,6 +722,7 @@ async function loadEssay() {
     const res = await api.get(`/essays/${route.params.id}`)
     essay.value = res.data
     loading.value = false
+    editCorrectionNote.value = essay.value.reviewer_note || ''
     editForm.value = {
       student_name: essay.value.student_name,
       grade: essay.value.grade,
@@ -869,6 +876,16 @@ async function confirmEssay() {
     showToast('已确认修改')
     await loadEssay()
   } catch (err) { showToast(err.response?.data?.detail || '确认失败') }
+}
+
+async function saveCorrectionNote() {
+  savingNote.value = true
+  try {
+    const res = await api.put(`/essays/${route.params.id}`, null, { params: { reviewer_note: editCorrectionNote.value } })
+    essay.value = { ...essay.value, ...res.data }
+    showToast('备注已保存')
+  } catch (err) { showToast(err.response?.data?.detail || '保存失败') }
+  finally { savingNote.value = false }
 }
 
 async function saveEdit() {
