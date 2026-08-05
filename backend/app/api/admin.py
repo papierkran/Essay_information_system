@@ -532,9 +532,11 @@ def export_database(current_user: User = Depends(get_current_user)):
     container = DB_CONFIG.get("docker_container", "")
     host = DB_CONFIG["host"]
 
+    # --on-conflict-do-nothing: 跳过重复记录，仅插入新数据（替代 --clean 的全量覆盖）
     pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
-                   "--no-owner", "--no-acl", "--no-sync", "--clean",
-                   "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions"]
+                   "--no-owner", "--no-acl", "--no-sync",
+                   "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
+                   "--on-conflict-do-nothing"]
 
     if host in ("localhost", "127.0.0.1", ""):
         # 本地数据库，直接执行

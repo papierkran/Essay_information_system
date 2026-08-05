@@ -664,18 +664,15 @@ def list_essays(
     else:
         q = q.order_by(order_col.desc())
 
-    # 只显示文件已保存的记录
-    q = q.filter(Essay.file_saved == True)
-
     from sqlalchemy import func as sa_func
     total = q.count()
     q = q.offset((page - 1) * page_size).limit(page_size)
     essays = q.all()
     result = [_essay_to_out(e, db) for e in essays]
 
-    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.status.in_(["pending", "confirming"]), Essay.file_saved == True).scalar() or 0
-    correcting_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "confirming", Essay.file_saved == True).scalar() or 0
-    corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.status == "corrected", Essay.file_saved == True).scalar() or 0
+    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming"])).scalar() or 0
+    correcting_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "confirming").scalar() or 0
+    corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "corrected").scalar() or 0
 
     # 收集者列表（用于前端下拉筛选）
     collectors = db.query(User).filter(
@@ -721,7 +718,6 @@ def pending_essays(
 
     q = db.query(Essay).filter(
         Essay.deleted_at == None,
-        Essay.file_saved == True,
     )
 
     if status:
