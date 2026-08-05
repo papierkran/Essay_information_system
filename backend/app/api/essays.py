@@ -20,7 +20,7 @@ from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
     has_correction, count_corrections_in_dir, get_upload_dir, safe_component,
 )
-from ..utils.ocr_utils import ocr_essay_images, ai_correct_text, ai_rewrite_text, count_cjk_chars
+from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text, count_cjk_chars
 from ..utils.crypto_utils import load_config_row_value
 
 router = APIRouter(prefix="/api/essays", tags=["作文"])
@@ -1245,7 +1245,7 @@ def ocr_essay(
 
     essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
     try:
-        text = ocr_essay_images(essay_dir, xfyun_cfg)
+        text = ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg)
         essay.content_text = text
         _log_operation(db, essay.id, current_user.id, "OCR", "OCR 识别完成")
         db.commit()
@@ -1499,7 +1499,7 @@ def batch_ocr_essays(
             continue
         try:
             essay_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
-            text = ocr_essay_images(essay_dir, xfyun_cfg)
+            text = ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg)
             e.content_text = text
             _log_operation(db, e.id, current_user.id, "OCR", "批量 OCR 识别完成")
             success += 1

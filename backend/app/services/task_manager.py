@@ -86,7 +86,7 @@ def cleanup_old_tasks(max_age: float = 3600):
 def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):
     """在后台线程中执行批量 OCR（线程池并发，每篇独立 session）"""
     import os
-    from ..utils.ocr_utils import ocr_essay_images
+    from ..utils.ocr_utils import ocr_essay_images_with_fallback
 
     xfyun_cfg = ocr_config.get("xfyun", {})
 
@@ -94,7 +94,7 @@ def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_confi
         if e.file_type != "image" or not e.content_file:
             raise RuntimeError("非图片类型或无文件")
         essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
-        text = ocr_essay_images(essay_dir, xfyun_cfg)
+        text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg)
         e.content_text = text
         _log_operation(sdb, e.id, current_user_id, "OCR", "批量 OCR 识别完成")
 
@@ -211,12 +211,12 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
     """后台流水线：OCR → AI错别字修正 → AI一键修改，三个阶段各自独立任务卡片"""
     from datetime import datetime
     import os
-    from ..utils.ocr_utils import ocr_essay_images, ai_correct_text, ai_rewrite_text
+    from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text
 
     def ocr_worker(sdb, e):
         if (not e.content_text or not e.content_text.strip()) and e.file_type == "image" and e.content_file:
             essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
-            text = ocr_essay_images(essay_dir, ocr_config.get("xfyun", {}))
+            text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}))
             e.content_text = text
             _log_operation(sdb, e.id, current_user_id, "OCR", "流水线 OCR 识别完成")
         elif not e.content_text or not e.content_text.strip():

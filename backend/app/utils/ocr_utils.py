@@ -36,12 +36,15 @@ def _get_xfyun_header(config: dict) -> dict:
 
 
 def ocr_image(image_path: str, config: dict, timeout: int = 30) -> list[str]:
+    with open(image_path, "rb") as f:
+        img_data = f.read()
+    return ocr_image_bytes(img_data, config, timeout)
+
+
+def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30) -> list[str]:
     url = config.get("url", "")
     if not url:
         raise RuntimeError("OCR URL 未配置")
-
-    with open(image_path, "rb") as f:
-        img_data = f.read()
 
     data = {"image": base64.b64encode(img_data).decode("utf-8")}
     headers = _get_xfyun_header(config)
@@ -95,25 +98,92 @@ def ocr_image(image_path: str, config: dict, timeout: int = 30) -> list[str]:
     return paragraphs
 
 
-def ocr_essay_images(essay_dir: str, ocr_config: dict) -> str:
-    if not os.path.isdir(essay_dir):
-        raise RuntimeError(f"目录不存在: {essay_dir}")
+def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None) -> str:
+    """对一篇作文的图片做 OCR。
+
+    - 传入 ``images``(list[(filename, bytes)) 时，直接对这些图片的字节做 OCR，不读取本地目录。
+    - 否则从本地目录扫描图片文件做 OCR。
+    二者都无可用图片时报错。
+    """
+    if images is not None:
+        collected = list(images)
+    else:
+        if not os.path.isdir(essay_dir):
+            raise RuntimeError(f"目录不存在: {essay_dir}")
+        collected = []
+        for fname in sorted(os.listdir(essay_dir)):
+            if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
+                continue
+            img_path = os.path.join(essay_dir, fname)
+            if os.path.isdir(img_path):
+                continue
+            with open(img_path, "rb") as f:
+                collected.append((fname, f.read()))
+        collected = collected
+
+    if not collected:
+        raise RuntimeError("目录中没有可识别的图片")
 
     all_paragraphs = []
-    for fname in sorted(os.listdir(essay_dir)):
-        if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
-            continue
-        img_path = os.path.join(essay_dir, fname)
-        if os.path.isdir(img_path):
-            continue
+    for fname, content in collected:
         logger.info(f"OCR 识别: {fname}")
-        paragraphs = ocr_image(img_path, ocr_config)
+        paragraphs = ocr_image_bytes(content, ocr_config)
         all_paragraphs.extend(paragraphs)
 
     if not all_paragraphs:
         raise RuntimeError("目录中没有可识别的图片")
 
     return "\n".join(all_paragraphs)
+
+
+def fetch_essay_images_from_db(db, essay_id: int) -> list:
+    """从数据库 EssayImage 表读取该作文的所有图片字节，按文件名排序。
+
+    返回 [(filename, bytes), ...]，用于本地目录图片缺失时的 OCR 兜底。
+    """
+    try:
+        from ..models.models import EssayImage
+    except ImportError:
+        return []
+    if db is None:
+        return []
+    rows = db.query(EssayImage).filter(EssayImage.essay_id == essay_id).order_by(EssayImage.filename).all()
+    return [(r.filename, r.image_data) for r in rows]
+
+
+def _list_dir_images(essay_dir: str) -> list:
+    if not os.path.isdir(essay_dir):
+        return []
+    items = []
+    for fname in sorted(os.listdir(essay_dir)):
+        if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
+            continue
+        img_path = os.path.join(essay_dir, fname)
+        if os.path.isdir(img_path):
+            continue
+        with open(img_path, "rb") as f:
+            items.append((fname, f.read()))
+    return items
+
+
+def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config: dict) -> str:
+    """对一篇作文图片做 OCR，优先本地目录，目录里没有图片时用数据库中的图片兜底。
+
+    使用数据库兜底时记录一条日志，便于排查本地图片是否缺失。
+    """
+    local_images = _list_dir_images(essay_dir)
+    if local_images:
+        return ocr_essay_images(essay_dir, ocr_config)
+
+    db_images = fetch_essay_images_from_db(db, essay_id)
+    if db_images:
+        logger.warning(
+            "本地目录无图片，已使用数据库图片兜底 (essay_id=%s, images=%s, dir=%s)",
+            essay_id, len(db_images), essay_dir,
+        )
+        return ocr_essay_images("", ocr_config, images=db_images)
+
+    raise RuntimeError("目录中没有可识别的图片")
 
 
 DEFAULT_EDITOR_PROMPT = (
