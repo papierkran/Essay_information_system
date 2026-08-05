@@ -722,6 +722,8 @@ async function loadEssay() {
     const res = await api.get(`/essays/${route.params.id}`)
     essay.value = res.data
     loading.value = false
+    const t = essay.value.essay_title || '无标题'
+    document.title = essay.value.student_name + '《' + t + '》'
     editCorrectionNote.value = essay.value.reviewer_note || ''
     editForm.value = {
       student_name: essay.value.student_name,
