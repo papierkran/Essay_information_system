@@ -40,8 +40,8 @@ _tasks: dict[str, BatchTask] = {}
 _lock = threading.Lock()
 
 
-def create_task(task_id: str, task_type: str, total: int) -> BatchTask:
-    task = BatchTask(id=task_id, type=task_type, total=total)
+def create_task(task_id: str, task_type: str, total: int, status: str = "running") -> BatchTask:
+    task = BatchTask(id=task_id, type=task_type, total=total, status=status)
     with _lock:
         _tasks[task_id] = task
     return task
@@ -207,73 +207,58 @@ def _get_upload_dir(db):
     return _f_get_upload_dir()
 
 
-def run_batch_pipeline(task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
-    """后台流水线：OCR → AI错别字修正 → AI一键修改（仅处理 status=pending 的作文）"""
-    from time import sleep
+def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
+    """后台流水线：OCR → AI错别字修正 → AI一键修改，三个阶段各自独立任务卡片"""
     from datetime import datetime
     import os
-    import json
+    from ..utils.ocr_utils import ocr_essay_images, ai_correct_text, ai_rewrite_text
 
-    db = next(get_db())
+    def ocr_worker(sdb, e):
+        if (not e.content_text or not e.content_text.strip()) and e.file_type == "image" and e.content_file:
+            essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
+            text = ocr_essay_images(essay_dir, ocr_config.get("xfyun", {}))
+            e.content_text = text
+            _log_operation(sdb, e.id, current_user_id, "OCR", "流水线 OCR 识别完成")
+        elif not e.content_text or not e.content_text.strip():
+            raise RuntimeError("无文字内容")
+
+    def correct_worker(sdb, e):
+        if not e.content_text or not e.content_text.strip():
+            raise RuntimeError("无文字内容")
+        essay_info = {
+            "student_name": e.student_name,
+            "grade": e.grade,
+            "essay_number": e.essay_number,
+            "essay_title": e.essay_title,
+            "teaching_mode": e.teaching_mode,
+            "task_name": e.task.name if e.task else None,
+        }
+        result = ai_correct_text(e.content_text, typo_cfg, essay_info=essay_info)
+        corrected_text = result.get("修改后内容", e.content_text)
+        e.content_text = corrected_text
+        if not e.essay_title or not e.essay_title.strip():
+            title = result.get("作文标题", "")
+            if title and title != "未知":
+                e.essay_title = title.strip()
+        _log_operation(sdb, e.id, current_user_id, "编辑", "流水线 AI 错别字修正")
+
+    def rewrite_worker(sdb, e):
+        if not e.content_text or not e.content_text.strip():
+            raise RuntimeError("无文字内容")
+        rewritten = ai_rewrite_text(e.content_text, editor_cfg, prompt_template=editor_cfg.get("prompt"))
+        e.corrected_text = rewritten
+        if e.status == "pending":
+            e.status = "confirming"
+        e.corrected_at = datetime.now()
+        e.reviewer_id = current_user_id
+        _log_operation(sdb, e.id, current_user_id, "批改", "流水线 AI 修改")
+
     try:
-        essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None, Essay.status == "pending").all()
-        total = len(essays)
-        update_task(task_id, total=total)
-
-        from ..utils.ocr_utils import ocr_essay_images, ai_correct_text, ai_rewrite_text
-        xfyun_cfg = ocr_config.get("xfyun", {})
-        success = 0
-        errors = []
-
-        for i, e in enumerate(essays):
-            update_task(task_id, current=e.student_name, stage="1/3 OCR识别", success=success, errors=errors)
-            try:
-                # 步骤1：OCR
-                if (not e.content_text or not e.content_text.strip()) and e.file_type == "image" and e.content_file:
-                    essay_dir = os.path.dirname(os.path.join(_get_upload_dir(db), e.content_file))
-                    text = ocr_essay_images(essay_dir, xfyun_cfg)
-                    e.content_text = text
-                    _log_operation(db, e.id, current_user_id, "OCR", "流水线 OCR 识别完成")
-
-                if not e.content_text or not e.content_text.strip():
-                    raise RuntimeError("无文字内容")
-
-                # 步骤2：AI错别字修正（补标题）
-                update_task(task_id, current=e.student_name, stage="2/3 AI错别字修正", success=success, errors=errors)
-                essay_info = {
-                    "student_name": e.student_name,
-                    "grade": e.grade,
-                    "essay_number": e.essay_number,
-                    "essay_title": e.essay_title,
-                    "teaching_mode": e.teaching_mode,
-                    "task_name": e.task.name if e.task else None,
-                }
-                result = ai_correct_text(e.content_text, typo_cfg, essay_info=essay_info)
-                corrected_text = result.get("修改后内容", e.content_text)
-                e.content_text = corrected_text
-                if not e.essay_title or not e.essay_title.strip():
-                    title = result.get("作文标题", "")
-                    if title and title != "未知":
-                        e.essay_title = title.strip()
-
-                # 步骤3：AI一键修改
-                update_task(task_id, current=e.student_name, stage="3/3 AI一键修改", success=success, errors=errors)
-                rewritten = ai_rewrite_text(e.content_text, editor_cfg, prompt_template=editor_cfg.get("prompt"))
-                e.corrected_text = rewritten
-                if e.status == "pending":
-                    e.status = "confirming"
-                e.corrected_at = datetime.now()
-                e.reviewer_id = current_user_id
-                _log_operation(db, e.id, current_user_id, "批改", "流水线 AI 修改")
-                success += 1
-            except Exception as ex:
-                errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
-            update_task(task_id, success=success, errors=errors)
-            sleep(0.1)
-
-        db.commit()
-        update_task(task_id, status="completed" if not errors else "failed", message=f"完成 {success}/{total}")
+        update_task(ocr_task_id, status="running")
+        _run_batch_parallel(ocr_task_id, essay_ids, ocr_worker, get_db, Essay, "OCR识别")
+        update_task(correct_task_id, status="running")
+        _run_batch_parallel(correct_task_id, essay_ids, correct_worker, get_db, Essay, "AI错别字修正")
+        update_task(rewrite_task_id, status="running")
+        _run_batch_parallel(rewrite_task_id, essay_ids, rewrite_worker, get_db, Essay, "AI一键修改")
     except Exception as ex:
-        update_task(task_id, status="failed", message=str(ex))
-    finally:
-        db.close()
+        update_task(rewrite_task_id, status="failed", message=str(ex))

@@ -1755,17 +1755,35 @@ def start_batch_pipeline(
     if not editor_cfg.get("enabled", False):
         raise HTTPException(status_code=400, detail="AI 改作文未启用")
 
-    task_id = str(uuid.uuid4())[:8]
+    base = str(uuid.uuid4())[:8]
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None, Essay.status == "pending").all()
+    total = len(essays)
+    if not total:
+        raise HTTPException(status_code=400, detail="选中的条目中没有状态为「未修改」的作文")
+    pending_ids = [e.id for e in essays]
+
     from ..services.task_manager import create_task, run_batch_pipeline
 
-    create_task(task_id, "pipeline", len(essays))
+    ocr_task_id = f"{base}-ocr"
+    correct_task_id = f"{base}-correct"
+    rewrite_task_id = f"{base}-rewrite"
+    create_task(ocr_task_id, "ocr", total)
+    create_task(correct_task_id, "ai_correct", total)
+    create_task(rewrite_task_id, "ai_rewrite", total)
     thread = threading.Thread(target=run_batch_pipeline, args=(
-        task_id, essay_ids, current_user.id, ocr_cfg, typo_cfg, editor_cfg,
+        ocr_task_id, correct_task_id, rewrite_task_id, pending_ids,
+        current_user.id, ocr_cfg, typo_cfg, editor_cfg,
         get_db, Essay, _log_operation,
     ), daemon=True)
     thread.start()
-    return {"task_id": task_id, "total": len(essays)}
+    return {
+        "total": total,
+        "tasks": [
+            {"id": ocr_task_id, "type": "ocr", "total": total},
+            {"id": correct_task_id, "type": "ai_correct", "total": total},
+            {"id": rewrite_task_id, "type": "ai_rewrite", "total": total},
+        ],
+    }
 
 
 @router.get("/batch-task/{task_id}")
@@ -1983,14 +2001,21 @@ async def batch_upload_essays(
 def list_operations(
     page: int = 1,
     page_size: int = 50,
+    keyword: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取操作历史列表"""
+    """获取操作历史列表，keyword 可模糊匹配 详情(detail)"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
-    q = db.query(OperationLog).order_by(OperationLog.created_at.desc())
+    q = db.query(OperationLog)
+    if keyword:
+        kw = f"%{keyword}%"
+        q = q.filter(
+            (OperationLog.detail.like(kw)) | (OperationLog.action.like(kw))
+        )
+    q = q.order_by(OperationLog.created_at.desc())
     total = q.count()
     logs = q.offset((page - 1) * page_size).limit(page_size).all()
 

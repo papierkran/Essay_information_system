@@ -15,7 +15,26 @@ export function useTaskMonitor() {
       errors: [],
       status: 'running',
       message: '',
+      current: '',
+      stage: '',
     })
+    startPolling()
+  }
+
+  function addTasks(taskList) {
+    for (const t of taskList) {
+      tasks.value.push({
+        id: t.id,
+        type: t.type,
+        total: t.total || 0,
+        success: 0,
+        errors: [],
+        status: 'running',
+        message: '',
+        current: '',
+        stage: '',
+      })
+    }
     startPolling()
   }
 
@@ -61,7 +80,7 @@ export function useTaskMonitor() {
     tasks.value = []
   }
 
-  return { tasks, addTask, dismissTask, dismissAll }
+  return { tasks, addTask, addTasks, dismissTask, dismissAll }
 }
 
 export function typeLabel(type) {

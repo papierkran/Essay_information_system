@@ -137,6 +137,48 @@
         </template>
       </van-card>
     </van-list>
+
+    <!-- 作文修改日志（页脚） -->
+    <div v-if="isDesktop" class="log-panel">
+      <div class="log-panel-header">
+        <span class="log-panel-title">📝 作文修改日志</span>
+        <span class="log-panel-sub">OCR识别 / AI错别字修正 / 一键修改 / 批量及流水线操作</span>
+        <button class="btn" style="font-size:12px;padding:3px 10px;margin-left:auto" @click="refreshLogs">刷新</button>
+      </div>
+
+      <!-- 任务进度 -->
+      <div v-if="monitorTasks.length" class="log-tasks">
+        <div v-for="t in monitorTasks" :key="t.id" class="log-task">
+          <span class="log-task-type">{{ typeLabel(t.type) }}</span>
+          <span class="log-task-stage" v-if="t.stage">{{ t.stage }}</span>
+          <div class="log-task-bar-wrap"><div class="log-task-bar" :class="'progress-' + t.status" :style="{ width: logTaskPercent(t) + '%' }"></div></div>
+          <span class="log-task-count">{{ t.success }}/{{ t.total }}</span>
+          <span class="log-task-status">{{ t.status === 'running' ? '⏳' : t.status === 'completed' ? '✅' : '❌' }}</span>
+          <span class="log-task-current" v-if="t.current && t.status === 'running'">正在处理：{{ t.current }}</span>
+        </div>
+      </div>
+
+      <!-- 日志表格 -->
+      <table v-if="opLogs.length" class="desktop-table log-table">
+        <thead><tr>
+          <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th>
+        </tr></thead>
+        <tbody>
+          <tr v-for="op in opLogs" :key="op.id">
+            <td>{{ formatDateTime(op.created_at) }}</td>
+            <td>{{ op.student_name || '-' }}</td>
+            <td>
+              <template v-if="op.batch_id"><span class="batch-tag">批量</span></template>
+              {{ op.essay_title || '无标题' }}<span v-if="op.essay_number"> #{{ op.essay_number }}</span>
+            </td>
+            <td><span class="tag" :class="opActionClass(op.action)">{{ op.action }}</span></td>
+            <td>{{ op.user_name }}</td>
+            <td>{{ op.detail || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="!opLogs.length && !loadingLogs" class="log-empty">暂无相关操作日志</div>
+    </div>
   </div>
 </template>
 
@@ -147,14 +189,14 @@ import { showToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
-import { useTaskMonitor } from '../composables/useTaskMonitor'
+import { useTaskMonitor, typeLabel } from '../composables/useTaskMonitor'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
 const isAdmin = computed(() => ((getAuth()?.user?.role) || '').includes('admin'))
-const { addTask } = useTaskMonitor()
+const { tasks: monitorTasks, addTask, addTasks } = useTaskMonitor()
 const list = ref([])
 const loading = ref(false)
 const selectedIds = ref([])
@@ -169,6 +211,41 @@ const pageSize = ref(50)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const mobileFinished = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
+
+// ===== 作文修改日志 =====
+const opLogs = ref([])
+const loadingLogs = ref(false)
+let logTimer = null
+const LOG_KEYWORDS = ['OCR', 'AI 错别字修正', 'AI 改写', 'AI 修改', '流水线']
+
+function logTaskPercent(t) {
+  if (!t.total) return 0
+  return Math.round((t.success + (t.errors ? t.errors.length : 0)) / t.total * 100)
+}
+
+function opActionClass(action) {
+  const m = { '编辑': 'tag-correcting', '批改': 'tag-corrected', 'OCR': 'tag-correcting' }
+  return m[action] || 'tag-pending'
+}
+
+async function refreshLogs() {
+  loadingLogs.value = true
+  try {
+    // 后端 keyword 只支持单个关键词，这里取最近 100 条后在端上过滤相关操作
+    const res = await api.get('/essays/operations', { params: { page: 1, page_size: 100 } })
+    opLogs.value = res.data.items.filter(op => {
+      const d = op.detail || ''
+      const a = op.action || ''
+      return LOG_KEYWORDS.some(kw => d.includes(kw) || a.includes(kw))
+    }).slice(0, 30)
+  } catch { opLogs.value = [] }
+  finally { loadingLogs.value = false }
+}
+
+function scheduleLogRefresh() {
+  clearTimeout(logTimer)
+  logTimer = setTimeout(refreshLogs, 2000)
+}
 
 const filters = ref({
   name: '',
@@ -321,6 +398,7 @@ async function batchOcr() {
     const res = await api.post('/essays/batch-task/ocr/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ocr', res.data.total)
     selectedIds.value = []
+    scheduleLogRefresh()
     await load()
   } catch (err) {
     showFailToast(err.response?.data?.detail || '启动 OCR 任务失败')
@@ -333,6 +411,7 @@ async function batchAiCorrect() {
     const res = await api.post('/essays/batch-task/ai-correct/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ai_correct', res.data.total)
     selectedIds.value = []
+    scheduleLogRefresh()
     await load()
   } catch (err) {
     showFailToast(err.response?.data?.detail || '启动 AI 修正任务失败')
@@ -345,6 +424,7 @@ async function batchAiRewrite() {
     const res = await api.post('/essays/batch-task/ai-rewrite/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ai_rewrite', res.data.total)
     selectedIds.value = []
+    scheduleLogRefresh()
     await load()
   } catch (err) {
     showFailToast(err.response?.data?.detail || '启动 AI 改写任务失败')
@@ -367,8 +447,9 @@ async function batchPipeline() {
 
   try {
     const res = await api.post('/essays/batch-task/pipeline/start', { ids })
-    addTask(res.data.task_id, 'pipeline', res.data.total)
+    addTasks(res.data.tasks)
     selectedIds.value = []
+    scheduleLogRefresh()
     showSuccessToast(`流水线已启动，共 ${res.data.total} 条，可在右下角查看进度`)
   } catch (err) {
     showFailToast(err.response?.data?.detail || '流水线启动失败')
@@ -411,9 +492,13 @@ onMounted(() => {
   load()
   fetchCollectorsAndTasks()
   document.addEventListener('click', closeTaskDropdown)
+  refreshLogs()
+  logTimer = setInterval(refreshLogs, 8000)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeTaskDropdown)
+  clearTimeout(logTimer)
+  clearInterval(logTimer)
 })
 </script>
 
@@ -481,6 +566,77 @@ onUnmounted(() => {
 .tag-confirming { background: #e6f4ff; color: #1677ff; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
+
+/* ===== 作文修改日志 ===== */
+.log-panel {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.log-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.log-panel-title { font-size: 15px; font-weight: 600; color: #333; }
+.log-panel-sub { font-size: 12px; color: #999; }
+
+.log-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: #fafafa;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+.log-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.log-task-type { font-weight: 600; color: #333; white-space: nowrap; }
+.log-task-stage {
+  font-size: 11px;
+  color: #fa8c16;
+  background: #fff7e6;
+  border-radius: 3px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.log-task-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: #f0f0f0;
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 120px;
+}
+.log-task-bar { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.log-task-bar.progress-running { background: #1677ff; }
+.log-task-bar.progress-completed { background: #52c41a; }
+.log-task-bar.progress-failed { background: #ff4d4f; }
+.log-task-count { color: #666; white-space: nowrap; }
+.log-task-status { color: #666; }
+.log-task-current { color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.log-table { margin-top: 4px; }
+.log-table th { white-space: nowrap; }
+.log-empty { padding: 20px; text-align: center; color: #999; font-size: 13px; }
+
+.batch-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  background: #e6f4ff;
+  color: #1677ff;
+  margin-right: 4px;
+}
 
 @media (max-width: 767px) {
   .filter-bar { flex-direction: column; align-items: stretch; }
