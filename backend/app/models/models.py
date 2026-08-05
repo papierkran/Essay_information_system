@@ -29,7 +29,7 @@ class EssayTask(Base):
     grade = Column(String(20), nullable=False)  # 年级
     essay_number = Column(Integer, default=1)  # 第几次作文
     essay_topic = Column(String(200), default="")  # 文章主题
-    course_name = Column(String(100), default="")  # 课程名称
+    course_id = Column(Integer, ForeignKey("course.id"), nullable=True)  # 关联课程
     teaching_mode = Column(String(10), default="线下")  # 线下/线上
     deadline = Column(DateTime, nullable=True)  # 收集截止时间
     is_active = Column(Boolean, default=False)  # 是否为当前活跃任务
@@ -37,21 +37,13 @@ class EssayTask(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
+    course = relationship("Course")
+
+    @property
+    def course_name(self) -> str:
+        return self.course.name if self.course else ""
+
     essays = relationship("Essay", back_populates="task", primaryjoin="and_(Essay.task_id==EssayTask.id, Essay.deleted_at==None)")
-
-
-class Organization(Base):
-    __tablename__ = "organizations"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    desc = Column(Text, default="")
-    deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-    users = relationship("User", back_populates="organization", primaryjoin="and_(User.org_id==Organization.id, User.deleted_at==None)")
-    classes = relationship("Class", back_populates="organization", primaryjoin="and_(Class.org_id==Organization.id, Class.deleted_at==None)")
 
 
 class User(Base):
@@ -63,14 +55,11 @@ class User(Base):
     nickname = Column(String(50), default="")
     phone = Column(String(20), default="")
     role = Column(String(50), default="collector")  # admin / collector / reviewer
-    org_id = Column(Integer, ForeignKey("organizations.id"))
     is_active = Column(Boolean, default=True)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    organization = relationship("Organization", back_populates="users")
-    user_classes = relationship("UserClass", back_populates="user", primaryjoin="and_(UserClass.user_id==User.id, UserClass.deleted_at==None)")
     collected_essays = relationship("Essay", back_populates="collector",
                                     foreign_keys="Essay.collected_by",
                                     primaryjoin="and_(Essay.collected_by==User.id, Essay.deleted_at==None)")
@@ -79,44 +68,26 @@ class User(Base):
                                    primaryjoin="and_(Essay.reviewer_id==User.id, Essay.deleted_at==None)")
 
 
-class Class(Base):
-    __tablename__ = "classes"
+class Course(Base):
+    __tablename__ = "course"
 
     id = Column(Integer, primary_key=True, index=True)
-    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     name = Column(String(100), nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    organization = relationship("Organization", back_populates="classes")
-    user_classes = relationship("UserClass", back_populates="class_", primaryjoin="and_(UserClass.class_id==Class.id, UserClass.deleted_at==None)")
-    essays = relationship("Essay", back_populates="class_", primaryjoin="and_(Essay.class_id==Class.id, Essay.deleted_at==None)")
-
-
-class UserClass(Base):
-    __tablename__ = "user_classes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
-    role_in_class = Column(String(20), default="collector")
-    deleted_at = Column(DateTime, nullable=True)
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "class_id", "role_in_class", name="uq_user_class_role"),
-    )
-
-    user = relationship("User", back_populates="user_classes")
-    class_ = relationship("Class", back_populates="user_classes")
+    essays = relationship("Essay", back_populates="course",
+                          foreign_keys="Essay.course_id",
+                          primaryjoin="and_(Essay.course_id==Course.id, Essay.deleted_at==None)")
 
 
 class Essay(Base):
     __tablename__ = "essays"
 
     id = Column(Integer, primary_key=True, index=True)
-    class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
     task_id = Column(Integer, ForeignKey("essay_tasks.id"), nullable=True)  # 关联收集任务
+    course_id = Column(Integer, ForeignKey("course.id"), nullable=True)  # 直接关联课程
     grade = Column(String(20), default="")
     essay_number = Column(Integer, default=1)
     essay_title = Column(String(200), default="")
@@ -146,7 +117,7 @@ class Essay(Base):
         Index("idx_essays_created_at", "created_at"),
         Index("idx_essays_task_id", "task_id"),
         Index("idx_essays_deleted_at", "deleted_at"),
-        UniqueConstraint("class_id", "task_id", "student_name", "essay_number", "is_supplement", "essay_title",
+        UniqueConstraint("task_id", "student_name", "essay_number", "is_supplement", "essay_title",
                          name="uq_essay_task_student"),
         CheckConstraint(
             "status IN ('pending', 'confirming', 'corrected')",
@@ -154,7 +125,7 @@ class Essay(Base):
         ),
     )
 
-    class_ = relationship("Class", back_populates="essays")
+    course = relationship("Course", back_populates="essays", foreign_keys=[course_id])
     task = relationship("EssayTask", back_populates="essays")
     collector = relationship("User", back_populates="collected_essays",
                              foreign_keys=[collected_by])

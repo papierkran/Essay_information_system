@@ -7,10 +7,10 @@ import shutil
 from datetime import datetime
 
 from ..database import get_db, SessionLocal
-from ..models.models import User, Organization, Class, UserClass, Essay, EssayTask, SystemConfig
+from ..models.models import User, Course, Essay, EssayTask, SystemConfig
 from ..schemas.schemas import (
-    UserCreate, UserOut, OrganizationCreate, OrganizationOut,
-    ClassCreate, ClassOut, TaskCreate, TaskOut, PasswordChange,
+    UserCreate, UserOut,
+    CourseCreate, CourseOut, TaskCreate, TaskOut, PasswordChange,
     SystemConfigOut, SystemConfigUpdate,
 )
 from ..utils.auth import hash_password, get_current_user
@@ -24,133 +24,71 @@ def require_admin(user: User):
     return user
 
 
-# ===== 培训班管理 =====
-@router.post("/organizations", response_model=OrganizationOut)
-def create_org(
-    data: OrganizationCreate,
+# ===== 课程管理 =====
+@router.post("/courses", response_model=CourseOut)
+def create_course(
+    data: CourseCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    org = Organization(name=data.name, desc=data.desc)
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return OrganizationOut.model_validate(org)
-
-
-@router.get("/organizations", response_model=list[OrganizationOut])
-def list_orgs(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    orgs = db.query(Organization).filter(Organization.deleted_at == None).all()
-    return [OrganizationOut.model_validate(o) for o in orgs]
-
-
-@router.put("/organizations/{org_id}", response_model=OrganizationOut)
-def update_org(
-    org_id: int,
-    data: OrganizationCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    if not org:
-        raise HTTPException(status_code=404, detail="培训班不存在")
-    org.name = data.name
-    org.desc = data.desc
-    db.commit()
-    db.refresh(org)
-    return OrganizationOut.model_validate(org)
-
-
-@router.delete("/organizations/{org_id}")
-def delete_org(
-    org_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    if not org:
-        raise HTTPException(status_code=404, detail="培训班不存在")
-    org.deleted_at = datetime.now()
-    db.commit()
-    return {"message": "删除成功"}
-
-
-# ===== 班级管理 =====
-@router.post("/classes", response_model=ClassOut)
-def create_class(
-    data: ClassCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    cls = Class(org_id=data.org_id, name=data.name)
+    cls = Course(name=data.name)
     db.add(cls)
     db.commit()
     db.refresh(cls)
-    return ClassOut.model_validate(cls)
+    return CourseOut.model_validate(cls)
 
 
-@router.get("/classes", response_model=list[ClassOut])
-def list_classes(
-    org_id: int = None,
+@router.get("/courses", response_model=list[CourseOut])
+def list_courses(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    q = db.query(Class).filter(Class.deleted_at == None)
-    if org_id:
-        q = q.filter(Class.org_id == org_id)
-    classes = q.all()
-    return [ClassOut.model_validate(c) for c in classes]
+    q = db.query(Course).filter(Course.deleted_at == None)
+    courses = q.all()
+    return [CourseOut.model_validate(c) for c in courses]
 
 
-@router.put("/classes/{class_id}", response_model=ClassOut)
-def update_class(
-    class_id: int,
-    data: ClassCreate,
+@router.put("/courses/{course_id}", response_model=CourseOut)
+def update_course(
+    course_id: int,
+    data: CourseCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    cls = db.query(Class).filter(Class.id == class_id).first()
+    cls = db.query(Course).filter(Course.id == course_id).first()
     if not cls:
-        raise HTTPException(status_code=404, detail="班级不存在")
+        raise HTTPException(status_code=404, detail="课程不存在")
     cls.name = data.name
-    cls.org_id = data.org_id
     db.commit()
     db.refresh(cls)
-    return ClassOut.model_validate(cls)
+    return CourseOut.model_validate(cls)
 
 
-@router.delete("/classes/{class_id}")
-def delete_class(
-    class_id: int,
+@router.delete("/courses/{course_id}")
+def delete_course(
+    course_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    cls = db.query(Class).filter(Class.id == class_id).first()
+    cls = db.query(Course).filter(Course.id == course_id).first()
     if not cls:
-        raise HTTPException(status_code=404, detail="班级不存在")
+        raise HTTPException(status_code=404, detail="课程不存在")
     cls.deleted_at = datetime.now()
     db.commit()
     return {"message": "删除成功"}
 
 
-@router.post("/import-classes-csv/preview")
-async def preview_classes_csv(
+@router.post("/import-courses-csv/preview")
+async def preview_courses_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """预览 ClassIn CSV 中的班级列表"""
+    """预览 ClassIn CSV 中的课程列表"""
     require_admin(current_user)
     content = await file.read()
     if content[:2] == b'\xff\xfe':
@@ -162,7 +100,7 @@ async def preview_classes_csv(
     text = text.lstrip("\ufeff").strip()
     lines = text.split("\n")
 
-    classes_list = []
+    courses_list = []
     seen = set()
     for line in lines:
         line = line.strip()
@@ -176,20 +114,20 @@ async def preview_classes_csv(
             continue
         seen.add(name)
         # 检查是否已存在
-        existing = db.query(Class).filter(Class.name == name).first()
-        classes_list.append({"name": name, "exists": existing is not None})
+        existing = db.query(Course).filter(Course.name == name).first()
+        courses_list.append({"name": name, "exists": existing is not None})
 
-    return {"classes": classes_list}
+    return {"courses": courses_list}
 
 
-@router.post("/import-classes-csv/confirm")
-async def confirm_import_classes(
+@router.post("/import-courses-csv/confirm")
+async def confirm_import_courses(
     file: UploadFile = File(...),
     selected: str = Form("[]"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """确认导入选中的班级"""
+    """确认导入选中的课程"""
     require_admin(current_user)
     import json
     selected_names = json.loads(selected) if isinstance(selected, str) else selected
@@ -201,25 +139,16 @@ async def confirm_import_classes(
     else:
         text = content.decode("utf-8", errors="replace")
 
-    # 找已存在的org
-    org = db.query(Organization).first()
-    if not org:
-        org = Organization(name="尹老师文科工作室")
-        db.add(org)
-        db.commit()
-        db.refresh(org)
-
     imported = 0
     skipped = 0
     for name in selected_names:
-        existing = db.query(Class).filter(
-            Class.org_id == org.id,
-            Class.name == name,
+        existing = db.query(Course).filter(
+            Course.name == name,
         ).first()
         if existing:
             skipped += 1
             continue
-        cls = Class(org_id=org.id, name=name)
+        cls = Course(name=name)
         db.add(cls)
         imported += 1
 
@@ -244,7 +173,6 @@ def create_user(
         nickname=data.nickname,
         phone=data.phone,
         role=data.role,
-        org_id=data.org_id,
     )
     db.add(user)
     db.commit()
@@ -343,43 +271,6 @@ def update_my_password(
     current_user.password_hash = hash_password(data.new_password)
     db.commit()
     return {"message": "密码修改成功"}
-
-
-# ===== 班级收集者配置 =====
-@router.post("/classes/{class_id}/collectors")
-def set_class_collectors(
-    class_id: int,
-    user_ids: list[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    # 软删除旧的收集者绑定
-    db.query(UserClass).filter(
-        UserClass.class_id == class_id,
-        UserClass.role_in_class == "collector",
-        UserClass.deleted_at == None,
-    ).update({"deleted_at": datetime.now()})
-    # 添加新收集者（先恢复已存在的同用户绑定，再新增）
-    for uid in user_ids:
-        db.add(UserClass(user_id=uid, class_id=class_id, role_in_class="collector"))
-    db.commit()
-    return {"message": "ok"}
-
-
-@router.get("/classes/{class_id}/collectors", response_model=list[UserOut])
-def get_class_collectors(
-    class_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_admin(current_user)
-    ucs = db.query(UserClass).filter(
-        UserClass.class_id == class_id,
-        UserClass.role_in_class == "collector",
-    ).all()
-    users = [uc.user for uc in ucs if uc.user]
-    return [UserOut.model_validate(u) for u in users]
 
 
 # ===== 系统设置 =====
@@ -648,7 +539,7 @@ def create_task(
         grade=data.grade,
         essay_number=data.essay_number or 0,
         essay_topic=data.essay_topic,
-        course_name=data.course_name,
+        course_id=data.course_id,
         teaching_mode=data.teaching_mode,
         deadline=data.deadline,
         is_active=data.is_active,
@@ -703,7 +594,7 @@ def update_task(
     task.grade = data.grade
     task.essay_number = data.essay_number or 0
     task.essay_topic = data.essay_topic
-    task.course_name = data.course_name
+    task.course_id = data.course_id
     task.teaching_mode = data.teaching_mode
     task.deadline = data.deadline
     task.is_active = data.is_active

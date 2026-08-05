@@ -335,6 +335,7 @@ const allColumns = ref([
   { key: 'collector_name', label: '收集者', field: 'collector_name', sortable: true, sort: 'collector_name', visible: true },
   { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
   { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
+  { key: 'course_name', label: '课程名称', field: 'course_name', sortable: false, visible: false },
   { key: 'collector_note', label: '收集者备注', field: 'collector_note', sortable: false, visible: true },
   { key: 'reviewer_note', label: '批改者备注', field: 'reviewer_note', sortable: false, visible: true },
   { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: false },

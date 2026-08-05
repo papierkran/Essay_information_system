@@ -37,6 +37,8 @@ export function useTaskMonitor() {
             errors: d.errors,
             total: d.total,
             message: d.message,
+            current: d.current || '',
+            stage: d.stage || '',
           })
           if (d.status === 'completed' && d.errors.length === 0) {
             showSuccessToast(`[${typeLabel(t.type)}] 完成：${d.success}/${d.total}`)
@@ -63,7 +65,7 @@ export function useTaskMonitor() {
 }
 
 export function typeLabel(type) {
-  return { ocr: 'OCR识别', ai_correct: 'AI错别字修正', ai_rewrite: 'AI一键修改' }[type] || type
+  return { ocr: 'OCR识别', ai_correct: 'AI错别字修正', ai_rewrite: 'AI一键修改', pipeline: '流水线修改' }[type] || type
 }
 
 onUnmounted(() => stopPolling())

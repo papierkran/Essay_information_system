@@ -21,7 +21,6 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         nickname=data.nickname,
         phone=data.phone,
         role=data.role,
-        org_id=data.org_id,
     )
     db.add(user)
     db.commit()

@@ -59,6 +59,7 @@
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#52c41a;border-color:#52c41a" :disabled="!selectedIds.length" @click="batchConfirm">✅ 批量确认修改</button>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#fa8c16;border-color:#fa8c16" @click="batchPipeline">⏩ 一键批量流程修改</button>
       <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds = []">取消选择</button>
     </div>
 
@@ -347,6 +348,30 @@ async function batchAiRewrite() {
     await load()
   } catch (err) {
     showFailToast(err.response?.data?.detail || '启动 AI 改写任务失败')
+  }
+}
+
+async function batchPipeline() {
+  let ids = selectedIds.value
+  if (!ids.length) {
+    ids = list.value.filter(e => e.status === 'pending').map(e => e.id)
+    if (!ids.length) { showToast('当前页没有状态为「未修改」的作文'); return }
+  } else {
+    const pendingIds = ids.filter(id => {
+      const e = list.value.find(x => x.id === id)
+      return e && e.status === 'pending'
+    })
+    if (!pendingIds.length) { showToast('选中的条目中没有状态为「未修改」的作文'); return }
+    ids = pendingIds
+  }
+
+  try {
+    const res = await api.post('/essays/batch-task/pipeline/start', { ids })
+    addTask(res.data.task_id, 'pipeline', res.data.total)
+    selectedIds.value = []
+    showSuccessToast(`流水线已启动，共 ${res.data.total} 条，可在右下角查看进度`)
+  } catch (err) {
+    showFailToast(err.response?.data?.detail || '流水线启动失败')
   }
 }
 

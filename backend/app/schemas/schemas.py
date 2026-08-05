@@ -9,7 +9,7 @@ class TaskCreate(BaseModel):
     grade: str = ""
     essay_number: Optional[int] = None
     essay_topic: str = ""
-    course_name: str = ""
+    course_id: Optional[int] = None
     teaching_mode: str = "线下"
     deadline: Optional[datetime] = None
     is_active: bool = False
@@ -21,6 +21,7 @@ class TaskOut(BaseModel):
     grade: str
     essay_number: int
     essay_topic: str
+    course_id: Optional[int] = None
     course_name: str
     teaching_mode: str
     deadline: Optional[datetime] = None
@@ -45,7 +46,6 @@ class UserCreate(BaseModel):
     nickname: str = ""
     phone: str = ""
     role: str = ""
-    org_id: Optional[int] = None
 
 
 class UserLogin(BaseModel):
@@ -59,7 +59,6 @@ class UserOut(BaseModel):
     nickname: str
     phone: str
     role: str
-    org_id: Optional[int]
     is_active: bool
     created_at: datetime
 
@@ -73,31 +72,13 @@ class Token(BaseModel):
     user: UserOut
 
 
-# ===== 培训班 =====
-class OrganizationCreate(BaseModel):
-    name: str
-    desc: str = ""
-
-
-class OrganizationOut(BaseModel):
-    id: int
-    name: str
-    desc: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 # ===== 课程 =====
-class ClassCreate(BaseModel):
-    org_id: Optional[int] = None
+class CourseCreate(BaseModel):
     name: str
 
 
-class ClassOut(BaseModel):
+class CourseOut(BaseModel):
     id: int
-    org_id: Optional[int] = None
     name: str
     created_at: datetime
 
@@ -107,8 +88,8 @@ class ClassOut(BaseModel):
 
 # ===== 作文 =====
 class EssayCreate(BaseModel):
-    class_id: int
     task_id: Optional[int] = None
+    course_id: Optional[int] = None
     grade: str = ""
     essay_number: int = 1
     essay_title: str = ""
@@ -122,10 +103,10 @@ class EssayCreate(BaseModel):
 
 class EssayOut(BaseModel):
     id: int
-    class_id: int
-    class_name: str = ""
     task_id: Optional[int] = None
     task_name: str = ""
+    course_id: Optional[int] = None
+    course_name: str = ""
     grade: str
     essay_number: int
     essay_title: str

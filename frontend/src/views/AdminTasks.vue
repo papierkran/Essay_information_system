@@ -160,7 +160,6 @@
         <van-cell title="不选择课程" @click="selectCourse(null)" style="color:#999" />
         <van-cell v-for="c in courses" :key="c.id"
           :title="c.name"
-          :label="c.org_name || ''"
           @click="selectCourse(c)" />
       </div>
     </van-action-sheet>
@@ -298,7 +297,7 @@ const showTaskGradePicker = ref(false)
 const showCoursePicker = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 const taskForm = ref({
-  name: '', grade: '', essay_number: 1, essay_topic: '', course_name: '',
+  name: '', grade: '', essay_number: 1, essay_topic: '', course_id: '', course_name: '',
   teaching_mode: '线下', deadlineStr: '', is_active: false
 })
 
@@ -306,19 +305,12 @@ onMounted(() => { initColumns(); loadData() })
 
 async function loadData() {
   try {
-    const [taskRes, classRes, orgRes] = await Promise.all([
+    const [taskRes, courseRes] = await Promise.all([
       api.get('/admin/tasks'),
-      api.get('/admin/classes'),
-      api.get('/admin/organizations')
+      api.get('/admin/courses')
     ])
     tasks.value = taskRes.data
-    const orgs = orgRes.data || []
-    const orgMap = {}
-    orgs.forEach(o => { orgMap[o.id] = o.name })
-    courses.value = (classRes.data || []).map(c => ({
-      ...c,
-      org_name: orgMap[c.org_id] || ''
-    }))
+    courses.value = courseRes.data || []
   } catch {}
 }
 
@@ -345,13 +337,13 @@ function openTaskDialog(tpl) {
     const deadlineStr = tpl.deadline ? new Date(tpl.deadline).toISOString().slice(0, 16) : ''
     taskForm.value = {
       name: tpl.name, grade: tpl.grade, essay_number: tpl.essay_number,
-      essay_topic: tpl.essay_topic || '', course_name: tpl.course_name || '',
+      essay_topic: tpl.essay_topic || '', course_id: tpl.course_id || '', course_name: tpl.course_name || '',
       teaching_mode: tpl.teaching_mode || '线下', deadlineStr, is_active: tpl.is_active
     }
   } else {
     editingTask.value = {}
     taskForm.value = {
-      name: '', grade: '', essay_number: '', essay_topic: '', course_name: '',
+      name: '', grade: '', essay_number: '', essay_topic: '', course_id: '', course_name: '',
       teaching_mode: '线下', deadlineStr: '', is_active: false
     }
   }
@@ -364,6 +356,7 @@ function selectTaskGrade(g) {
 }
 
 function selectCourse(c) {
+  taskForm.value.course_id = c ? c.id : ''
   taskForm.value.course_name = c ? c.name : ''
   showCoursePicker.value = false
 }
@@ -375,7 +368,7 @@ async function saveTask() {
       grade: taskForm.value.grade,
       essay_number: parseInt(taskForm.value.essay_number) || 0,
       essay_topic: taskForm.value.essay_topic,
-      course_name: taskForm.value.course_name,
+      course_id: taskForm.value.course_id ? parseInt(taskForm.value.course_id) : null,
       teaching_mode: taskForm.value.teaching_mode,
       deadline: taskForm.value.deadlineStr ? new Date(taskForm.value.deadlineStr).toISOString() : null,
       is_active: taskForm.value.is_active,

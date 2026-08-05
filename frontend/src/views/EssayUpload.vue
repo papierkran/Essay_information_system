@@ -131,6 +131,7 @@ const selectedGrade = ref('')
 const selectedTaskName = ref('')
 const selectedTaskTopic = ref('')
 const selectedTaskId = ref(null)
+const selectedCourseId = ref(null)
 const selectedCollector = ref(null)
 const selectedCollectorName = ref('')
 const collectorList = ref([])
@@ -167,7 +168,7 @@ function taskIsActive(t) {
 }
 
 const form = ref({
-  class_id: 1, grade: '', essay_number: '', essay_title: '',
+  grade: '', essay_number: '', essay_title: '',
   student_name: '', is_supplement: false, teaching_mode: '线上', collector_note: '', content_text: '',
 })
 
@@ -245,11 +246,13 @@ function selectTask(tpl) {
     selectedTaskName.value = tpl.name
     selectedTaskTopic.value = tpl.essay_topic || ''
     selectedTaskId.value = tpl.id
+    selectedCourseId.value = tpl.course_id || null
     showToast(`已选择：${tpl.name}`)
   } else {
     selectedTaskName.value = ''
     selectedTaskTopic.value = ''
     selectedTaskId.value = null
+    selectedCourseId.value = null
     showToast('已取消任务选择')
   }
   showTaskPicker.value = false
@@ -260,9 +263,11 @@ async function onSubmit() {
   loading.value = true
   try {
     const fd = new FormData()
-    fd.append('class_id', '1')
     if (selectedTaskId.value) {
       fd.append('task_id', String(selectedTaskId.value))
+    }
+    if (selectedCourseId.value) {
+      fd.append('course_id', String(selectedCourseId.value))
     }
     if (selectedCollector.value) {
       fd.append('collected_by', String(selectedCollector.value))
@@ -286,7 +291,7 @@ async function onSubmit() {
       confirmButtonText: '继续上传',
       className: 'upload-success-dialog',
     })
-    form.value = { class_id: 1, grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, collector_note: '', content_text: '' }
+    form.value = { grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, collector_note: '', content_text: '' }
     fileList.value = []
     selectedGrade.value = ''
     selectedTaskName.value = ''

@@ -2,6 +2,7 @@
   <div v-if="tasks.length" class="task-status-bar">
     <div v-for="t in tasks" :key="t.id" class="task-item">
       <span class="task-type">{{ typeLabel(t.type) }}</span>
+      <span v-if="t.stage && t.status === 'running'" class="task-stage">{{ t.stage }}</span>
       <div class="task-progress-wrap">
         <div class="task-progress-bar" :style="{ width: progressPercent(t) + '%' }" :class="'progress-' + t.status"></div>
       </div>
@@ -10,6 +11,7 @@
         {{ t.status === 'running' ? '⏳' : t.status === 'completed' ? '✅' : '❌' }}
       </span>
       <button v-if="t.status !== 'running'" class="task-dismiss" @click="dismissTask(t.id)">✕</button>
+      <span v-if="t.current && t.status === 'running'" class="task-current">📄 正在处理：{{ t.current }}</span>
       <span v-if="t.message" class="task-msg">{{ t.message }}</span>
     </div>
   </div>
@@ -47,6 +49,7 @@ function progressPercent(t) {
   font-size: 13px;
 }
 .task-type { font-weight: 600; color: #333; display: block; margin-bottom: 4px; }
+.task-stage { font-size: 11px; color: #fa8c16; background: #fff7e6; border-radius: 3px; padding: 1px 6px; margin-left: 6px; }
 .task-progress-wrap {
   height: 6px;
   background: #f0f0f0;
@@ -74,6 +77,7 @@ function progressPercent(t) {
   padding: 0 4px;
 }
 .task-msg { font-size: 11px; color: #999; display: block; margin-top: 2px; }
+.task-current { font-size: 11px; color: #666; display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 767px) {
   .task-status-bar { right: 8px; bottom: 8px; max-width: 280px; }
 }

@@ -546,7 +546,6 @@ async function doReuploadDesktop() {
   try {
     const fd = new FormData()
     fd.append('essay_id', String(essay.value.id))
-    fd.append('class_id', String(essay.value.class_id || 1))
     fd.append('grade', editForm.value.grade || essay.value.grade || '')
     fd.append('essay_number', String(editForm.value.essay_number || essay.value.essay_number || 1))
     fd.append('essay_title', editForm.value.essay_title || essay.value.essay_title || '')
@@ -944,7 +943,6 @@ async function doReupload() {
   try {
     const fd = new FormData()
     fd.append('essay_id', String(essay.value.id))
-    fd.append('class_id', String(essay.value.class_id || 1))
     fd.append('grade', editForm.value.grade || essay.value.grade || '')
     fd.append('essay_number', String(editForm.value.essay_number || essay.value.essay_number || 1))
     fd.append('essay_title', editForm.value.essay_title || essay.value.essay_title || '')

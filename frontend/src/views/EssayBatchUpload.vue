@@ -187,6 +187,7 @@ const selectedGrade = ref('')
 const corSelectedGrade = ref('')
 const selectedTaskName = ref('')
 const selectedTaskId = ref(null)
+const selectedCourseId = ref(null)
 const selectedCollector = ref(null)
 const selectedCollectorName = ref('')
 const collectorList = ref([])
@@ -286,10 +287,12 @@ function selectTask(tpl) {
     }
     selectedTaskName.value = tpl.name
     selectedTaskId.value = tpl.id
+    selectedCourseId.value = tpl.course_id || null
     showToast(`已选择：${tpl.name}`)
   } else {
     selectedTaskName.value = ''
     selectedTaskId.value = null
+    selectedCourseId.value = null
     showToast('已取消模板选择')
   }
   showTaskPicker.value = false
@@ -501,9 +504,11 @@ async function onSubmitEssays() {
     currentStudent.value = studentName
     try {
       const fd = new FormData()
-      fd.append('class_id', '1')
       if (selectedTaskId.value) {
         fd.append('task_id', String(selectedTaskId.value))
+      }
+      if (selectedCourseId.value) {
+        fd.append('course_id', String(selectedCourseId.value))
       }
       if (selectedCollector.value) {
         fd.append('collected_by', String(selectedCollector.value))

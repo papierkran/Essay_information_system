@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from ..models.models import User, Essay, Class, UserClass, EssayTask, OperationLog, SystemConfig, EssayImage
+from ..models.models import User, Essay, Course, EssayTask, OperationLog, SystemConfig, EssayImage
 from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
@@ -165,14 +165,14 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
     return tmp_path
 
 
-@router.get("/classes")
-def list_classes_public(
+@router.get("/courses")
+def list_courses_public(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """公开班级列表（收集者选班级用）"""
-    classes = db.query(Class).all()
-    return [{"id": c.id, "name": c.name, "org_id": c.org_id} for c in classes]
+    """公开课程列表（收集者选课程用）"""
+    courses = db.query(Course).filter(Course.deleted_at == None).all()
+    return [{"id": c.id, "name": c.name} for c in courses]
 
 
 @router.get("/collectors")
@@ -226,15 +226,6 @@ def list_reviewers(
     return [{"id": u.id, "nickname": u.nickname or u.username} for u in reviewers]
 
 
-def get_collector_classes(user: User, db: Session) -> list[int]:
-    """获取用户负责的班级 ID 列表"""
-    ucs = db.query(UserClass).filter(
-        UserClass.user_id == user.id,
-        UserClass.role_in_class == "collector",
-    ).all()
-    return [uc.class_id for uc in ucs]
-
-
 def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail: str = "",
                    old_value: str = "", new_value: str = "", batch_id: str = "", essay_ids: str = ""):
     try:
@@ -271,8 +262,8 @@ def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
 @router.post("/upload", response_model=EssayOut)
 async def upload_essay(
     essay_id: int = Form(None),
-    class_id: int = Form(...),
     task_id: int = Form(None),
+    course_id: int = Form(None),
     grade: str = Form(""),
     essay_number: int = Form(1),
     essay_title: str = Form(""),
@@ -296,6 +287,13 @@ async def upload_essay(
     if collected_by and "admin" in current_user.role:
         collector_id = collected_by
 
+    # 确定课程：优先用传入 course_id，否则从任务继承
+    effective_course_id = course_id
+    if not effective_course_id and task_id:
+        task = db.query(EssayTask).filter(EssayTask.id == task_id, EssayTask.deleted_at == None).first()
+        if task:
+            effective_course_id = task.course_id
+
     # 确定文件类型
     file_type = "text"
     content_file = ""
@@ -307,8 +305,8 @@ async def upload_essay(
             raise HTTPException(status_code=404, detail="作文不存在")
         if "admin" not in current_user.role and essay.collected_by != current_user.id:
             raise HTTPException(status_code=403, detail="无权限编辑此作文")
-        essay.class_id = class_id
         essay.task_id = task_id
+        essay.course_id = effective_course_id
         essay.grade = grade
         essay.essay_number = essay_number
         essay.essay_title = essay_title
@@ -336,8 +334,8 @@ async def upload_essay(
     else:
         try:
             essay = Essay(
-                class_id=class_id,
                 task_id=task_id,
+                course_id=effective_course_id,
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=essay_title,
@@ -446,6 +444,7 @@ async def upload_correction_docx(
     corrected_text: str = Form(""),
     is_supplement: bool = Form(False),
     task_id: int = Form(None),
+    course_id: int = Form(None),
     collected_by: int = Form(None),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
@@ -460,9 +459,12 @@ async def upload_correction_docx(
     if collected_by and "admin" in current_user.role:
         collector_id = collected_by
 
-    cls = db.query(Class).filter(Class.id == 1).first()
-    if not cls:
-        raise HTTPException(status_code=400, detail="班级不存在（请先创建班级）")
+    # 确定课程：优先用传入 course_id，否则从任务继承
+    effective_course_id = course_id
+    if not effective_course_id and task_id:
+        task = db.query(EssayTask).filter(EssayTask.id == task_id, EssayTask.deleted_at == None).first()
+        if task:
+            effective_course_id = task.course_id
 
     now = datetime.now()
     grade_name = grade if grade else "未定年级"
@@ -497,7 +499,6 @@ async def upload_correction_docx(
     try:
         # 检查是否已存在同一条记录（同一学生同一次作文，优先匹配同一任务）
         existing_query = db.query(Essay).filter(
-            Essay.class_id == 1,
             Essay.student_name == student_name,
             Essay.essay_number == essay_number,
             Essay.is_supplement == is_supplement,
@@ -520,11 +521,13 @@ async def upload_correction_docx(
             existing.is_supplement = is_supplement
             if task_id is not None:
                 existing.task_id = task_id
+            if effective_course_id:
+                existing.course_id = effective_course_id
             essay = existing
         else:
             # 新建记录
             essay = Essay(
-                class_id=1,
+                course_id=effective_course_id,
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=essay_title,
@@ -562,13 +565,13 @@ async def upload_correction_docx(
 
 @router.get("")
 def list_essays(
-    class_id: int = None,
     status: str = None,
     name: str = None,
     grade: str = None,
     essay_number: int = None,
     teaching_mode: str = None,
     collected_by: int = None,
+    course_id: int = None,
     remark: str = None,
     essay_title: str = None,
     task_id: int = None,
@@ -598,8 +601,8 @@ def list_essays(
             q = q.filter(Essay.reviewer_id == current_user.id)
         # 收集者可以查看所有作文，不做过滤
 
-    if class_id:
-        q = q.filter(Essay.class_id == class_id)
+    if course_id:
+        q = q.filter(Essay.course_id == course_id)
     if status:
         q = q.filter(Essay.status == status)
     if name:
@@ -828,9 +831,9 @@ def essay_stats(
     grade_dist = [{"name": g or "未知", "value": c} for g, c in grade_rows]
 
     class_rows = (
-        base.with_entities(Class.name, func.count(Essay.id))
-        .join(Class, Class.id == Essay.class_id)
-        .group_by(Class.id, Class.name)
+        base.with_entities(Course.name, func.count(Essay.id))
+        .join(Course, Course.id == Essay.course_id)
+        .group_by(Course.id, Course.name)
         .order_by(func.count(Essay.id).desc())
         .all()
     )
@@ -869,19 +872,19 @@ def essay_stats(
     }
 
 
-@router.get("/download/by-class/{class_id}")
-def download_by_class(
-    class_id: int,
+@router.get("/download/by-course/{course_id}")
+def download_by_course(
+    course_id: int,
     essay_number: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """按班级打包下载全部作文"""
-    cls = db.query(Class).filter(Class.id == class_id).first()
+    """按课程打包下载全部作文"""
+    cls = db.query(Course).filter(Course.id == course_id).first()
     if not cls:
-        raise HTTPException(status_code=404, detail="班级不存在")
+        raise HTTPException(status_code=404, detail="课程不存在")
 
-    q = db.query(Essay).filter(Essay.class_id == class_id)
+    q = db.query(Essay).filter(Essay.course_id == course_id)
     if essay_number:
         q = q.filter(Essay.essay_number == essay_number)
 
@@ -1729,6 +1732,42 @@ def start_batch_ai_rewrite(
     return {"task_id": task_id, "total": len(essays)}
 
 
+@router.post("/batch-task/pipeline/start")
+def start_batch_pipeline(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """启动后台流水线：OCR → AI错别字修正 → AI一键修改（仅处理未修改的作文）"""
+    if "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    essay_ids = data.get("ids", [])
+    if not essay_ids:
+        raise HTTPException(status_code=400, detail="未选中任何作文")
+
+    ocr_cfg = _get_ocr_config(db)
+    if not ocr_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="OCR 功能未启用")
+    typo_cfg = _get_llm_config(db, "llm_typo_fix")
+    if not typo_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="AI 错别字修正未启用")
+    editor_cfg = _get_llm_config(db, "llm_editor")
+    if not editor_cfg.get("enabled", False):
+        raise HTTPException(status_code=400, detail="AI 改作文未启用")
+
+    task_id = str(uuid.uuid4())[:8]
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None, Essay.status == "pending").all()
+    from ..services.task_manager import create_task, run_batch_pipeline
+
+    create_task(task_id, "pipeline", len(essays))
+    thread = threading.Thread(target=run_batch_pipeline, args=(
+        task_id, essay_ids, current_user.id, ocr_cfg, typo_cfg, editor_cfg,
+        get_db, Essay, _log_operation,
+    ), daemon=True)
+    thread.start()
+    return {"task_id": task_id, "total": len(essays)}
+
+
 @router.get("/batch-task/{task_id}")
 def get_batch_task_status(task_id: str):
     """查询批量任务进度"""
@@ -1849,10 +1888,6 @@ async def batch_upload_essays(
     except Exception:
         raise HTTPException(status_code=400, detail="数据格式错误，需要 JSON 数组")
 
-    cls = db.query(Class).filter(Class.id == 1).first()
-    if not cls:
-        raise HTTPException(status_code=400, detail="班级不存在（请先创建班级）")
-
     now = datetime.now()
     grade_name = f"{grade}{teaching_mode}" if teaching_mode else grade
 
@@ -1894,7 +1929,6 @@ async def batch_upload_essays(
             continue
         try:
             essay = Essay(
-                class_id=1,
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=item.get("essay_title", ""),
@@ -2125,7 +2159,6 @@ def update_essay(
 def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
     collector = db.query(User).filter(User.id == essay.collected_by).first()
     reviewer = db.query(User).filter(User.id == essay.reviewer_id).first() if essay.reviewer_id else None
-    class_ = db.query(Class).filter(Class.id == essay.class_id).first()
     task = db.query(EssayTask).filter(EssayTask.id == essay.task_id).first() if essay.task_id else None
 
     corr_exists = False
@@ -2143,10 +2176,10 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
 
     return EssayOut(
         id=essay.id,
-        class_id=essay.class_id,
-        class_name=class_.name if class_ else "",
         task_id=essay.task_id,
         task_name=task.name if task else "",
+        course_id=essay.course_id,
+        course_name=task.course_name if task else "",
         grade=essay.grade or "",
         essay_number=essay.essay_number or 0,
         essay_title=essay.essay_title or "",

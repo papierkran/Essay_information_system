@@ -24,7 +24,7 @@
         <router-link v-if="canReview || isGuest" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 未改列表</router-link>
         <router-link v-if="canReview || isGuest" to="/review/operations" class="sidebar-link" @click="sidebarOpen=false">🕐 操作历史</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
-        <router-link v-if="isAdmin" to="/admin/classes" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
+        <router-link v-if="isAdmin" to="/admin/course" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
         <router-link v-if="isAdmin" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
         <router-link v-if="isAdmin" to="/admin/settings" class="sidebar-link" @click="sidebarOpen=false">⚙️ 系统设置</router-link>
       </nav>
