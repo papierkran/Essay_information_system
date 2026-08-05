@@ -14,6 +14,7 @@ from ..schemas.schemas import (
     SystemConfigOut, SystemConfigUpdate,
 )
 from ..utils.auth import hash_password, get_current_user
+from ..utils.crypto_utils import load_config_row_value, dump_config_value
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
@@ -356,19 +357,16 @@ def update_settings(data: dict, current_user: User = Depends(get_current_user)):
 def _get_config(db: Session, key: str, default: dict = None) -> dict:
     row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
     if row:
-        try:
-            return json.loads(row.config_value)
-        except (json.JSONDecodeError, TypeError):
-            return default or {}
+        return load_config_row_value(row.config_value)
     return default or {}
 
 
 def _set_config(db: Session, key: str, value: dict):
     row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
     if row:
-        row.config_value = json.dumps(value, ensure_ascii=False)
+        row.config_value = dump_config_value(value)
     else:
-        row = SystemConfig(config_key=key, config_value=json.dumps(value, ensure_ascii=False))
+        row = SystemConfig(config_key=key, config_value=dump_config_value(value))
         db.add(row)
     db.commit()
 

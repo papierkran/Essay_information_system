@@ -1,7 +1,7 @@
 # 作文收集管理系统 · 需求调研与改进清单
 
-> 状态说明：本文件为需求调研记录（2026-08-06），记录用户的改进需求、代码审查发现的问题及待确认事项。
-> **当前阶段：仅记录需求，暂不实施任何代码改动。**
+> 状态说明：本文件为需求调研与改进记录（2026-08-06）。
+> **当前阶段：已实施 🔴 安全修复（S1-S8），其余项仍待规划/确认。**
 
 ---
 
@@ -30,18 +30,18 @@
 
 ## 三、代码审查发现的问题清单
 
-### 🔴 安全（紧急，建议优先修复）
+### 🔴 安全（已修复 2026-08-06）
 
-| # | 问题 | 位置 | 说明 |
+| # | 问题 | 位置 | 修复内容 |
 |---|------|------|------|
-| S1 | **越权漏洞：公开注册接口可自选角色** | `backend/app/api/auth.py:12-31` | `/api/auth/register` 无鉴权且 `role=data.role`，任何人可注册为 admin，构成提权 |
-| S2 | **密码哈希不安全** | `backend/app/utils/auth.py:19-20` | SHA-256 + 硬编码盐 `essay_salt_`，可被暴力/彩虹表破解；依赖中已有 passlib[bcrypt] 但未使用 |
-| S3 | **JWT 默认密钥兜底** | `backend/app/utils/auth.py:12` | 未设 `ESSAY_JWT_SECRET` 时回退到硬编码密钥，可伪造 token |
-| S4 | **CORS 配置错误** | `backend/app/main.py:11-18` | `allow_origins=["*"]` + `allow_credentials=True` 不合法且风险高 |
-| S5 | **公开接口泄露任务信息** | `backend/app/api/essays.py:38-48` | `/api/essays/tasks/active` 无鉴权 |
-| S6 | **API 密钥明文存储** | `system_config` 表（OCR/LLM） | 讯飞 OCR / LLM API Key 明文入库，无加密 |
-| S7 | **路径穿越风险** | `backend/app/utils/file_utils.py:68` | `student_name` 直接拼入文件系统路径，未清洗 `../`、`/`、`\` |
-| S8 | 登录口令明文传输 | 全链路 | 无 HTTPS 强制；后端无法约束，需部署层注意 |
+| S1 | ~~越权漏洞：公开注册接口可自选角色~~ | `backend/app/api/auth.py:12-31` | 已修复：注册接口忽略客户端传入 role，强制为 `collector`，无法自选 admin 提权 |
+| S2 | ~~密码哈希不安全~~ | `backend/app/utils/auth.py:19-20` | 已修复：改用 bcrypt（`bcrypt.hashpw/gensalt`），登录兼容旧 SHA-256 哈希（检测到 `$2` 前缀走 bcrypt，否则回退 legacy 校验） |
+| S3 | ~~JWT 默认密钥兜底~~ | `backend/app/utils/auth.py:12` | 已修复：`ESSAY_ENV=production` 且未设置 `ESSAY_JWT_SECRET` 时拒绝启动；开发环境不再使用原硬编码密钥 |
+| S4 | ~~CORS 配置错误~~ | `backend/app/main.py:11-18` | 已修复：弃用 `allow_origins=["*"]`，改为 `ESSAY_CORS_ORIGINS` 白名单（逗号分隔），默认仅本机 dev 端口 |
+| S5 | ~~公开接口泄露任务信息~~ | `backend/app/api/essays.py:38-48` | 已修复：`/api/essays/tasks/active` 增加 `get_current_user` 鉴权 |
+| S6 | ~~API 密钥明文存储~~ | `system_config` 表（OCR/LLM） | 已修复：新增 `utils/crypto_utils.py`（Fernet 加密），写库时对 `api_key/secret/token/password` 等敏感字段加密，读取时解密；密钥来自 `ESSAY_CRYPTO_SECRET`/`ESSAY_JWT_SECRET`，否则持久化随机密钥文件 `backend/.crypto.key`（已 gitignore） |
+| S7 | ~~路径穿越风险~~ | `backend/app/utils/file_utils.py:68` | 已修复：新增 `safe_component()` 清洗 `../`、`/`、`\`，应用于 `get_essay_dir`、`generate_essay_filename`、上传/批量导入路径及 `/{essay_id}/file/{filename}`（`os.path.basename`） |
+| S8 | ~~登录口令明文传输~~ | 部署层 | 已缓解：后端无法强制 HTTPS，已通过 `.env.example` 与 `main.py` 生产环境提示（`ESSAY_TLS=https`），需在 Nginx/Caddy 等反向代理层启用 HTTPS |
 
 ### 🟠 性能（大数据量卡顿/崩溃的根因）
 
@@ -71,12 +71,15 @@
 
 > 以下均为「暂不改动、先记录」的诉求。
 
-### R1. 安全加固（紧急）
-- 关闭公开注册或限定角色；修复越权提权
-- 密码哈希升级为 bcrypt/argon2
-- 强制生产环境 JWT 密钥配置
-- 修正 CORS；鉴权敏感接口
-- API 密钥加密存储
+### R1. 安全加固 ✅ 已实施（2026-08-06，含 S1-S8）
+- ✅ 关闭公开注册越权提权（注册固定 `collector` 角色）
+- ✅ 密码哈希升级为 bcrypt（兼容旧哈希）
+- ✅ 生产环境强制 JWT 密钥配置
+- ✅ 修正 CORS；鉴权敏感接口（tasks/active）
+- ✅ API 密钥加密存储（Fernet）
+- ✅ 路径穿越防护（S7）
+- ⚠️ S8 HTTPS 为部署层事项，已给出配置项与提示，需在反代层落地
+- ⚠️ 存量管理员账号可继续使用（bcrypt 兼容旧 SHA-256）；建议重置一遍密码以统一为 bcrypt
 
 ### R2. 性能优化
 - 消除 N+1（文件系统查询、日志列表）
@@ -135,12 +138,16 @@
   - 存量库 `classes` 表需迁移（RENAME 或新建拷贝）
 - 对应 sql.md 已同步更新
 
+### R11. 未改列表任务筛选搜索（已确认并支持）
+- **确认**：未改列表（ReviewPending）的「任务」筛选需要支持搜索（与作文列表一致）
+- **状态**：现有实现已支持——前端 `frontend/src/views/ReviewPending.vue` 任务下拉框输入即时过滤（`filterTaskSearch`/`filteredTaskOptions`），回车发送 `task_name` 参数；后端 `/api/essays/pending` 已支持 `task_name` 模糊过滤（`essays.py:740-741`），无需额外改动
+
 ## 五、用户给出的优先级
 
 用户明确要求：**先记录需求，本轮不做改动**。
 
 规划顺序建议（待用户确认）：
-1. 🔴 安全修复（S1-S8）
+1. ✅ 🔴 安全修复（S1-S8）——**已完成 2026-08-06**
 2. 🟠 性能优化（P1-P8）
 3. 🟡 稳定性与备份（D1-D6，含 R9 自动备份、R8 日志）
 4. R4 报表（批改工作量/进度）
@@ -150,7 +157,7 @@
 
 ## 六、待确认问题（Open Questions）
 
-- [ ] 公开注册接口：机构内部是否仍需要自助注册？还是改为仅管理员创建账号？
+- [x] 公开注册接口：机构内部是否仍需要自助注册？还是改为仅管理员创建账号？（安全修复已限制注册角色为 collector，是否彻底关闭公开注册待定）
 - [ ] 数据可见范围：目前收集者可看全部作文，是否需要收窄为「只看自己收集/自己班级」？
 - [ ] 图片存储：是否同意将作文图片从数据库迁出到文件系统？
 - [ ] 报表粒度：批改工作量报表需要哪些具体指标（完成率/篇数/字数/耗时/漏改率）？

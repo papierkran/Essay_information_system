@@ -18,9 +18,10 @@ from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
-    has_correction, count_corrections_in_dir, get_upload_dir,
+    has_correction, count_corrections_in_dir, get_upload_dir, safe_component,
 )
 from ..utils.ocr_utils import ocr_essay_images, ai_correct_text, ai_rewrite_text, count_cjk_chars
+from ..utils.crypto_utils import load_config_row_value
 
 router = APIRouter(prefix="/api/essays", tags=["作文"])
 
@@ -38,8 +39,9 @@ def list_tasks(
 @router.get("/tasks/active", response_model=list[TaskOut])
 def get_active_tasks(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """获取所有活跃的收集任务（公开接口）"""
+    """获取所有未过期的活跃收集任务（需登录）"""
     now = datetime.now()
     tasks = db.query(EssayTask).filter(
         EssayTask.is_active == True,
@@ -365,17 +367,17 @@ async def upload_essay(
     now = datetime.now()
     ts = now.strftime("%H%M%S")
 
-    grade_name = grade if grade else "未定年级"
+    grade_name = safe_component(grade, "未定年级")
     if teaching_mode:
-        grade_name = f"{grade_name}{teaching_mode}"
+        grade_name = f"{grade_name}{safe_component(teaching_mode, '')}"
 
     dir_path = os.path.join(
         get_upload_dir(),
-        str(now.year),
-        f"{now.month}月",
-        str(now.day),
+        safe_component(str(now.year), "0000"),
+        safe_component(f"{now.month}月", "1月"),
+        safe_component(str(now.day), "1"),
         f"{grade_name}第{essay_number}次" if essay_number not in (None, 0) else grade_name,
-        student_name,
+        safe_component(student_name, "未知"),
     )
     os.makedirs(dir_path, exist_ok=True)
 
@@ -467,15 +469,15 @@ async def upload_correction_docx(
             effective_course_id = task.course_id
 
     now = datetime.now()
-    grade_name = grade if grade else "未定年级"
+    grade_name = safe_component(grade, "未定年级")
     if teaching_mode:
-        grade_name = f"{grade_name}{teaching_mode}"
+        grade_name = f"{grade_name}{safe_component(teaching_mode, '')}"
 
     dir_path = os.path.join(
         get_upload_dir(),
-        str(now.year),
-        f"{now.month}月",
-        str(now.day),
+        safe_component(str(now.year), "0000"),
+        safe_component(f"{now.month}月", "1月"),
+        safe_component(str(now.day), "1"),
         f"{grade_name}第{essay_number}次" if essay_number not in (None, 0) else grade_name,
     )
 
@@ -1078,7 +1080,8 @@ def get_essay_file(
 
     if essay.content_file:
         dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-        file_path = os.path.join(dir_path, filename)
+        safe_name = os.path.basename(filename)
+        file_path = os.path.join(dir_path, safe_name)
         if os.path.exists(file_path):
             import mimetypes
             media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
@@ -1232,7 +1235,7 @@ def ocr_essay(
         raise HTTPException(status_code=400, detail="作文无文件")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "ocr").first()
-    ocr_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    ocr_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     if not ocr_cfg.get("enabled", False):
         raise HTTPException(status_code=400, detail="OCR 功能未启用，请先在系统设置中配置")
 
@@ -1269,7 +1272,7 @@ def ai_correct_essay(
     if not cfg_row:
         raise HTTPException(status_code=400, detail="AI 错别字修正配置不存在，请先在系统设置中保存一次")
     try:
-        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+        llm_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="AI 错别字修正配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
@@ -1326,7 +1329,7 @@ def ai_rewrite_essay(
     if not cfg_row:
         raise HTTPException(status_code=400, detail="AI 改作文配置不存在，请先在系统设置中保存一次")
     try:
-        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+        llm_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="AI 改作文配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
@@ -1481,7 +1484,7 @@ def batch_ocr_essays(
         raise HTTPException(status_code=404, detail="未找到选中的作文")
 
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "ocr").first()
-    ocr_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+    ocr_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     if not ocr_cfg.get("enabled", False):
         raise HTTPException(status_code=400, detail="OCR 功能未启用，请先在系统设置中配置")
     xfyun_cfg = ocr_cfg.get("xfyun", {})
@@ -1526,7 +1529,7 @@ def batch_ai_correct_essays(
     if not cfg_row:
         raise HTTPException(status_code=400, detail="AI 错别字修正配置不存在，请先在系统设置中保存一次")
     try:
-        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+        llm_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="AI 错别字修正配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
@@ -1570,7 +1573,7 @@ def batch_ai_rewrite_essays(
     if not cfg_row:
         raise HTTPException(status_code=400, detail="AI 改作文配置不存在，请先在系统设置中保存一次")
     try:
-        llm_cfg = json.loads(cfg_row.config_value) if cfg_row else {}
+        llm_cfg = load_config_row_value(cfg_row.config_value) if cfg_row else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="AI 改作文配置损坏，请重新保存系统设置")
     if not llm_cfg.get("enabled", False):
@@ -1630,7 +1633,7 @@ def _get_ocr_config(db):
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == "ocr").first()
     if cfg_row:
         try:
-            return json.loads(cfg_row.config_value)
+            return load_config_row_value(cfg_row.config_value)
         except json.JSONDecodeError:
             return {}
     return {}
@@ -1639,7 +1642,7 @@ def _get_llm_config(db, key):
     cfg_row = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
     if cfg_row:
         try:
-            return json.loads(cfg_row.config_value)
+            return load_config_row_value(cfg_row.config_value)
         except json.JSONDecodeError:
             return {}
     return {}
@@ -1907,10 +1910,13 @@ async def batch_upload_essays(
         raise HTTPException(status_code=400, detail="数据格式错误，需要 JSON 数组")
 
     now = datetime.now()
-    grade_name = f"{grade}{teaching_mode}" if teaching_mode else grade
+    safe_grade = safe_component(grade, "")
+    safe_mode = safe_component(teaching_mode, "")
+    grade_name = f"{safe_grade}{safe_mode}" if safe_mode else (safe_grade or "未定年级")
 
     dir_path = os.path.join(
-        get_upload_dir(), str(now.year), f"{now.month}月", str(now.day),
+        get_upload_dir(), safe_component(str(now.year), "0000"),
+        safe_component(f"{now.month}月", "1月"), safe_component(str(now.day), "1"),
         f"{grade_name}第{essay_number}次" if essay_number else grade_name,
     )
     os.makedirs(dir_path, exist_ok=True)

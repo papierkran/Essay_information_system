@@ -9,18 +9,22 @@ from ..utils.auth import hash_password, verify_password, create_access_token, ge
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
+_SAFE_REGISTER_ROLES = {"collector"}
+
+
 @router.post("/register", response_model=Token)
 def register(data: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == data.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
 
+    role = data.role if data.role in _SAFE_REGISTER_ROLES else "collector"
     user = User(
         username=data.username,
         password_hash=hash_password(data.password),
         nickname=data.nickname,
         phone=data.phone,
-        role=data.role,
+        role=role,
     )
     db.add(user)
     db.commit()

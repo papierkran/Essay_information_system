@@ -25,6 +25,16 @@ def get_upload_dir():
 BASE_UPLOAD_DIR = get_upload_dir()
 
 
+def safe_component(name: str, fallback: str = "") -> str:
+    """清洗路径组件，防止路径穿越（../、/、\\）及控制字符。"""
+    if not name:
+        return fallback
+    cleaned = str(name).replace("\\", "_").replace("/", "_").replace("..", "_").strip().lstrip(".")
+    if not cleaned:
+        return fallback
+    return cleaned
+
+
 def get_essay_dir(
     year: str,
     month: str,
@@ -41,15 +51,17 @@ def get_essay_dir(
     - 有任务：{年}/{MMDD}_{课程名}/{年级}{方式}第{N}次/{学生}/
     - 无任务：{年}/{月}月/{日}/{年级}{方式}第{N}次/{学生}/
     """
-    grade_name = grade if grade else "未定年级"
+    grade = safe_component(grade, "未定年级")
     if teaching_mode:
-        grade_name = f"{grade_name}{teaching_mode}"
+        grade_name = f"{grade}{safe_component(teaching_mode, '')}"
+    else:
+        grade_name = grade
     task_dir = grade_name if essay_number in (None, 0) else f"{grade_name}第{essay_number}次"
 
     if task_name and task_created_at:
         task_year = str(task_created_at.year)
         mmdd = task_created_at.strftime("%m%d")
-        course = task_name.replace("/", "_").replace("\\", "_")
+        course = safe_component(task_name, "任务")
         path = os.path.join(
             get_upload_dir(),
             task_year,
@@ -59,13 +71,13 @@ def get_essay_dir(
     else:
         path = os.path.join(
             get_upload_dir(),
-            year,
-            month,
-            day,
+            safe_component(year, "0000"),
+            safe_component(month, "1月"),
+            safe_component(day, "1"),
             task_dir,
         )
     if student_name:
-        path = os.path.join(path, student_name)
+        path = os.path.join(path, safe_component(student_name, "未知"))
     return path
 
 
@@ -80,10 +92,11 @@ def generate_essay_filename(
 ) -> str:
     """生成作文文件名"""
     suppl = "补交" if is_supplement else ""
-    rm = f"_{remark}" if remark else ""
-    safe_title = essay_title.replace("/", "_").replace("\\", "_") if essay_title else "无标题"
+    rm = f"_{safe_component(remark, '')}" if remark else ""
+    safe_title = safe_component(essay_title, "无标题") if essay_title else "无标题"
+    safe_student = safe_component(student_name, "未知")
     num_part = "" if essay_number in (None, 0) else f"_第{essay_number}次"
-    return f"{safe_title}_{student_name}{num_part}_{suppl}{rm}_{timestamp}{ext}"
+    return f"{safe_title}_{safe_student}{num_part}_{suppl}{rm}_{timestamp}{ext}"
 
 
 def generate_correction_filename(original_filename: str) -> str:
