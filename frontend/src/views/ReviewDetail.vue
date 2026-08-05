@@ -744,7 +744,8 @@ async function loadEssay() {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
       const baseUrl = getBaseUrl().replace(/\/api\/?$/, '')
       const origin = baseUrl.startsWith('http') ? baseUrl : window.location.origin
-      images.value = imgRes.data.images.map(u => origin + u)
+      const t = Date.now()
+      images.value = imgRes.data.images.map(u => origin + u + '?t=' + t)
     }
   } catch {
     showToast('加载失败')

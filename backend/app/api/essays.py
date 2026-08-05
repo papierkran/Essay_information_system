@@ -1083,7 +1083,8 @@ def get_essay_file(
         if os.path.exists(file_path):
             import mimetypes
             media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-            return FileResponse(file_path, media_type=media_type)
+            return FileResponse(file_path, media_type=media_type,
+                                headers={"Cache-Control": "no-cache"})
 
     db_img = db.query(EssayImage).filter(
         EssayImage.essay_id == essay_id,
@@ -1093,7 +1094,8 @@ def get_essay_file(
         import mimetypes
         media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         from fastapi.responses import Response
-        return Response(content=db_img.image_data, media_type=media_type)
+        return Response(content=db_img.image_data, media_type=media_type,
+                        headers={"Cache-Control": "no-cache"})
 
     raise HTTPException(status_code=404, detail="文件不存在")
 
