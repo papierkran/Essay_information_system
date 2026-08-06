@@ -75,6 +75,7 @@
         <span style="color:#d9d9d9">|</span>
         <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
         <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportMergedDocx">📄 合并docx</button>
         <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchDelete">批量删除</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchCollector = true">修改收集者</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
@@ -585,6 +586,67 @@ async function batchExportDocx() {
   } catch (err) {
     closeToast()
     showFailToast(err.response?.data?.detail || '导出失败')
+  }
+}
+
+async function batchExportMergedDocx() {
+  if (!selectedIds.value.length) return
+
+  // 统计选中作文的任务，若有多个任务则提示，按多数任务命名
+  const idSet = new Set(selectedIds.value)
+  const selectedEssays = list.value.filter(e => idSet.has(e.id))
+  const taskCount = {}
+  selectedEssays.forEach(e => {
+    const name = e.task_name || '未关联任务'
+    taskCount[name] = (taskCount[name] || 0) + 1
+  })
+  const taskNames = Object.keys(taskCount)
+  let majorityName = taskNames.length ? taskNames.reduce((a, b) => taskCount[a] >= taskCount[b] ? a : b) : '作文合并'
+
+  if (taskNames.length > 1) {
+    const confirmed = await showDialog({
+      title: '多任务提示',
+      message: `选中作文属于多个任务（${taskNames.join('、')}），将合并为一个docx，文件名按多数任务「${majorityName}」命名。是否继续？`,
+      showCancelButton: true,
+      confirmButtonText: '继续合并',
+      cancelButtonText: '取消',
+    }).catch(() => false)
+    if (!confirmed) return
+  }
+
+  try {
+    showLoadingToast({ message: '正在合并导出...', forbidClick: true, duration: 0 })
+    const res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob' })
+
+    const disposition = res.headers['content-disposition']
+    let filename = majorityName + '.docx'
+    if (disposition) {
+      const p = disposition.split(';')
+      for (const part of p) {
+        const trim = part.trim()
+        if (trim.startsWith('filename*=')) {
+          const val = trim.split("''").pop()
+          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+          break
+        } else if (trim.startsWith('filename=')) {
+          const val = trim.split('=')[1]
+          if (val) filename = val.replace(/"/g, '')
+        }
+      }
+    }
+
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    window.URL.revokeObjectURL(url)
+
+    closeToast()
+    showSuccessToast('合并导出成功')
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '合并导出失败')
   }
 }
 

@@ -105,14 +105,26 @@ def _build_download_filename(essay: Essay) -> str:
 def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
     """从 DB 生成 docx，返回临时文件路径。show_corrected=True 时包含修改后内容。"""
     from docx import Document
+
+    doc = Document()
+    _append_essay_to_doc(doc, essay, show_corrected=show_corrected)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+    return tmp_path
+
+
+def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_heading: bool = False) -> None:
+    """把一篇作文的修改前后内容写入已有的 docx 文档。add_heading=True 时先加学生+标题行。"""
+    from docx import Document
     from docx.shared import Pt, Cm
     from docx.enum.text import WD_LINE_SPACING
     from docx.oxml.ns import qn
 
     content = (essay.content_text or "").replace('\r\n', '\n').replace('\r', '\n')
     corrected = (essay.corrected_text or "").replace('\r\n', '\n').replace('\r', '\n')
-
-    doc = Document()
 
     def _set_run_font(run):
         run.font.name = '宋体'
@@ -151,6 +163,14 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
             else:
                 _set_para_format(p, is_title=False)
 
+    if add_heading:
+        head_text = f"{essay.student_name or '未知'}《{essay.essay_title or '无标题'}》"
+        hp = doc.add_paragraph()
+        hr = hp.add_run(head_text)
+        _set_run_font(hr)
+        hr.bold = True
+        _set_para_format(hp, is_title=True)
+
     # 修改前
     _add_block(content, "修改前：")
 
@@ -159,12 +179,6 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
         doc.add_page_break()
         # 修改后
         _add_block(corrected, "修改后：")
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-    tmp_path = tmp.name
-    tmp.close()
-    doc.save(tmp_path)
-    return tmp_path
 
 
 @router.get("/courses")
@@ -1465,6 +1479,53 @@ def batch_export_docx(
         if os.path.exists(tmp_zip_path):
             os.unlink(tmp_zip_path)
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+@router.post("/batch-export-docx-merged")
+def batch_export_docx_merged(
+    essay_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """一键合并修改前后 docx：把选中作文的修改前后内容合并为一个 docx。
+    文件名使用任务名称，存在多个任务时按多数任务名称命名。"""
+    from collections import Counter
+    from docx import Document
+
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    if not essays:
+        raise HTTPException(status_code=404, detail="未找到选中的作文")
+
+    # 统计各任务下的作文数，取多数任务名称
+    task_ids = {e.task_id for e in essays if e.task_id}
+    task_names = {}
+    if task_ids:
+        for t in db.query(EssayTask).filter(EssayTask.id.in_(task_ids)).all():
+            task_names[t.id] = t.name or "未命名任务"
+
+    counter = Counter()
+    for e in essays:
+        name = task_names.get(e.task_id) if e.task_id else ""
+        counter[name or "未关联任务"] += 1
+    majority_name = counter.most_common(1)[0][0] if counter else "作文合并"
+    safe_name = majority_name.replace("/", "_").replace("\\", "_").strip() or "作文合并"
+
+    doc = Document()
+    for idx, essay in enumerate(essays):
+        if idx > 0:
+            doc.add_page_break()
+        _append_essay_to_doc(doc, essay, show_corrected=True)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+
+    return FileResponse(
+        tmp_path,
+        filename=f"{safe_name}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 @router.post("/batch-ocr")

@@ -6,6 +6,7 @@
     <van-cell-group inset style="margin-bottom:12px">
       <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
         placeholder="选择收集任务（自动填充年级等信息）" @click="showTaskPicker = true" />
+      <van-cell v-if="selectedTaskTopic" title="文章主题" :label="selectedTaskTopic" />
     </van-cell-group>
 
     <div class="batch-grid">
@@ -143,15 +144,36 @@
     <!-- 模板选择器 -->
     <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
       <div class="picker-list">
+        <div style="padding:8px 16px">
+          <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+        </div>
         <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
-        <van-cell v-for="t in sortedTasks" :key="t.id"
-          :title="t.name"
-          :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
-          @click="selectTask(t)">
-          <template #right-icon>
-            <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
-          </template>
-        </van-cell>
+        <div class="task-split">
+          <div class="task-col">
+            <div class="task-col-title">线上</div>
+            <van-cell v-for="t in filteredOnlineTasks" :key="t.id"
+              :title="t.name"
+              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
+              @click="selectTask(t)">
+              <template #right-icon>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+              </template>
+            </van-cell>
+            <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
+          </div>
+          <div class="task-col">
+            <div class="task-col-title">线下</div>
+            <van-cell v-for="t in filteredOfflineTasks" :key="t.id"
+              :title="t.name"
+              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
+              @click="selectTask(t)">
+              <template #right-icon>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+              </template>
+            </van-cell>
+            <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
+          </div>
+        </div>
       </div>
     </van-action-sheet>
 
@@ -186,6 +208,7 @@ const showCollectorPicker = ref(false)
 const selectedGrade = ref('')
 const corSelectedGrade = ref('')
 const selectedTaskName = ref('')
+const selectedTaskTopic = ref('')
 const selectedTaskId = ref(null)
 const selectedCourseId = ref(null)
 const selectedCollector = ref(null)
@@ -203,6 +226,21 @@ const sortedTasks = computed(() => {
     if (aActive !== bActive) return aActive ? -1 : 1
     return 0
   })
+})
+
+const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode === '线上'))
+const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
+
+const taskSearch = ref('')
+const filteredOnlineTasks = computed(() => {
+  const kw = taskSearch.value.trim().toLowerCase()
+  if (!kw) return onlineTasks.value
+  return onlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+})
+const filteredOfflineTasks = computed(() => {
+  const kw = taskSearch.value.trim().toLowerCase()
+  if (!kw) return offlineTasks.value
+  return offlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 
 function taskIsActive(t) {
@@ -286,11 +324,13 @@ function selectTask(tpl) {
       corForm.value.teaching_mode = tpl.teaching_mode
     }
     selectedTaskName.value = tpl.name
+    selectedTaskTopic.value = tpl.essay_topic || ''
     selectedTaskId.value = tpl.id
     selectedCourseId.value = tpl.course_id || null
     showToast(`已选择：${tpl.name}`)
   } else {
     selectedTaskName.value = ''
+    selectedTaskTopic.value = ''
     selectedTaskId.value = null
     selectedCourseId.value = null
     showToast('已取消模板选择')
@@ -575,6 +615,12 @@ async function onSubmitCorrections() {
       }
 
       const fd = new FormData()
+      if (selectedTaskId.value) {
+        fd.append('task_id', String(selectedTaskId.value))
+      }
+      if (selectedCourseId.value) {
+        fd.append('course_id', String(selectedCourseId.value))
+      }
       fd.append('grade', corForm.value.grade)
       fd.append('essay_number', corForm.value.essay_number || 1)
       fd.append('teaching_mode', corForm.value.teaching_mode)
@@ -615,7 +661,30 @@ async function onSubmitCorrections() {
 
 <style scoped>
 .page { padding: 16px; }
-.picker-list { max-height: 300px; overflow-y: auto; }
+.picker-list { max-height: 70vh; overflow-y: auto; }
+
+.task-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #f0f0f0;
+}
+
+.task-col {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.task-col + .task-col {
+  border-left: 1px solid #f0f0f0;
+}
+
+.task-col-title {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #888;
+  font-weight: 500;
+}
 
 .batch-grid {
   display: grid;
