@@ -120,7 +120,7 @@ class Essay(Base):
         UniqueConstraint("task_id", "student_name", "essay_number", "is_supplement", "essay_title",
                          name="uq_essay_task_student"),
         CheckConstraint(
-            "status IN ('pending', 'confirming', 'corrected')",
+            "status IN ('pending', 'confirming', 'corrected', 'rework')",
             name="ck_essays_status",
         ),
     )

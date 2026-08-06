@@ -62,6 +62,30 @@ def get_db():
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_existing_columns()
+    _migrate_essays_status_constraint()
+
+
+def _migrate_essays_status_constraint():
+    """更新 essays 表状态检查约束，支持新增的 rework(待重改) 状态。"""
+    from sqlalchemy import text, inspect
+
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+    except Exception:
+        return
+    if "essays" not in tables:
+        return
+
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE essays DROP CONSTRAINT IF EXISTS ck_essays_status"))
+            conn.execute(text(
+                "ALTER TABLE essays ADD CONSTRAINT ck_essays_status CHECK "
+                "(status IN ('pending', 'confirming', 'corrected', 'rework'))"
+            ))
+        except Exception as e:
+            print(f"[migrate] 更新 essays 状态约束失败(可忽略): {e}")
 
 
 def _migrate_existing_columns():

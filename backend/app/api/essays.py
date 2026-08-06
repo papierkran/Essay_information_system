@@ -68,7 +68,7 @@ def get_task_stats(
     pending = db.query(func.count(Essay.id)).filter(
         Essay.task_id == task_id,
         Essay.deleted_at == None,
-        Essay.status.in_(["pending", "confirming"])
+        Essay.status.in_(["pending", "confirming", "rework"])
     ).scalar() or 0
     confirming = db.query(func.count(Essay.id)).filter(
         Essay.task_id == task_id,
@@ -689,7 +689,7 @@ def list_essays(
     essays = q.all()
     result = [_essay_to_out(e, db) for e in essays]
 
-    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming"])).scalar() or 0
+    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming", "rework"])).scalar() or 0
     correcting_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "confirming").scalar() or 0
     corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "corrected").scalar() or 0
 
@@ -742,7 +742,7 @@ def pending_essays(
     if status:
         q = q.filter(Essay.status == status)
     else:
-        q = q.filter(Essay.status.in_(["pending", "confirming"]))
+        q = q.filter(Essay.status.in_(["pending", "confirming", "rework"]))
     if name:
         q = q.filter(Essay.student_name.like(f"%{name}%"))
     if grade:
@@ -833,8 +833,9 @@ def essay_stats(
 
     base = db.query(Essay).filter(Essay.deleted_at == None)
     total = base.count()
-    pending = base.filter(Essay.status.in_(["pending", "confirming"])).count()
+    pending = base.filter(Essay.status.in_(["pending", "confirming", "rework"])).count()
     confirming = base.filter(Essay.status == "confirming").count()
+    rework = base.filter(Essay.status == "rework").count()
     corrected = base.filter(Essay.status == "corrected").count()
     this_month = base.filter(Essay.created_at >= month_start).count()
 
@@ -879,6 +880,7 @@ def essay_stats(
         "total": total,
         "pending": pending,
         "confirming": confirming,
+        "rework": rework,
         "corrected": corrected,
         "this_month": this_month,
         "grade_dist": grade_dist,
@@ -1012,8 +1014,6 @@ async def upload_correction(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
-    if essay.reviewer_id and essay.reviewer_id != current_user.id:
-        raise HTTPException(status_code=403, detail="该作文不是你的任务")
 
     # 至少提供文件或文字
     if not file and not corrected_text.strip():
@@ -1043,7 +1043,7 @@ async def upload_correction(
         essay.reviewer_note = reviewer_note.strip()
 
     essay.reviewer_id = current_user.id
-    if essay.status == "pending" and essay.content_text and essay.content_text.strip():
+    if essay.status in ("pending", "rework") and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
     essay.corrected_at = datetime.now()
     _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
@@ -1365,7 +1365,7 @@ def ai_rewrite_essay(
             count_min=count_min, count_max=count_max,
         )
         essay.corrected_text = rewritten
-        if essay.status == "pending" and essay.content_text and essay.content_text.strip():
+        if essay.status in ("pending", "rework") and essay.content_text and essay.content_text.strip():
             essay.status = "confirming"
         essay.corrected_at = datetime.now()
         essay.reviewer_id = current_user.id
@@ -1395,6 +1395,28 @@ def confirm_essay(
     essay.corrected_at = datetime.now()
     essay.reviewer_id = current_user.id
     _log_operation(db, essay.id, current_user.id, "批改", "确认修改")
+    db.commit()
+    db.refresh(essay)
+    return _essay_to_out(essay, db)
+
+
+@router.post("/{essay_id}/rework")
+def rework_essay(
+    essay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """标记重改：将作文从 待确认 改为 待重改（修改后文章不达标，需重新改正）"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+    essay = db.query(Essay).filter(Essay.id == essay_id).first()
+    if not essay:
+        raise HTTPException(status_code=404, detail="作文不存在")
+    if essay.status != "confirming":
+        raise HTTPException(status_code=400, detail="当前状态不是待确认，无法标记为重改")
+    essay.status = "rework"
+    essay.reviewer_id = current_user.id
+    _log_operation(db, essay.id, current_user.id, "批改", "标记为重改")
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -1649,7 +1671,7 @@ def batch_ai_rewrite_essays(
         try:
             rewritten = ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt"))
             e.corrected_text = rewritten
-            if e.status == "pending" and e.content_text and e.content_text.strip():
+            if e.status in ("pending", "rework") and e.content_text and e.content_text.strip():
                 e.status = "confirming"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
@@ -2262,7 +2284,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         corr_exists = has_correction(original_dir, original_name)
 
     # 自动同步状态
-    if corr_exists and essay.status == "pending" and essay.content_text and essay.content_text.strip():
+    if corr_exists and essay.status in ("pending", "rework") and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
         db.commit()
 

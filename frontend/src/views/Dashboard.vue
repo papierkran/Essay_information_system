@@ -117,7 +117,7 @@ function getDeadlineDaysLeft(deadline) {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
-function statusLabel(s) { return { pending: '未修改', confirming: '待确认', corrected: '已修改' }[s] || s }
+function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
 function goUpload() { router.push('/essay/upload') }
 function goList() { router.push('/essay/list') }

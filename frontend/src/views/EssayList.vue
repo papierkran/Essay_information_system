@@ -18,6 +18,7 @@
           <option value="">全部</option>
           <option value="pending">未修改</option>
           <option value="confirming">待确认</option>
+          <option value="rework">待重改</option>
           <option value="corrected">已修改</option>
         </select>
       </div>
@@ -438,7 +439,7 @@ const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
 
-function statusLabel(s) { return { pending:'未修改', confirming:'待确认', corrected:'已修改' }[s] || s }
+function statusLabel(s) { return { pending:'未修改', confirming:'待确认', rework:'待重改', corrected:'已修改' }[s] || s }
 function sortIcon(field) { if (sortBy.value !== field) return '⇅'; return sortOrder.value === 'asc' ? '↑' : '↓' }
 
 function toggleSort(field) {
@@ -862,6 +863,7 @@ onUnmounted(() => {
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag-pending { background: #fff7e6; color: #d46b08; }
 .tag-confirming { background: #e6f4ff; color: #1677ff; }
+.tag-rework { background: #fff1f0; color: #ff4d4f; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 

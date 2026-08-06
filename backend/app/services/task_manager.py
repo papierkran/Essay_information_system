@@ -192,7 +192,7 @@ def run_batch_ai_rewrite(task_id: str, essay_ids: list, current_user_id: int, ll
             raise RuntimeError("无文字内容")
         rewritten = ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt"))
         e.corrected_text = rewritten
-        if e.status == "pending" and e.content_text and e.content_text.strip():
+        if e.status in ("pending", "rework") and e.content_text and e.content_text.strip():
             e.status = "confirming"
         e.corrected_at = datetime.now()
         e.reviewer_id = current_user_id
@@ -247,7 +247,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             raise RuntimeError("无文字内容")
         rewritten = ai_rewrite_text(e.content_text, editor_cfg, prompt_template=editor_cfg.get("prompt"))
         e.corrected_text = rewritten
-        if e.status == "pending":
+        if e.status in ("pending", "rework"):
             e.status = "confirming"
         e.corrected_at = datetime.now()
         e.reviewer_id = current_user_id

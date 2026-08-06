@@ -8,9 +8,10 @@
       <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @input="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">状态</span>
         <select v-model="filters.status" class="filter-input" @change="applyFilter">
-          <option value="">全部(未修改+待确认)</option>
+          <option value="">全部(未修改+待确认+待重改)</option>
           <option value="pending">未修改</option>
           <option value="confirming">待确认</option>
+          <option value="rework">待重改</option>
         </select>
       </div>
       <div class="filter-row"><span class="filter-label">年级</span>
@@ -97,6 +98,7 @@
           <td style="white-space:nowrap">
             <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
             <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#52c41a;margin-left:4px" @click="confirmSingle(e)">✅ 确认修改</button>
+            <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#fa8c16;margin-left:4px" @click="reworkSingle(e)">🔄 重改</button>
           </td>
         </tr>
       </tbody>
@@ -128,7 +130,7 @@
         :desc="`第${e.essay_number}次 · ${e.essay_title || ''}`"
         @click="goDetail(e)">
         <template #tags>
-          <van-tag :type="e.status === 'confirming' ? 'warning' : 'default'">{{ statusLabel(e.status) }}</van-tag>
+          <van-tag :type="e.status === 'confirming' ? 'warning' : e.status === 'rework' ? 'danger' : 'default'">{{ statusLabel(e.status) }}</van-tag>
           <van-tag plain>{{ e.collector_name }}</van-tag>
           <van-tag plain type="primary">{{ e.grade || '未知' }}</van-tag>
         </template>
@@ -262,7 +264,7 @@ const filters = ref({
   wordCountMax: '',
 })
 
-function statusLabel(s) { return { pending: '未修改', confirming: '待确认', corrected: '已修改' }[s] || s }
+function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
 function closeTaskDropdown(e) {
   if (taskFilterRef.value && !taskFilterRef.value.contains(e.target)) {
@@ -481,6 +483,16 @@ async function confirmSingle(e) {
   }
 }
 
+async function reworkSingle(e) {
+  try {
+    await api.post(`/essays/${e.id}/rework`)
+    showSuccessToast('已标记为待重改')
+    await load()
+  } catch (err) {
+    showFailToast(err.response?.data?.detail || '标记重改失败')
+  }
+}
+
 async function fetchCollectorsAndTasks() {
   try { const res = await api.get('/essays/collectors'); collectorList.value = res.data }
   catch (err) { console.warn('获取收集者列表失败:', err) }
@@ -564,6 +576,7 @@ onUnmounted(() => {
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag-pending { background: #fff7e6; color: #d46b08; }
 .tag-confirming { background: #e6f4ff; color: #1677ff; }
+.tag-rework { background: #fff1f0; color: #ff4d4f; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 

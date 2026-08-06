@@ -208,6 +208,10 @@
           <input type="file" accept=".sql" style="display:none" @change="importDB" />
         </label>
       </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="excludeImages" v-model="excludeImages" />
+        <label for="excludeImages" style="font-size:13px;color:#666">不导出图片数据库（essay_images）</label>
+      </div>
       <p v-if="dbMsg" style="font-size:13px;margin-top:12px" :class="dbMsg.includes('成功') ? 'success-text' : 'error-text'">{{ dbMsg }}</p>
     </div>
   </div>
@@ -233,6 +237,7 @@ const saving = ref(false)
 const saved = ref(false)
 const exporting = ref(false)
 const dbMsg = ref('')
+const excludeImages = ref(false)
 const apiBaseUrl = ref(localStorage.getItem('apiBaseUrl') || '')
 const apiSaving = ref(false)
 const apiSaved = ref(false)
@@ -473,13 +478,13 @@ async function saveSettings() {
 async function exportDB() {
   exporting.value = true; dbMsg.value = ''
   try {
-    const res = await api.get('/admin/database/export', { responseType: 'blob' })
+    const res = await api.get('/admin/database/export', { params: { exclude_images: excludeImages.value }, responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a'); a.href = url
     const ts = new Date().toISOString().slice(0,19).replace(/[:-]/g, '')
     a.download = `essay_system_backup_${ts}.sql`; a.click()
     URL.revokeObjectURL(url)
-    dbMsg.value = '✅ 导出成功'
+    dbMsg.value = excludeImages.value ? '✅ 导出成功（不含图片数据库）' : '✅ 导出成功'
   } catch(err) { dbMsg.value = '❌ 导出失败: ' + (err.response?.data?.detail || err.message) }
   finally { exporting.value = false }
 }

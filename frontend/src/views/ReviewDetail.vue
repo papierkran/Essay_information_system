@@ -88,6 +88,9 @@
             <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="width:100%;margin-top:8px">
               ✅ 确认修改
             </button>
+            <button v-if="essay.status === 'confirming'" class="btn" @click="reworkEssay" style="width:100%;margin-top:8px;color:#fa8c16">
+              🔄 重改（不达标需重新改正）
+            </button>
           </template>
           <template v-else>
             <div class="card-header"><h3>✅ 已修改</h3></div>
@@ -240,6 +243,9 @@
               <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="margin-top:8px;width:100%">
                 ✅ 确认修改
               </button>
+              <button v-if="essay.status === 'confirming'" class="btn" @click="reworkEssay" style="margin-top:8px;width:100%;color:#fa8c16">
+                🔄 重改（不达标需重新改正）
+              </button>
             </div>
           </div>
         </div>
@@ -336,6 +342,7 @@
           <div style="margin:16px">
             <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
             <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
+            <van-button v-if="essay.status === 'confirming'" round block plain type="warning" style="margin-top:8px" @click="reworkEssay">🔄 重改</van-button>
           </div>
         </van-cell-group>
 
@@ -878,6 +885,14 @@ async function confirmEssay() {
     showToast('已确认修改')
     await loadEssay()
   } catch (err) { showToast(err.response?.data?.detail || '确认失败') }
+}
+
+async function reworkEssay() {
+  try {
+    await api.post(`/essays/${route.params.id}/rework`)
+    showToast('已标记为待重改')
+    await loadEssay()
+  } catch (err) { showToast(err.response?.data?.detail || '标记重改失败') }
 }
 
 async function saveCorrectionNote() {

@@ -407,7 +407,10 @@ def update_config(
 
 
 @router.get("/database/export")
-def export_database(current_user: User = Depends(get_current_user)):
+def export_database(
+    exclude_images: bool = False,
+    current_user: User = Depends(get_current_user),
+):
     """导出数据库为 SQL 文件（支持 Docker 和非 Docker PostgreSQL）"""
     require_admin(current_user)
     import subprocess, tempfile
@@ -426,6 +429,9 @@ def export_database(current_user: User = Depends(get_current_user)):
                    "--no-owner", "--no-acl", "--no-sync",
                    "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
                    "--on-conflict-do-nothing"]
+    # 可选择不导出图片表（essay_images，体积大）
+    if exclude_images:
+        pg_dump_cmd.append("--exclude-table=essay_images")
 
     if host in ("localhost", "127.0.0.1", ""):
         # 本地数据库，直接执行
