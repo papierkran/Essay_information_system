@@ -1,7 +1,7 @@
 # 作文收集管理系统 · 需求调研与改进清单
 
 > 状态说明：本文件为需求调研与改进记录（2026-08-06）。
-> **当前阶段：已实施 🔴 安全修复（S1-S8），其余项仍待规划/确认。**
+> **当前阶段：已实施 🔴 安全修复（S1-S8）、课程实体化（R10）、rework 状态、多线程批量任务、合并导出等；其余项仍待规划/确认。**
 
 ---
 
@@ -63,7 +63,7 @@
 | D1 | **无版本化迁移** | `database.py:_migrate_existing_columns` | 手写 ALTER 补列，schema 演进风险高，建议引入 Alembic |
 | D2 | **数据库密码明文** | `settings.json` / `database.py:41` | 连接串拼接未对密码特殊字符转义，且配置明文落盘 |
 | D3 | **无学生实体表（数据混乱根源）** | models.py 无 Student 表 | 学生只是 Essay 上的字符串字段 → 无法名单维护、跨任务汇总、成长轨迹 |
-| D4 | **唯一约束过严** | models.py:149-150 | (class+task+student+number+supp+title) 六元唯一，批量导入易冲突 |
+| D4 | **唯一约束含历史字段** | models.py | `uq_essay_task_student`（task_id, student_name, essay_number, is_supplement, essay_title），已随 `class_id` 移除而简化；批量导入冲突面较窄，必要时可加前缀覆盖 |
 | D5 | 无自动备份/恢复保障 | - | 仅系统设置手动备份，无定时自动备份策略 |
 | D6 | 无统一错误处理与日志落盘 | - | 错误提示不足（用户反馈），缺审计日志文件 |
 
@@ -94,7 +94,7 @@
 
 ### R4. 报表（用户已确认需要）
 - **批改工作量/进度报表**：
-  - 按班级/任务/时间维度统计批改完成率
+  - 按课程/任务/时间维度统计批改完成率
   - 批改者工作量统计（批改篇数、耗时）
 - 一键导出 Excel
 - （待确认：学生成长/缺交统计是否纳入）
@@ -124,23 +124,29 @@
 > - 消息通知、批改快捷键、批量批改导入（效率/通知；注：批量批改导入**现有功能已支持**）
 > - Docker 部署、自动化测试（工程其他项）
 
-### R10. 课程实体化（已实施 2026-08-06）
-- **设计决策**：课程复用 `classes` 表，不建独立课程表（用户确认"一课程多任务、线上线下同一课程"）
-- **已实施改动**：
-  - `essay_tasks`：移除 `course_name` 字符串字段，新增 `course_id`（FK→classes.id）；`course_name` 改为 ORM 计算属性
-  - `essays`：新增 `course_id`（FK→classes.id，直接关联课程，上传时优先取传入值否则从任务继承，属冗余存储）
-  - 同步更新：schemas（TaskOut/EssayOut 含 course_id/course_name）、essays.py 上传继承逻辑、admin.py 任务创建/更新
-- **后续演进（2026-08-06 二期）**：`Class` 模型重构为 `Course`（表 `course`），FK 全部指向 `course.id`；`essays.class_id` 与 `course_id` 双列并存（过渡期，`class_id` 仍 NOT NULL）
+### R10. 课程实体化（已实施，2026-08-06 三期演进）
+- **设计决策**：课程作为独立实体（用户确认"一课程多任务、线上线下同一课程"）
+- **演进过程**：
+  1. 一期：`essay_tasks` 移除 `course_name` 字符串，新增 `course_id`；`essays` 新增 `course_id`；`course_name` 改为 ORM 计算属性
+  2. 二期：`Class` 模型重构为 `Course`（表 `course`），FK 全部指向 `course.id`
+  3. **三期（当前）**：删除 `essays.class_id`；删除 `organizations`、`user_classes` 两张表（单机构场景、绑定未启用）；`Course` 表简化（移除 `org_id`）；同步更新 schemas/admin.py/essays.py/前端 AdminCourse
+- **当前状态**：`essays` 仅保留 `task_id` 与 `course_id`，课程取用链路 `essays.course_id → course.name`
 - **遗留风险**：
-  - `essays.course_id` 暂无索引
-  - `essays.class_id` 与 `course_id` 双列语义未彻底分离（详见 sql.md 方案 A/B）
-  - `user_classes` 半启用（后端接口在、前端无调用，数据可见性未生效）
-  - 存量库 `classes` 表需迁移（RENAME 或新建拷贝）
+  - `essays.course_id` 暂无索引，频繁按课程筛选/报表建议补 `idx_essays_course_id`
+  - 存量库若存在 `classes`/`organizations`/`user_classes` 旧表不影响运行（新代码不再引用），可按需清理
 - 对应 sql.md 已同步更新
 
 ### R11. 未改列表任务筛选搜索（已确认并支持）
 - **确认**：未改列表（ReviewPending）的「任务」筛选需要支持搜索（与作文列表一致）
 - **状态**：现有实现已支持——前端 `frontend/src/views/ReviewPending.vue` 任务下拉框输入即时过滤（`filterTaskSearch`/`filteredTaskOptions`），回车发送 `task_name` 参数；后端 `/api/essays/pending` 已支持 `task_name` 模糊过滤（`essays.py:740-741`），无需额外改动
+
+### 已实施的其他变更（2026-08-06，随近期提交落地）
+- ✅ **新增 `rework`（待重改）状态**：状态枚举扩充为 pending/confirming/corrected/rework；`database.py` 增加 `_migrate_essays_status_constraint()` 幂等重建检查约束；前端待确认作文可一键标记重改
+- ✅ **多线程批量任务**：`services/task_manager.py`（ThreadPoolExecutor，MAX_WORKERS=3）支持批量 OCR / AI 错别字 / AI 改写 / 三段流水线，前端 `TaskStatusBar.vue` + `useTaskMonitor.js` 轮询进度；每篇独立 DB Session
+- ✅ **合并 docx 导出**：`/api/essays/batch-export-docx-merged`（对应提交"增加合并docx导出功能"）
+- ✅ **按课程下载**：`/api/essays/download/by-course/{course_id}`
+- ✅ **课程 CSV 批量导入**：`/api/admin/import-courses-csv`（预览+确认两段式，替代原班级 ClassIn 导入）
+- ✅ **OCR 逻辑完善**：`/api/essays/batch-ocr`、`/api/essays/upload-correction-docx`、近期标题联想 `/recent-titles` 等
 
 ## 五、用户给出的优先级
 
