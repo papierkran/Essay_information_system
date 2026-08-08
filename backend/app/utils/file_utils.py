@@ -163,3 +163,40 @@ def move_content_file(essay, old_dir: str, new_dir: str) -> str:
     if first_file:
         return os.path.relpath(os.path.join(new_dir, first_file), get_upload_dir())
     return ""
+
+
+def resize_image_within(content: bytes, max_dim: int = 4000) -> bytes:
+    """检查图片宽高是否都在 max_dim 内，超出则等比例缩小后返回新字节。
+    未超出时原样返回，避免二次压缩。"""
+    import io
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(content)) as im:
+            w, h = im.size
+            if w <= max_dim and h <= max_dim:
+                return content
+
+            if w >= h:
+                new_w = max_dim
+                new_h = max(1, round(h * max_dim / w))
+            else:
+                new_h = max_dim
+                new_w = max(1, round(w * max_dim / h))
+
+            img = im.resize((new_w, new_h), Image.LANCZOS)
+            out = io.BytesIO()
+            fmt = (im.format or "JPEG").upper()
+            if fmt in ("JPEG", "JPG"):
+                img.save(out, format="JPEG", quality=90)
+            elif fmt == "PNG":
+                img.save(out, format="PNG")
+            elif fmt == "WEBP":
+                img.save(out, format="WEBP", quality=90)
+            elif fmt == "GIF":
+                img.convert("RGB").save(out, format="GIF")
+            else:
+                img.save(out, format="JPEG", quality=90)
+            return out.getvalue()
+    except Exception:
+        return content

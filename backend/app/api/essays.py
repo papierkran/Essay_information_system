@@ -18,7 +18,7 @@ from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
-    has_correction, count_corrections_in_dir, get_upload_dir, safe_component,
+    has_correction, count_corrections_in_dir, get_upload_dir, resize_image_within,
 )
 from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text, count_cjk_chars
 from ..utils.crypto_utils import load_config_row_value
@@ -405,6 +405,7 @@ async def upload_essay(
             content = await f.read()
             if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
                 essay.file_type = "image"
+                content = resize_image_within(content)
                 img_name = f"{img_index}{ext}"
                 img_index += 1
                 img_path = os.path.join(dir_path, img_name)
