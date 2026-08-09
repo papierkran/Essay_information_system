@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { showToast } from 'vant'
 
 /* global __API_BASE_URL__ */
 const DEFAULT_BASE = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '').replace(/\/+$/, '')
@@ -50,6 +51,30 @@ api.interceptors.request.use(config => {
   return config
 })
 
+const COMMON_ERRORS = {
+  400: '请求参数有误',
+  401: '登录已过期，请重新登录',
+  403: '没有权限执行该操作',
+  404: '请求的资源不存在',
+  409: '数据冲突，请检查后重试',
+  422: '提交的数据有误',
+  429: '请求过于频繁，请稍后重试',
+  500: '服务器内部错误，请稍后重试',
+  502: '服务器繁忙，请稍后重试',
+  503: '服务暂不可用，请稍后重试',
+}
+
+export function getApiErrorMessage(err, fallback = '请求失败') {
+  if (!err) return fallback
+  if (err.response) {
+    const detail = err.response.data?.detail
+    if (typeof detail === 'string' && detail.trim()) return detail
+    return COMMON_ERRORS[err.response.status] || `请求失败 (${err.response.status})`
+  }
+  if (err.code === 'ECONNABORTED') return '请求超时，请重试'
+  return '网络连接失败，请检查服务器地址或网络'
+}
+
 api.interceptors.response.use(
   res => res,
   err => {
@@ -57,6 +82,12 @@ api.interceptors.response.use(
       clearAuth()
       if (err.config?.url && !err.config.url.includes('/file/')) {
         window.location.hash = '#/login'
+      }
+    } else if (err.config && err.config.__toastError !== false) {
+      const detail = err.response?.data?.detail
+      const hasDetail = typeof detail === 'string' && detail.trim()
+      if (!hasDetail) {
+        showToast(getApiErrorMessage(err))
       }
     }
     return Promise.reject(err)

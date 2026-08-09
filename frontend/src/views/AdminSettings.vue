@@ -2,7 +2,18 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">系统设置</div>
 
-    <div class="card" style="max-width:600px">
+    <!-- 分区锚点导航 -->
+    <div v-if="isDesktop" class="settings-nav">
+      <button class="nav-btn" @click="scrollToSection('sec-db')">🗄️ 数据库</button>
+      <button class="nav-btn" @click="scrollToSection('sec-server')">🌐 服务地址</button>
+      <button class="nav-btn" @click="scrollToSection('sec-upload')">📁 存储目录</button>
+      <button class="nav-btn" @click="scrollToSection('sec-ocr')">🔍 OCR</button>
+      <button class="nav-btn" @click="scrollToSection('sec-fix')">✏️ 错别字修正</button>
+      <button class="nav-btn" @click="scrollToSection('sec-edit')">✅ AI改作文</button>
+      <button class="nav-btn" @click="scrollToSection('sec-backup')">🗄️ 备份</button>
+    </div>
+
+    <div class="card" id="sec-db" style="max-width:600px">
       <div class="card-header"><h3>🗄️ 数据库连接</h3></div>
       <div class="form-group">
         <label>主机地址</label>
@@ -42,7 +53,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-server" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>🌐 后端服务地址</h3></div>
       <div class="form-group">
         <label>API 地址</label>
@@ -63,7 +74,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-upload" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>⚙️ 上传存储目录</h3></div>
       <div class="form-group">
         <label>文件存储路径（相对或绝对）</label>
@@ -80,7 +91,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-ocr" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>🔍 OCR 识别配置</h3></div>
       <div class="form-group">
         <label>
@@ -118,7 +129,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-fix" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>✏️ 修改前 - AI 错别字修正</h3></div>
       <div class="form-group">
         <label><input type="checkbox" v-model="fixEnabled" /> 启用</label>
@@ -153,7 +164,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-edit" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>✅ 修改后 - AI 改作文</h3></div>
       <div class="form-group">
         <label><input type="checkbox" v-model="editEnabled" /> 启用</label>
@@ -196,7 +207,7 @@
       </div>
     </div>
 
-    <div class="card" style="max-width:600px;margin-top:20px">
+    <div class="card" id="sec-backup" style="max-width:600px;margin-top:20px">
       <div class="card-header"><h3>🗄️ 数据库备份</h3></div>
       <p style="font-size:13px;color:#666;margin-bottom:16px">导出当前全部数据为 SQL 文件，或导入 SQL 文件恢复数据。</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -225,6 +236,11 @@ import api, { useAuth } from '../api'
 
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
+
+function scrollToSection(id) {
+  const el = document.getElementById(id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 const uploadDir = ref('uploads')
 const resolvedPath = ref('')
 const dbHost = ref('')
@@ -507,5 +523,29 @@ async function importDB(e) {
 .input { width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px; }
 .success-text { color: #52c41a; }
 .error-text { color: #ff4d4f; }
+
+.settings-nav {
+  position: sticky;
+  top: 56px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  background: #f0f2f5;
+}
+.nav-btn {
+  padding: 5px 14px;
+  border: 1px solid #d9d9d9;
+  border-radius: 16px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  color: #555;
+  transition: all 0.15s;
+}
+.nav-btn:hover { border-color: #1677ff; color: #1677ff; }
+.card { scroll-margin-top: 70px; }
 @media (max-width: 767px) { .page { padding: 16px; } }
 </style>

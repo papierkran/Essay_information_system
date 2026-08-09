@@ -10,6 +10,19 @@
       </div>
       <div v-if="isDesktop" class="page-title">作文详情</div>
 
+      <!-- ===== 桌面端：状态流转条 ===== -->
+      <div v-if="isDesktop" class="status-strip" :class="'strip-' + essay.status">
+        <span class="tag" :class="'tag-' + essay.status">{{ statusLabel(essay.status) }}</span>
+        <span class="strip-hint">{{ statusHint }}</span>
+        <div class="flow-bar">
+          <span class="flow-item" :class="{ done: flowState.done >= 1 }">📤 提交</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-item" :class="{ done: flowState.done >= 2, active: flowState.active === 1 }">✏️ 批改</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-item" :class="{ done: flowState.done >= 3, active: flowState.active === 2 }">✅ 确认</span>
+        </div>
+      </div>
+
       <!-- ===== 桌面端：顶部行（基本信息 + 修改状态）===== -->
       <div v-if="isDesktop" class="top-row">
         <div class="card top-card">
@@ -17,51 +30,83 @@
             <h3>📝 基本信息</h3>
             <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveEdit" :disabled="!canEdit">💾 保存</button>
           </div>
-          <div class="info-grid">
-            <div class="info-item"><span class="info-label">学生</span><input v-model="editForm.student_name" class="edit-input" :disabled="!canEdit" /></div>
-            <div class="info-item"><span class="info-label">年级</span>
-              <select v-model="editForm.grade" class="edit-input" :disabled="!canEdit">
-                <option value="">-</option>
-                <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
-              </select>
+
+          <div class="info-section">
+            <div class="info-section-title">👤 学生与作文</div>
+            <div class="info-grid">
+              <div class="info-item"><span class="info-label">学生</span><input v-model="editForm.student_name" class="edit-input" :disabled="!canEdit" /></div>
+              <div class="info-item"><span class="info-label">年级</span>
+                <select v-model="editForm.grade" class="edit-input" :disabled="!canEdit">
+                  <option value="">-</option>
+                  <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+                </select>
+              </div>
+              <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
+              <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
             </div>
-            <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
-            <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
-            <div ref="detailTaskFilterRef" class="info-item" style="position:relative">
-              <span class="info-label">任务</span>
-              <input v-model="detailTaskSearch" placeholder="搜索选择任务" class="edit-input" :disabled="!canEdit" @focus="showDetailTaskDropdown = true" @input="showDetailTaskDropdown = true" />
-              <div v-if="showDetailTaskDropdown" class="task-dropdown-detail">
-                <div @mousedown.prevent @click="editForm.task_id = 0; detailTaskSearch = ''; showDetailTaskDropdown = false" :class="{ 'task-item-active': !editForm.task_id }" class="task-item">无任务</div>
-                <div v-for="t in filteredDetailTasks" :key="t.id" @mousedown.prevent @click="editForm.task_id = t.id; detailTaskSearch = t.name; showDetailTaskDropdown = false" :class="{ 'task-item-active': editForm.task_id == t.id }" class="task-item">{{ t.name }}</div>
-                <div v-if="!filteredDetailTasks.length" class="task-item" style="color:#999">无匹配任务</div>
+          </div>
+
+          <div class="info-section">
+            <div class="info-section-title">📋 任务信息</div>
+            <div class="info-grid">
+              <div ref="detailTaskFilterRef" class="info-item" style="position:relative">
+                <span class="info-label">任务</span>
+                <input v-model="detailTaskSearch" placeholder="搜索选择任务" class="edit-input" :disabled="!canEdit" @focus="showDetailTaskDropdown = true" @input="showDetailTaskDropdown = true" />
+                <div v-if="showDetailTaskDropdown" class="task-dropdown-detail">
+                  <div @mousedown.prevent @click="editForm.task_id = 0; detailTaskSearch = ''; showDetailTaskDropdown = false" :class="{ 'task-item-active': !editForm.task_id }" class="task-item">无任务</div>
+                  <div v-for="t in filteredDetailTasks" :key="t.id" @mousedown.prevent @click="editForm.task_id = t.id; detailTaskSearch = t.name; showDetailTaskDropdown = false" :class="{ 'task-item-active': editForm.task_id == t.id }" class="task-item">{{ t.name }}</div>
+                  <div v-if="!filteredDetailTasks.length" class="task-item" style="color:#999">无匹配任务</div>
+                </div>
+              </div>
+              <div class="info-item"><span class="info-label">课程</span><span class="info-static">{{ essay.course_name || '-' }}</span></div>
+              <div class="info-item"><span class="info-label">提交方式</span>
+                <select v-model="editForm.teaching_mode" class="edit-input" :disabled="!canEdit">
+                  <option value="线上">线上</option>
+                  <option value="线下">线下</option>
+                </select>
+              </div>
+              <div class="info-item"><span class="info-label">是否补交</span>
+                <select v-model="editForm.is_supplement" class="edit-input" :disabled="!canEdit">
+                  <option :value="false">否</option>
+                  <option :value="true">是</option>
+                </select>
               </div>
             </div>
-            <div class="info-item">
-              <span class="info-label">收集者</span>
-              <template v-if="isAdmin && !isReadonly">
-                <select v-model="editForm.collected_by" class="edit-input">
-                  <option v-for="u in collectorList" :key="u.id" :value="u.id">{{ u.nickname || u.username }}</option>
-                </select>
-              </template>
-              <template v-else>
-                <span>{{ essay.collector_name }}</span>
-              </template>
+          </div>
+
+          <div class="info-section">
+            <div class="info-section-title">👥 人员与统计</div>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">收集者</span>
+                <template v-if="isAdmin && !isReadonly">
+                  <select v-model="editForm.collected_by" class="edit-input">
+                    <option v-for="u in collectorList" :key="u.id" :value="u.id">{{ u.nickname || u.username }}</option>
+                  </select>
+                </template>
+                <template v-else>
+                  <span class="info-static">{{ essay.collector_name || '-' }}</span>
+                </template>
+              </div>
+              <div class="info-item"><span class="info-label">修改者</span><span class="info-static">{{ essay.reviewer_name || '-' }}</span></div>
+              <div class="info-item"><span class="info-label">修改前字数</span><span class="info-static">{{ essay.word_count || 0 }} 字</span></div>
+              <div class="info-item"><span class="info-label">修改后字数</span><span class="info-static">{{ essay.corrected_word_count || 0 }} 字</span></div>
             </div>
-            <div class="info-item"><span class="info-label">修改者</span><span>{{ essay.reviewer_name || '-' }}</span></div>
-            <div class="info-item"><span class="info-label">上传时间</span><span>{{ formatDateTime(essay.created_at) }}</span></div>
-            <div class="info-item"><span class="info-label">收集者备注</span><input v-model="editForm.collector_note" class="edit-input" :disabled="!canEdit" /></div>
-            <div class="info-item" v-if="editForm.reviewer_note"><span class="info-label">批改者备注</span><input v-model="editForm.reviewer_note" class="edit-input" disabled /></div>
-            <div class="info-item"><span class="info-label">提交方式</span>
-              <select v-model="editForm.teaching_mode" class="edit-input" :disabled="!canEdit">
-                <option value="线上">线上</option>
-                <option value="线下">线下</option>
-              </select>
+          </div>
+
+          <div class="info-section">
+            <div class="info-section-title">💬 备注</div>
+            <div class="info-grid">
+              <div class="info-item"><span class="info-label">收集者备注</span><input v-model="editForm.collector_note" class="edit-input" :disabled="!canEdit" /></div>
+              <div class="info-item"><span class="info-label">批改者备注</span><input v-model="editForm.reviewer_note" class="edit-input" disabled :placeholder="essay.reviewer_note ? '' : '暂无'" /></div>
             </div>
-            <div class="info-item"><span class="info-label">是否补交</span>
-              <select v-model="editForm.is_supplement" class="edit-input" :disabled="!canEdit">
-                <option :value="false">否</option>
-                <option :value="true">是</option>
-              </select>
+          </div>
+
+          <div class="info-section">
+            <div class="info-section-title">🕐 时间</div>
+            <div class="info-grid">
+              <div class="info-item"><span class="info-label">上传时间</span><span class="info-static">{{ formatDateTime(essay.created_at) }}</span></div>
+              <div class="info-item"><span class="info-label">修改时间</span><span class="info-static">{{ essay.corrected_at ? formatDateTime(essay.corrected_at) : '未修改' }}</span></div>
             </div>
           </div>
         </div>
@@ -97,8 +142,12 @@
             <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
             <div class="form-group" style="margin-top:8px">
               <label>批改者备注</label>
-              <textarea v-model="editCorrectionNote" rows="2" placeholder="批改者备注（可修改）..."></textarea>
-              <button class="btn" style="margin-top:6px" @click="saveCorrectionNote" :disabled="savingNote">💾 保存备注</button>
+              <div v-if="!editingNote && essay.reviewer_note" class="note-readonly">{{ essay.reviewer_note }}</div>
+              <template v-else>
+                <textarea v-model="editCorrectionNote" rows="2" :placeholder="essay.reviewer_note ? '批改者备注（可修改）...' : '批改者备注...'"></textarea>
+                <button class="btn" style="margin-top:6px" @click="saveCorrectionNote" :disabled="savingNote">💾 保存备注</button>
+              </template>
+              <button v-if="!editingNote && essay.reviewer_note" class="btn" style="margin-top:6px" @click="editingNote = true">✏️ 编辑备注</button>
             </div>
             <button v-if="essay.has_correction" class="btn btn-success" @click="downloadCorrection" style="margin-top:12px;width:100%">📥 下载修改结果</button>
           </template>
@@ -155,7 +204,7 @@
                     <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
                   </div>
                   <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
-                  <div v-if="showWordCount" class="word-count">{{ (essay.content_text || '').length }} 字</div>
+                  <div v-if="showWordCount" class="word-count">{{ countWords(essay.content_text) }} 字</div>
                 </div>
                 <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
                   <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
@@ -222,7 +271,7 @@
                     <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
                   </div>
                   <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-                  <div v-if="showWordCount" class="word-count">{{ (essay.corrected_text || '').length }} 字</div>
+                  <div v-if="showWordCount" class="word-count">{{ countWords(essay.corrected_text) }} 字</div>
                 </div>
               </div>
             </div>
@@ -254,11 +303,18 @@
       <!-- ===== 手机端 ===== -->
       <template v-else>
         <van-cell-group inset>
+          <van-cell title="当前状态">
+            <template #value>
+              <span class="tag" :class="'tag-' + essay.status">{{ statusLabel(essay.status) }}</span>
+              <span style="font-size:12px;color:#999;margin-left:4px">{{ statusHint }}</span>
+            </template>
+          </van-cell>
           <van-field v-model="editForm.student_name" label="学生姓名" :disabled="!canEdit" />
           <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
           <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
           <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
           <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
+          <van-field :model-value="essay.course_name || '-'" label="课程" readonly />
           <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
           <van-field v-if="editForm.reviewer_note" v-model="editForm.reviewer_note" label="批改者备注" type="textarea" rows="2" disabled />
           <van-field label="是否补交">
@@ -270,7 +326,9 @@
             </template>
           </van-field>
           <van-cell title="收集者" :value="essay.collector_name" />
+          <van-cell title="修改前/后字数" :value="`${essay.word_count || 0} / ${essay.corrected_word_count || 0}`" />
           <van-cell title="上传时间" :value="formatDateTime(essay.created_at)" />
+          <van-cell title="修改时间" :value="essay.corrected_at ? formatDateTime(essay.corrected_at) : '未修改'" />
         </van-cell-group>
 
         <div style="margin:16px">
@@ -386,11 +444,11 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
-import { showToast } from 'vant'
+import { useRoute, onBeforeRouteLeave } from 'vue-router'
+import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth, getBaseUrl } from '../api'
-import { formatDateTime } from '../utils/format'
+import { formatDateTime, countWords } from '../utils/format'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -421,6 +479,7 @@ const correctionText = ref('')
 const correctionNote = ref('')
 const editCorrectionNote = ref('')
 const savingNote = ref(false)
+const editingNote = ref(false)
 const selectedFile = ref(null)
 const uploading = ref(false)
 const fileInput = ref(null)
@@ -486,6 +545,59 @@ const originalParagraphs = computed(() => {
 })
 const correctedParagraphs = computed(() => {
   return (essay.value?.corrected_text || '').split('\n').filter(s => s.trim())
+})
+
+function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
+
+const statusHint = computed(() => {
+  return { pending: '未修改，等待批改者处理', confirming: '已批改，等待确认', rework: '批改不达标，需重新批改', corrected: '已修改完成' }[essay.value?.status] || ''
+})
+
+const flowState = computed(() => {
+  const s = essay.value?.status
+  if (s === 'confirming') return { done: 2, active: 2 }
+  if (s === 'rework') return { done: 1, active: 1 }
+  if (s === 'corrected') return { done: 3, active: -1 }
+  return { done: 1, active: 1 }
+})
+
+// ===== 未保存修改保护 =====
+const isDirty = computed(() => {
+  if (!essay.value) return false
+  const f = editForm.value
+  const e = essay.value
+  return f.student_name !== e.student_name
+    || f.grade !== (e.grade || '')
+    || f.essay_number !== e.essay_number
+    || f.essay_title !== (e.essay_title || '')
+    || f.collector_note !== (e.collector_note || '')
+    || f.teaching_mode !== (e.teaching_mode || '线下')
+    || f.is_supplement !== (e.is_supplement || false)
+    || f.collected_by !== e.collected_by
+    || f.task_id !== (e.task_id || 0)
+    || editingOriginal.value
+    || editingCorrected.value
+    || desktopFileList.value.length > 0
+    || reuploadText.value.trim() !== ''
+})
+
+function onBeforeUnload(e) {
+  if (isDirty.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onBeforeRouteLeave(async () => {
+  if (!isDirty.value) return true
+  const ok = await showConfirmDialog({
+    title: '提示',
+    message: '有未保存的修改，确定要离开吗？',
+    confirmButtonText: '放弃修改',
+    cancelButtonText: '留下编辑',
+    showCancelButton: true,
+  }).catch(() => false)
+  return !!ok
 })
 
 function toggleFullscreen(mode) {
@@ -595,8 +707,7 @@ async function doAiCorrect() {
   aiLoading.value = true
   try {
     const res = await api.post(`/essays/${route.params.id}/ai-correct`, null, { timeout: 120000 })
-    const meta = res.data.metadata
-    showToast(`AI 修正完成，标题：${meta.title}，作者：${meta.author}`)
+    showToast(`AI 修正完成（当前 ${countWords(res.data.content_text)} 字）`)
     await loadEssay()
   } catch(err) {
     showToast(err.response?.data?.detail || 'AI 修正失败')
@@ -718,9 +829,11 @@ onMounted(async () => {
   }
   // 点击外部关闭任务下拉框
   document.addEventListener('click', closeDetailTaskDropdown)
+  window.addEventListener('beforeunload', onBeforeUnload)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeDetailTaskDropdown)
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 
 async function loadEssay() {
@@ -731,6 +844,7 @@ async function loadEssay() {
     const t = essay.value.essay_title || '无标题'
     document.title = essay.value.student_name + '《' + t + '》'
     editCorrectionNote.value = essay.value.reviewer_note || ''
+    editingNote.value = false
     editForm.value = {
       student_name: essay.value.student_name,
       grade: essay.value.grade,
@@ -900,6 +1014,7 @@ async function saveCorrectionNote() {
   try {
     const res = await api.put(`/essays/${route.params.id}`, null, { params: { reviewer_note: editCorrectionNote.value } })
     essay.value = { ...essay.value, ...res.data }
+    editingNote.value = false
     showToast('备注已保存')
   } catch (err) { showToast(err.response?.data?.detail || '保存失败') }
   finally { savingNote.value = false }
@@ -1004,6 +1119,17 @@ async function doReupload() {
 .breadcrumb-sep { color: #d9d9d9; }
 .breadcrumb-current { color: #333; }
 .content-text { padding: 12px 16px; }
+.note-readonly {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+}
 .content-text pre { white-space: pre-wrap; font-size: 14px; line-height: 1.8; margin: 0; font-family: inherit; }
 .content-text p { font-size: 14px; line-height: 1.8; margin: 0 0 8px 0; text-indent: 2em; }
 .content-text .para-center-bold { text-indent: 0; text-align: center; font-weight: bold; }
@@ -1025,6 +1151,55 @@ async function doReupload() {
 }
 .info-item { display: flex; flex-direction: column; gap: 4px; }
 .info-label { font-size: 12px; color: #999; }
+
+.info-section { margin-bottom: 14px; }
+.info-section:last-child { margin-bottom: 0; }
+.info-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #f0f0f0;
+}
+.info-static {
+  font-size: 14px;
+  color: #333;
+  line-height: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tag-pending { background: #fff7e6; color: #d46b08; }
+.tag-confirming { background: #e6f4ff; color: #1677ff; }
+.tag-rework { background: #fff1f0; color: #ff4d4f; }
+.tag-corrected { background: #f6ffed; color: #52c41a; }
+
+/* ===== 状态流转条 ===== */
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  border-left: 4px solid #1677ff;
+  flex-wrap: wrap;
+}
+.strip-pending { border-left-color: #d46b08; }
+.strip-confirming { border-left-color: #1677ff; }
+.strip-rework { border-left-color: #ff4d4f; }
+.strip-corrected { border-left-color: #52c41a; }
+.strip-hint { font-size: 13px; color: #666; }
+.flow-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: #999; }
+.flow-item { padding: 2px 10px; border-radius: 10px; background: #f5f5f5; }
+.flow-item.done { background: #f6ffed; color: #52c41a; }
+.flow-item.active { background: #1677ff; color: #fff; }
+.flow-arrow { color: #d9d9d9; }
 
 .edit-input {
   width: 100%;

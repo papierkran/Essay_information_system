@@ -50,6 +50,7 @@
       </van-cell-group>
       <div style="margin:16px">
         <van-button round block type="primary" native-type="submit" :loading="loading">提交作文</van-button>
+        <van-checkbox v-model="keepTask" icon-size="16px" style="margin-top:10px;justify-content:center;font-size:13px;color:#666">连续上传时保持当前任务选择</van-checkbox>
       </div>
     </van-form>
 
@@ -109,12 +110,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast, showDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 
 const route = useRoute()
+const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
@@ -122,6 +124,7 @@ const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 
 const fileList = ref([])
 const loading = ref(false)
+const keepTask = ref(false)
 const showGradePicker = ref(false)
 const showTaskPicker = ref(false)
 const showCollectorPicker = ref(false)
@@ -285,18 +288,32 @@ async function onSubmit() {
       fileList.value.forEach(item => fd.append('files', item.file))
     }
     await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const keep = keepTask.value
     showDialog({
       title: '✅ 上传成功',
       message: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
       confirmButtonText: '继续上传',
+      cancelButtonText: '去列表查看',
+      showCancelButton: true,
       className: 'upload-success-dialog',
+    }).then((action) => {
+      if (action === 'cancel') {
+        router.push('/essay/list')
+      }
     })
-    form.value = { grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, collector_note: '', content_text: '' }
+    const gradeBackup = form.value.grade
+    form.value = { grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, teaching_mode: form.value.teaching_mode, collector_note: '', content_text: '' }
     fileList.value = []
-    selectedGrade.value = ''
-    selectedTaskName.value = ''
-    selectedTaskTopic.value = ''
-    selectedTaskId.value = null
+    previewImages.value = []
+    if (keep) {
+      selectedGrade.value = gradeBackup
+    } else {
+      selectedGrade.value = ''
+      selectedTaskName.value = ''
+      selectedTaskTopic.value = ''
+      selectedTaskId.value = null
+      selectedCourseId.value = null
+    }
   } catch (err) {
     const detail = err.response?.data?.detail
     const status = err.response?.status
@@ -316,7 +333,7 @@ async function onSubmit() {
         className: 'upload-msg-dialog',
       }).then((action) => {
         if (action === 'cancel') {
-          window.location.hash = '#/essays'
+          window.location.hash = '#/essay/list'
         }
       })
       return

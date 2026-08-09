@@ -76,6 +76,25 @@ const router = createRouter({
   routes,
 })
 
+const PAGE_TITLES = {
+  '/dashboard': '工作台',
+  '/essay/upload': '上传作文',
+  '/essay/batch-upload': '批量上传',
+  '/essay/list': '作文列表',
+  '/review/pending': '未改列表',
+  '/review/operations': '操作历史',
+  '/admin/users': '用户管理',
+  '/admin/course': '课程管理',
+  '/admin/tasks': '任务列表',
+  '/admin/settings': '系统设置',
+  '/login': '登录',
+}
+
+router.afterEach((to) => {
+  const title = PAGE_TITLES[to.path]
+  document.title = title ? `${title} · 作文收集管理系统` : '作文收集管理系统'
+})
+
 router.beforeEach((to, from, next) => {
   let token = null
   let userRole = ''

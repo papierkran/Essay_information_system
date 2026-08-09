@@ -12,6 +12,7 @@
         <div v-for="acct in savedAccounts" :key="acct.key" class="saved-account-item" @click="switchTo(acct)">
           <span class="account-info">{{ acct.user?.nickname || acct.user?.username || '未知' }}</span>
           <span class="account-role">{{ roleLabel(acct.user?.role) }}</span>
+          <span class="account-remove" title="删除该账号记录" @click.stop="removeAccount(acct.key)">✕</span>
         </div>
       </div>
 
@@ -61,7 +62,6 @@ const router = useRouter()
 const { isDesktop } = useScreen()
 const username = ref('')
 const password = ref('')
-const keyName = ref('')
 const loading = ref(false)
 const showServerConfig = ref(false)
 const serverUrlInput = ref(localStorage.getItem('apiBaseUrl') || '')
@@ -107,11 +107,19 @@ function switchTo(acct) {
   router.push('/dashboard')
 }
 
+function removeAccount(key) {
+  localStorage.removeItem('auth_' + key)
+  if ((localStorage.getItem('activeAuth') || 'default') === key) {
+    localStorage.removeItem('activeAuth')
+  }
+  showToast('已删除该账号记录')
+}
+
 async function onLogin() {
   loading.value = true
   try {
     const res = await api.post('/auth/login', { username: username.value, password: password.value })
-    const key = keyName.value.trim() || username.value
+    const key = username.value
     setActiveAuth(key)
     saveAuth({ token: res.data.access_token, user: res.data.user })
     showToast('登录成功')
@@ -159,8 +167,21 @@ async function onLogin() {
 
 .saved-account-item:hover { background: #eef1f5; }
 
-.account-info { font-size: 14px; font-weight: 500; }
+.account-info { font-size: 14px; font-weight: 500; flex: 1; }
 .account-role { font-size: 12px; color: #999; }
+
+.account-remove {
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  border-radius: 50%;
+  color: #999;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.account-remove:hover { background: #ff4d4f; color: #fff; }
 
 .login-desktop .login-card { max-width: 420px; padding: 40px 32px; }
 

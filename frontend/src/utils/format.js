@@ -23,3 +23,12 @@ export function formatDate(isoStr) {
   
   return `${year}-${month}-${day}`
 }
+
+export function countWords(text) {
+  if (!text) return 0
+  let count = 0
+  for (const c of text) {
+    if (!/\s/.test(c)) count++
+  }
+  return count
+}

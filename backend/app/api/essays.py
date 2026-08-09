@@ -26,6 +26,16 @@ from ..utils.crypto_utils import load_config_row_value
 router = APIRouter(prefix="/api/essays", tags=["作文"])
 
 
+def _count_non_ws(text: str) -> int:
+    """字数统计口径：不含空格/换行等空白字符，标点符号计入。"""
+    return len([c for c in (text or "") if not c.isspace()])
+
+
+def _char_count_sql(col):
+    """与 _count_non_ws 对应的 SQL 表达式（用于筛选/排序）。"""
+    return func.char_length(func.regexp_replace(col, r"\s", "", "g"))
+
+
 @router.get("/tasks", response_model=list[TaskOut])
 def list_tasks(
     db: Session = Depends(get_db),
@@ -88,6 +98,44 @@ def get_task_stats(
         "confirming": confirming,
         "corrected": corrected
     }
+
+
+@router.post("/tasks/stats")
+def batch_task_stats(
+    ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量获取多个任务的统计数据（工作台用，避免逐个请求）"""
+    result = []
+    for task_id in ids:
+        total = db.query(func.count(Essay.id)).filter(
+            Essay.task_id == task_id,
+            Essay.deleted_at == None
+        ).scalar() or 0
+        pending = db.query(func.count(Essay.id)).filter(
+            Essay.task_id == task_id,
+            Essay.deleted_at == None,
+            Essay.status.in_(["pending", "confirming", "rework"])
+        ).scalar() or 0
+        confirming = db.query(func.count(Essay.id)).filter(
+            Essay.task_id == task_id,
+            Essay.deleted_at == None,
+            Essay.status == "confirming"
+        ).scalar() or 0
+        corrected = db.query(func.count(Essay.id)).filter(
+            Essay.task_id == task_id,
+            Essay.deleted_at == None,
+            Essay.status == "corrected"
+        ).scalar() or 0
+        result.append({
+            "task_id": task_id,
+            "total": total,
+            "pending": pending,
+            "confirming": confirming,
+            "corrected": corrected,
+        })
+    return result
 
 
 def _build_download_filename(essay: Essay) -> str:
@@ -635,13 +683,13 @@ def list_essays(
     if task_name:
         q = q.join(EssayTask, Essay.task_id == EssayTask.id, isouter=True).filter(EssayTask.name.like(f"%{task_name}%"))
     if word_count_min is not None:
-        q = q.filter(func.char_length(Essay.content_text) >= word_count_min)
+        q = q.filter(_char_count_sql(Essay.content_text) >= word_count_min)
     if word_count_max is not None:
-        q = q.filter(func.char_length(Essay.content_text) <= word_count_max)
+        q = q.filter(_char_count_sql(Essay.content_text) <= word_count_max)
     if corrected_word_count_min is not None:
-        q = q.filter(func.char_length(Essay.corrected_text) >= corrected_word_count_min)
+        q = q.filter(_char_count_sql(Essay.corrected_text) >= corrected_word_count_min)
     if corrected_word_count_max is not None:
-        q = q.filter(func.char_length(Essay.corrected_text) <= corrected_word_count_max)
+        q = q.filter(_char_count_sql(Essay.corrected_text) <= corrected_word_count_max)
     if date_from:
         q = q.filter(Essay.created_at >= date_from)
     if date_to:
@@ -663,9 +711,9 @@ def list_essays(
         q = q.outerjoin(User, User.id == Essay.reviewer_id)
         order_col = User.nickname
     elif sort_by == "word_count":
-        order_col = func.char_length(Essay.content_text)
+        order_col = _char_count_sql(Essay.content_text)
     elif sort_by == "corrected_word_count":
-        order_col = func.char_length(Essay.corrected_text)
+        order_col = _char_count_sql(Essay.corrected_text)
     else:
         order_col = allowed_sort.get(sort_by, Essay.created_at)
     
@@ -760,6 +808,9 @@ def pending_essays(
         "student_name": Essay.student_name,
         "grade": Essay.grade,
         "essay_number": Essay.essay_number,
+        "teaching_mode": Essay.teaching_mode,
+        "word_count": _char_count_sql(Essay.content_text),
+        "corrected_word_count": _char_count_sql(Essay.corrected_text),
     }
     order_col = allowed_sort.get(sort_by, Essay.created_at)
     if sort_order == "desc":
@@ -990,6 +1041,52 @@ def delete_essay(
     _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
     db.commit()
     return {"message": "已移入回收站"}
+
+
+@router.post("/batch-delete")
+def batch_delete_essays(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量删除作文。delete_file/permanent 语义与单条删除一致（均需管理员）。"""
+    ids = payload.get("ids") or []
+    delete_file = bool(payload.get("delete_file", False))
+    permanent = bool(payload.get("permanent", False))
+    if not ids or not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="参数错误")
+
+    done = 0
+    errors = []
+    for essay_id in ids:
+        essay = db.query(Essay).filter(Essay.id == essay_id).first()
+        if not essay:
+            continue
+        if "admin" not in current_user.role and essay.collected_by != current_user.id:
+            errors.append({"id": essay_id, "detail": "无权限删除此作文"})
+            continue
+        if delete_file:
+            if "admin" not in current_user.role:
+                errors.append({"id": essay_id, "detail": "仅管理员可删除本地文件"})
+                continue
+            if essay.content_file:
+                dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+                if os.path.exists(dir_path):
+                    shutil.rmtree(dir_path)
+            essay.content_file = ""
+        if permanent:
+            if "admin" not in current_user.role:
+                errors.append({"id": essay_id, "detail": "仅管理员可彻底删除"})
+                continue
+            db.query(EssayImage).filter(EssayImage.essay_id == essay_id).delete()
+            db.delete(essay)
+            _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
+        else:
+            essay.deleted_at = datetime.now()
+            _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
+        done += 1
+    db.commit()
+    return {"success": done, "errors": errors, "total": len(ids)}
 
 
 @router.post("/{essay_id}/upload-correction")
@@ -2305,6 +2402,6 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         file_path=file_path,
         has_correction=corr_exists,
         file_saved=essay.file_saved if essay.file_saved is not None else True,
-        word_count=len((essay.content_text or "").replace('\r\n', '\n').replace('\r', '\n').replace(' ', '')),
-        corrected_word_count=len((essay.corrected_text or "").replace('\r\n', '\n').replace('\r', '\n').replace(' ', '')),
+        word_count=_count_non_ws(essay.content_text),
+        corrected_word_count=_count_non_ws(essay.corrected_text),
     )

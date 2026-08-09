@@ -54,8 +54,8 @@
     </div>
 
     <!-- 批量操作工具栏 -->
-    <div v-if="isDesktop && list.length" class="batch-bar">
-      <span style="font-size:13px;color:#666">共 <strong>{{ total }}</strong> 条（本页 {{ sortedList.length }}）/ 已选 {{ selectedIds.length }} 条</span>
+    <div v-if="list.length" class="batch-bar">
+      <span style="font-size:13px;color:#666">共 <strong>{{ total }}</strong> 条（本页 {{ list.length }}）/ 已选 {{ selectedIds.length }} 条</span>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
@@ -65,7 +65,7 @@
     </div>
 
     <!-- 桌面端：表格 -->
-    <table v-if="isDesktop && sortedList.length" class="desktop-table">
+    <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
         <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
         <th>状态</th>
@@ -82,7 +82,7 @@
         <th>操作</th>
       </tr></thead>
       <tbody>
-        <tr v-for="e in sortedList" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
+        <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
           <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
           <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
           <td>{{ e.student_name }}</td>
@@ -104,7 +104,7 @@
       </tbody>
     </table>
     <!-- 分页 -->
-    <div class="pagination" v-if="isDesktop && total > 0">
+    <div class="pagination" v-if="total > 0">
       <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
       <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
       <span class="page-info">{{ page }} / {{ totalPages }}</span>
@@ -119,26 +119,80 @@
         </select> 条
       </span>
     </div>
-    <div v-if="isDesktop && !list.length && !loading" class="empty-state">
+    <div v-if="!list.length && !loading" class="empty-state">
       <div class="icon">✅</div><p>没有待批作文</p>
     </div>
 
+    <!-- 手机端：筛选 -->
+    <div v-if="!isDesktop" class="mobile-filter">
+      <van-button size="small" block :type="mobileFilterActive ? 'primary' : 'default'" icon="filter-o" @click="showMobileFilter = !showMobileFilter">
+        筛选{{ mobileFilterActive ? '（已启用）' : '' }}
+      </van-button>
+      <div v-if="showMobileFilter" class="mobile-filter-panel">
+        <div class="m-filter-row">
+          <input v-model="filters.name" placeholder="学生姓名" class="m-filter-input" @input="applyFilter" />
+          <input v-model="filters.essayTitle" placeholder="作文标题" class="m-filter-input" @input="applyFilter" />
+        </div>
+        <div class="m-filter-row">
+          <select v-model="filters.status" class="m-filter-input" @change="applyFilter">
+            <option value="">全部状态</option>
+            <option value="pending">未修改</option>
+            <option value="confirming">待确认</option>
+            <option value="rework">待重改</option>
+          </select>
+          <select v-model="filters.grade" class="m-filter-input" @change="applyFilter">
+            <option value="">全部年级</option>
+            <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+          </select>
+        </div>
+        <div class="m-filter-row">
+          <select v-model="filters.teachingMode" class="m-filter-input" @change="applyFilter">
+            <option value="">全部方式</option>
+            <option value="线下">线下</option>
+            <option value="线上">线上</option>
+          </select>
+          <select v-model="filters.collectedBy" class="m-filter-input" @change="applyFilter">
+            <option value="">全部收集者</option>
+            <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
+          </select>
+        </div>
+        <div class="m-filter-row">
+          <input v-model="filterTaskSearch" placeholder="任务名称搜索" class="m-filter-input" @input="applyFilter" />
+          <input v-model.number="filters.essayNumber" type="number" min="1" placeholder="第几次" class="m-filter-input" @input="applyFilter" />
+        </div>
+        <div class="m-filter-row">
+          <input v-model="filters.dateFrom" type="date" class="m-filter-input" @change="applyFilter" />
+          <input v-model="filters.dateTo" type="date" class="m-filter-input" @change="applyFilter" />
+        </div>
+        <button class="btn" style="width:100%;margin-top:8px" @click="clearFilter">重置筛选</button>
+      </div>
+    </div>
+
     <!-- 手机端：卡片列表 -->
-    <van-list v-if="!isDesktop" v-model:loading="loading" :finished="mobileFinished" finished-text="没有待批作文" @load="loadMobile">
-      <van-card v-for="e in list" :key="e.id"
-        :title="e.student_name"
-        :desc="`第${e.essay_number}次 · ${e.essay_title || ''}`"
-        @click="goDetail(e)">
-        <template #tags>
-          <van-tag :type="e.status === 'confirming' ? 'warning' : e.status === 'rework' ? 'danger' : 'default'">{{ statusLabel(e.status) }}</van-tag>
-          <van-tag plain>{{ e.collector_name }}</van-tag>
-          <van-tag plain type="primary">{{ e.grade || '未知' }}</van-tag>
-        </template>
-        <template #footer>
-          <span style="font-size:12px;color:#1677ff">点击查看详情</span>
-        </template>
-      </van-card>
-    </van-list>
+    <div v-if="!isDesktop && list.length" class="mobile-list">
+      <div v-for="e in list" :key="e.id" class="mobile-card" :class="{ 'row-selected': selectedIds.includes(e.id) }">
+        <div class="mobile-card-head" @click="goDetail(e)">
+          <div class="mobile-card-name-wrap">
+            <input v-if="!isGuest" type="checkbox" :checked="selectedIds.includes(e.id)" @click.stop @change="toggleSelect(e.id)" style="width:auto" />
+            <span class="mobile-card-name">{{ e.student_name }}</span>
+          </div>
+          <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
+        </div>
+        <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}<span v-if="e.essay_number"> · 第{{ e.essay_number }}次</span></div>
+        <div class="mobile-card-meta" @click="goDetail(e)">
+          <span>{{ e.grade || '未知' }}</span><span class="m-sep">·</span>
+          <span>{{ e.task_name || '无任务' }}</span><span class="m-sep">·</span>
+          <span>{{ e.collector_name }}</span>
+        </div>
+        <div class="mobile-card-foot">
+          <span>{{ formatDateTime(e.created_at) }}</span>
+          <div class="mobile-card-actions">
+            <span class="mobile-card-filetype">{{ e.file_type === 'image' ? '图片' : e.file_type === 'docx' ? '文档' : '文本' }}</span>
+            <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 作文修改日志（页脚） -->
     <div v-if="isDesktop" class="log-panel">
@@ -211,7 +265,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
-const mobileFinished = ref(false)
+const showMobileFilter = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 
 // ===== 作文修改日志 =====
@@ -264,6 +318,11 @@ const filters = ref({
   wordCountMax: '',
 })
 
+const mobileFilterActive = computed(() => {
+  const f = filters.value
+  return !!(f.name || f.essayTitle || f.status || f.grade || f.essayNumber || f.teachingMode || f.collectedBy || f.dateFrom || f.dateTo || f.wordCountMin || f.wordCountMax || filterTaskSearch.value)
+})
+
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
 function closeTaskDropdown(e) {
@@ -286,21 +345,6 @@ const filteredTaskOptions = computed(() => {
 const sortBy = ref('')
 const sortOrder = ref('asc')
 
-const sortedList = computed(() => {
-  const arr = [...list.value]
-  if (!sortBy.value) return arr
-  arr.sort((a, b) => {
-    let va = a[sortBy.value] ?? ''
-    let vb = b[sortBy.value] ?? ''
-    if (typeof va === 'string') va = va.toLowerCase()
-    if (typeof vb === 'string') vb = vb.toLowerCase()
-    if (va < vb) return sortOrder.value === 'asc' ? -1 : 1
-    if (va > vb) return sortOrder.value === 'asc' ? 1 : -1
-    return 0
-  })
-  return arr
-})
-
 function toggleSort(field) {
   if (sortBy.value === field) {
     if (sortOrder.value === 'asc') sortOrder.value = 'desc'
@@ -309,6 +353,7 @@ function toggleSort(field) {
     sortBy.value = field
     sortOrder.value = 'asc'
   }
+  applyFilter()
 }
 
 function sortIcon(field) {
@@ -316,13 +361,13 @@ function sortIcon(field) {
   return sortOrder.value === 'asc' ? '▲' : '▼'
 }
 
-const allSelected = computed(() => sortedList.value.length > 0 && sortedList.value.every(e => selectedIds.value.includes(e.id)))
+const allSelected = computed(() => list.value.length > 0 && list.value.every(e => selectedIds.value.includes(e.id)))
 
 function toggleAll() {
   if (allSelected.value) {
     selectedIds.value = []
   } else {
-    const visibleIds = sortedList.value.map(e => e.id)
+    const visibleIds = list.value.map(e => e.id)
     const newSet = [...new Set([...selectedIds.value, ...visibleIds])]
     selectedIds.value = newSet
   }
@@ -337,6 +382,10 @@ function buildParams() {
   const p = {}
   p.page = page.value
   p.page_size = pageSize.value
+  if (sortBy.value) {
+    p.sort_by = sortBy.value
+    p.sort_order = sortOrder.value
+  }
   if (filters.value.name) p.name = filters.value.name
   if (filters.value.essayTitle) p.essay_title = filters.value.essayTitle
   if (filters.value.status) p.status = filters.value.status
@@ -373,17 +422,6 @@ async function load() {
 
 function goPage(p) { page.value = p; load() }
 function onPageSizeChange() { page.value = 1; load() }
-
-async function loadMobile() {
-  loading.value = true
-  try {
-    const res = await api.get('/essays/pending', { params: { ...buildParams(), page: 1, page_size: 200 } })
-    list.value = res.data.items
-    mobileFinished.value = true
-  }
-  catch { showToast('加载失败') }
-  finally { loading.value = false }
-}
 
 function clearFilter() {
   filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: 0, dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
@@ -655,5 +693,83 @@ onUnmounted(() => {
   .filter-bar { flex-direction: column; align-items: stretch; }
   .filter-row { width: 100%; }
   .filter-input { flex: 1; }
+}
+
+/* ===== 手机端筛选 ===== */
+.mobile-filter { margin-bottom: 10px; }
+.mobile-filter-panel {
+  margin-top: 8px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-filter-row { display: flex; gap: 8px; }
+.m-filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+.m-filter-input:focus { border-color: #4096ff; }
+
+/* ===== 手机端卡片列表 ===== */
+.mobile-list { display: flex; flex-direction: column; gap: 10px; }
+.mobile-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.mobile-card.row-selected { background: #e6f4ff; }
+.mobile-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mobile-card-name-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mobile-card-name { font-size: 15px; font-weight: 600; color: #333; }
+.mobile-card-title {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.m-sep { color: #d9d9d9; }
+.mobile-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #aaa;
+  padding-top: 8px;
+  border-top: 1px dashed #f0f0f0;
+}
+.mobile-card-actions { display: flex; align-items: center; gap: 6px; }
+.mobile-card-filetype {
+  font-size: 11px;
+  color: #666;
+  background: #f5f5f5;
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 </style>

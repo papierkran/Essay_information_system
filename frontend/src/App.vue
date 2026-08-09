@@ -18,14 +18,16 @@
     <aside v-if="!isLogin" class="sidebar" :class="{ open: sidebarOpen }">
       <nav>
         <router-link v-if="user.username" to="/dashboard" class="sidebar-link" @click="sidebarOpen=false">🏠 首页</router-link>
-        <router-link v-if="canCollect || isGuest" to="/essay/upload" class="sidebar-link" @click="sidebarOpen=false">✏️ 上传作文</router-link>
-        <router-link v-if="canCollect || isGuest" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>
+        <router-link v-if="canCollect" to="/essay/upload" class="sidebar-link" @click="sidebarOpen=false">✏️ 上传作文</router-link>
+        <span v-else-if="isGuest" class="sidebar-link disabled" title="游客无上传权限" @click="showGuestToast">✏️ 上传作文</span>
+        <router-link v-if="canCollect" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>
+        <span v-else-if="isGuest" class="sidebar-link disabled" title="游客无上传权限" @click="showGuestToast">📁 批量上传</span>
         <router-link v-if="canViewList" to="/essay/list" class="sidebar-link" @click="sidebarOpen=false">📋 作文列表</router-link>
         <router-link v-if="canReview || isGuest" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 未改列表</router-link>
+        <router-link v-if="isAdmin" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
+        <router-link v-if="isAdmin" to="/admin/course" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
         <router-link v-if="user.username" to="/review/operations" class="sidebar-link" @click="sidebarOpen=false">🕐 操作历史</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
-        <router-link v-if="isAdmin" to="/admin/course" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
-        <router-link v-if="isAdmin" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
         <router-link v-if="isAdmin" to="/admin/settings" class="sidebar-link" @click="sidebarOpen=false">⚙️ 系统设置</router-link>
       </nav>
     </aside>
@@ -35,7 +37,7 @@
       <router-view />
     </main>
 
-    <TaskStatusBar v-if="isAdmin && !isLogin" />
+    <TaskStatusBar v-if="!isLogin" />
   </div>
 </template>
 
@@ -76,6 +78,10 @@ function onLogout() {
   clearAuth()
   router.push('/login')
   showToast('已退出登录')
+}
+
+function showGuestToast() {
+  showToast('游客无上传权限，仅可查看')
 }
 </script>
 
@@ -158,6 +164,8 @@ body {
 }
 .sidebar-link:hover { background: rgba(255,255,255,0.06); color: #fff; }
 .sidebar-link.router-link-exact-active { background: rgba(255,255,255,0.1); color: #fff; border-left-color: #4096ff; }
+.sidebar-link.disabled { opacity: 0.4; cursor: not-allowed; }
+.sidebar-link.disabled:hover { background: none; color: rgba(255,255,255,0.7); }
 
 .sidebar-overlay {
   display: none;

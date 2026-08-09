@@ -22,6 +22,7 @@
           <option value="corrected">已修改</option>
         </select>
       </div>
+      <div v-show="showMoreFilters" class="filter-more">
       <div class="filter-row"><span class="filter-label">提交方式</span>
         <select v-model="filters.mode" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
@@ -62,9 +63,11 @@
       <div class="filter-row"><span class="filter-label">修改前字数</span><input v-model.number="filters.wordMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.wordMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
       <div class="filter-row"><span class="filter-label">修改后字数</span><input v-model.number="filters.correctedMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.correctedMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
       <div class="filter-row"><span class="filter-label">收集者备注</span><input v-model="filters.remark" placeholder="搜索收集者备注" class="filter-input" @keyup.enter="applyFilter" /></div>
+      </div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV">导出CSV</button>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="showMoreFilters = !showMoreFilters">{{ showMoreFilters ? '收起筛选' : '更多筛选' }}</button>
+      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV" :title="`仅导出当前页 ${list.length} 条，如需全部请配合筛选分批导出`">导出CSV(当前页)</button>
     </div>
 
     <!-- 统计行 -->
@@ -96,55 +99,92 @@
       </span>
     </div>
 
-    <!-- 表格 -->
-    <div ref="topScroll" class="scroll-sync" @scroll="syncScroll('top')">
-      <div ref="topScrollContent" class="scroll-sync-content"></div>
-    </div>
-    <div ref="tableWrap" class="table-wrap" @scroll="syncScroll('bottom')">
-      <table class="desktop-table" v-if="list.length">
-        <thead>
-          <tr>
-            <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
-            <template v-for="col in visibleColumns" :key="col.key">
-              <th :class="{ sortable: col.sortable, 'th-dragging': dragColKey === col.key }"
-                draggable="true"
-                @dragstart.stop="onColDragStart(col.key)"
-                @dragover.prevent="onColDragOver(col.key)"
-                @dragend="onColDragEnd"
-                @drop.prevent="onColDrop"
-                @click="col.sortable && toggleSort(col.sort)">
-                {{ col.label }} <template v-if="col.sortable">{{ sortIcon(col.sort) }}</template>
-              </th>
-            </template>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id), 'row-readonly': !isOwner(e) }">
-            <td v-if="!isGuest"><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
-            <template v-for="col in visibleColumns" :key="col.key">
-              <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
-              <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
-              <td v-else-if="col.key === 'is_supplement'"><span :style="{ color: e.is_supplement ? '#fa8c16' : '#d9d9d9', fontSize: '16px' }">{{ e.is_supplement ? '🔄' : '' }}</span></td>
-              <td v-else-if="col.key === 'word_count'">{{ e.word_count || 0 }}</td>
-              <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
-              <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
-              <td v-else-if="col.key === 'corrected_at'">{{ formatDateTime(e.corrected_at) || '-' }}</td>
-              <td v-else>{{ e[col.field] || '-' }}</td>
-            </template>
-            <td style="white-space:nowrap">
-              <template v-if="!isGuest && isOwner(e)">
-                <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
-                <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click="confirmDelete(e)">删除</button>
+    <!-- 桌面端：表格 -->
+    <template v-if="isDesktop">
+      <div ref="topScroll" class="scroll-sync" @scroll="syncScroll('top')">
+        <div ref="topScrollContent" class="scroll-sync-content"></div>
+      </div>
+      <div ref="tableWrap" class="table-wrap" @scroll="syncScroll('bottom')">
+        <table class="desktop-table" v-if="list.length">
+          <thead>
+            <tr>
+              <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
+              <template v-for="col in visibleColumns" :key="col.key">
+                <th :class="{ sortable: col.sortable, 'th-dragging': dragColKey === col.key }"
+                  draggable="true"
+                  @dragstart.stop="onColDragStart(col.key)"
+                  @dragover.prevent="onColDragOver(col.key)"
+                  @dragend="onColDragEnd"
+                  @drop.prevent="onColDrop"
+                  @click="col.sortable && toggleSort(col.sort)">
+                  {{ col.label }} <template v-if="col.sortable">{{ sortIcon(col.sort) }}</template>
+                </th>
               </template>
-              <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
-                <span class="text-readonly">仅查看</span>
-              </router-link>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+              <th class="sticky-col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="e in list" :key="e.id"
+              :class="{ 'row-selected': isRowSelected(e.id), 'row-readonly': !isOwner(e) }"
+              @click="onRowClick(e.id)"
+              @mousedown="dragStart(e.id, $event)"
+              @mouseenter="dragMove(e.id)"
+              @mouseup="dragEnd">
+              <td v-if="!isGuest" @click.stop><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
+              <template v-for="col in visibleColumns" :key="col.key">
+                <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
+                <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
+                <td v-else-if="col.key === 'is_supplement'"><span :style="{ color: e.is_supplement ? '#fa8c16' : '#d9d9d9', fontSize: '16px' }">{{ e.is_supplement ? '🔄' : '' }}</span></td>
+                <td v-else-if="col.key === 'word_count'">{{ e.word_count || 0 }}</td>
+                <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
+                <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
+                <td v-else-if="col.key === 'corrected_at'">{{ formatDateTime(e.corrected_at) || '-' }}</td>
+                <td v-else>{{ e[col.field] || '-' }}</td>
+              </template>
+              <td class="sticky-col" style="white-space:nowrap" @click.stop>
+                <template v-if="!isGuest && isOwner(e)">
+                  <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
+                  <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click.stop="confirmDelete(e)">删除</button>
+                </template>
+                <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
+                  <span class="text-readonly">仅查看</span>
+                </router-link>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- 手机端：卡片列表 -->
+    <template v-else>
+      <div class="mobile-list" v-if="list.length">
+        <div v-for="e in list" :key="e.id" class="mobile-card" :class="{ 'row-selected': selectedIds.includes(e.id) }">
+          <div class="mobile-card-head" @click="goDetail(e)">
+            <div class="mobile-card-name-wrap">
+              <input v-if="!isGuest" type="checkbox" :checked="selectedIds.includes(e.id)" @click.stop @change="toggleSelect(e.id)" style="width:auto" />
+              <span class="mobile-card-name">{{ e.student_name }}</span>
+              <span v-if="e.is_supplement" style="color:#fa8c16;font-size:14px" title="补交">🔄</span>
+            </div>
+            <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
+          </div>
+          <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}<span v-if="e.essay_number"> · 第{{ e.essay_number }}次</span></div>
+          <div class="mobile-card-meta" @click="goDetail(e)">
+            <span>{{ e.grade || '-' }}</span><span class="m-sep">·</span>
+            <span>{{ e.task_name || '无任务' }}</span><span class="m-sep">·</span>
+            <span>{{ e.collector_name }}</span>
+          </div>
+          <div class="mobile-card-foot">
+            <span>{{ formatDateTime(e.created_at) }}</span>
+            <div class="mobile-card-actions">
+              <span v-if="e.file_saved === false" class="tag tag-pending">文件丢失</span>
+              <router-link v-if="!isGuest && isOwner(e)" :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
+              <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#1677ff" @click.stop>仅查看</router-link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <div v-if="!list.length && !loading" class="empty-state"><div class="icon">📭</div><p>暂无作文</p></div>
 
@@ -234,9 +274,11 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
+import { useScreen } from '../composables/useScreen'
 import { formatDateTime } from '../utils/format'
 
 const { getAuth } = useAuth()
+const { isDesktop } = useScreen()
 const currentUser = computed(() => getAuth()?.user || {})
 const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
@@ -305,6 +347,12 @@ const defaultCollectedBy = computed(() => {
   return currentUser.value.id || ''
 })
 const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' })
+
+const showMoreFilters = ref(false)
+const hasAdvancedFilter = computed(() => {
+  const f = filters.value
+  return !!(f.mode || f.collectedBy || filterTaskSearch.value || f.reviewerId || f.isSupplement || f.dateFrom || f.dateTo || f.correctedFrom || f.correctedTo || f.wordMin || f.wordMax || f.correctedMin || f.correctedMax || f.remark)
+})
 
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
@@ -535,6 +583,62 @@ function toggleAll() {
   else selectedIds.value = list.value.map(e => e.id)
 }
 
+const dragState = ref({ active: false, startId: null, moved: false, min: -1, max: -1 })
+let suppressClickUntil = 0
+function isRowSelected(id) {
+  if (dragState.value.active) {
+    const idx = list.value.findIndex(e => e.id === id)
+    if (idx >= dragState.value.min && idx <= dragState.value.max) {
+      // 起始行已勾选 → 拖拽预览为取消，否则为勾选
+      return !selectedIds.value.includes(dragState.value.startId)
+    }
+  }
+  return selectedIds.value.includes(id)
+}
+function onRowClick(id) {
+  if (isGuest.value) return
+  if (dragState.value.active) return
+  if (Date.now() < suppressClickUntil) return
+  toggleSelect(id)
+}
+function dragStart(id, evt) {
+  if (isGuest.value) return
+  if (evt.button !== 0) return
+  const startIdx = list.value.findIndex(e => e.id === id)
+  dragState.value = { active: true, startId: id, moved: false, min: startIdx, max: startIdx }
+  document.addEventListener('mouseup', dragEnd)
+  evt.preventDefault()
+}
+function dragMove(id) {
+  if (!dragState.value.active) return
+  const startIdx = list.value.findIndex(e => e.id === dragState.value.startId)
+  const curIdx = list.value.findIndex(e => e.id === id)
+  if (startIdx === -1 || curIdx === -1) return
+  const min = Math.min(startIdx, curIdx)
+  const max = Math.max(startIdx, curIdx)
+  if (min === dragState.value.min && max === dragState.value.max) return
+  dragState.value.moved = true
+  dragState.value.min = min
+  dragState.value.max = max
+}
+function dragEnd() {
+  if (!dragState.value.active) return
+  const { min, max, moved, startId } = dragState.value
+  const startSelected = selectedIds.value.includes(startId)
+  const rangeIds = list.value.slice(min, max + 1).map(e => e.id)
+  if (moved) {
+    if (!startSelected) {
+      selectedIds.value = Array.from(new Set([...selectedIds.value, ...rangeIds]))
+    } else {
+      const rangeSet = new Set(rangeIds)
+      selectedIds.value = selectedIds.value.filter(id => !rangeSet.has(id))
+    }
+  }
+  dragState.value = { active: false, startId: null, moved: false, min: -1, max: -1 }
+  if (moved) suppressClickUntil = Date.now() + 120
+  document.removeEventListener('mouseup', dragEnd)
+}
+
 async function inlineEdit(e, field, val) {
   try {
     const res = await api.put(`/essays/${e.id}`, null, { params: { [field]: val } })
@@ -696,11 +800,18 @@ async function doDelete() {
   const e = deletingEssay.value
   // 批量模式
   if (!e && selectedIds.value.length) {
-    let done = 0
-    for (const id of selectedIds.value) {
-      try { await api.delete(`/essays/${id}`, { params: { delete_file: deleteFileChecked.value, permanent: deleteFileChecked.value } }) ; done++ } catch {}
+    try {
+      const res = await api.post('/essays/batch-delete', {
+        ids: selectedIds.value,
+        delete_file: deleteFileChecked.value,
+        permanent: deleteFileChecked.value,
+      })
+      const d = res.data || {}
+      const failCount = (d.errors || []).length
+      showToast(`已处理 ${d.success || 0}/${selectedIds.value.length} 条` + (failCount ? `，${failCount} 条失败` : ''))
+    } catch (err) {
+      showToast(err.response?.data?.detail || '批量删除失败')
     }
-    showToast(`已处理 ${done}/${selectedIds.value.length} 条`)
     selectedIds.value = []
     applyFilter()
     return
@@ -736,6 +847,7 @@ onMounted(async () => {
   loadColumnSettings()
   await loadTasks()
   loadReviewers()
+  window.addEventListener('resize', updateTopScrollWidth)
   // 点击外部关闭任务下拉框
   document.addEventListener('click', closeTaskDropdown)
   // 从URL参数读取task_id（优先：重置筛选后再按任务筛选）
@@ -759,10 +871,12 @@ onMounted(async () => {
       if (t) filterTaskSearch.value = t.name
     }
   }
+  showMoreFilters.value = hasAdvancedFilter.value
   await applyFilter()
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeTaskDropdown)
+  window.removeEventListener('resize', updateTopScrollWidth)
 })
 </script>
 
@@ -782,6 +896,7 @@ onUnmounted(() => {
 }
 
 .filter-row { display: flex; align-items: center; gap: 4px; }
+.filter-more { display: contents; }
 .filter-label { font-size: 13px; color: #666; white-space: nowrap; }
 .filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
 .filter-input:focus { border-color: #4096ff; }
@@ -828,6 +943,25 @@ onUnmounted(() => {
 .stat-corrected { color: #52c41a; }
 
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.desktop-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: visible;
+}
+.desktop-table th.sticky-col,
+.desktop-table td.sticky-col {
+  position: sticky;
+  right: 0;
+  background: #fff;
+  box-shadow: -1px 0 0 rgba(0,0,0,0.05);
+}
+.desktop-table th.sticky-col {
+  background: #fafafa;
+  z-index: 3;
+}
+.desktop-table td.sticky-col {
+  z-index: 1;
+}
 .inline-select {
   padding: 2px 4px;
   border: 1px solid transparent;
@@ -887,10 +1021,13 @@ onUnmounted(() => {
 
 .scroll-sync {
   overflow-x: auto;
-  height: 0;
+  height: 10px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  margin-bottom: 2px;
 }
 .scroll-sync-content {
-  height: 1px;
+  height: 9px;
 }
 .scroll-sync::-webkit-scrollbar { height: 6px; }
 .scroll-sync::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
@@ -904,4 +1041,50 @@ onUnmounted(() => {
   .stats-bar { flex-wrap: wrap; }
   .pagination { flex-wrap: wrap; justify-content: center; }
 }
+
+/* ===== 手机端卡片列表 ===== */
+.mobile-list { display: flex; flex-direction: column; gap: 10px; }
+.mobile-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.mobile-card.row-selected { background: #e6f4ff; }
+.mobile-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mobile-card-name-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mobile-card-name { font-size: 15px; font-weight: 600; color: #333; }
+.mobile-card-title {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.m-sep { color: #d9d9d9; }
+.mobile-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #aaa;
+  padding-top: 8px;
+  border-top: 1px dashed #f0f0f0;
+}
+.mobile-card-actions { display: flex; align-items: center; gap: 6px; }
 </style>

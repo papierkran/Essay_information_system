@@ -47,9 +47,10 @@
 
     <!-- 快捷按钮 -->
     <div class="quick-grid">
-      <div class="quick-card upload-card" @click="goUpload">
+      <div class="quick-card upload-card" :class="{ 'quick-disabled': isGuest }" @click="!isGuest && goUpload()">
         <div class="quick-icon">📤</div>
         <div class="quick-text">开始上传</div>
+        <div v-if="isGuest" class="quick-sub">游客无上传权限</div>
       </div>
       <div class="quick-card list-card" @click="goList">
         <div class="quick-icon">📋</div>
@@ -87,14 +88,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
+const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
 
 const recentList = ref([])
 const activeTasks = ref([])
@@ -129,20 +132,20 @@ function goUploadWithTask(tpl) {
 onMounted(async () => {
   try {
     const [essayRes, tasksRes] = await Promise.all([
-      api.get('/essays'),
+      api.get('/essays', { params: { page_size: 10, sort_by: 'created_at', sort_order: 'desc' } }),
       api.get('/essays/tasks/active')
     ])
     recentList.value = (essayRes.data.items || essayRes.data).slice(0, 10)
-    
-    // 获取每个模板的统计数据
+
+    // 批量获取所有活跃任务的统计数据（一次请求）
     const templates = tasksRes.data || []
-    for (const tpl of templates) {
-      try {
-        const statsRes = await api.get(`/essays/tasks/${tpl.id}/stats`)
-        tpl._stats = statsRes.data
-      } catch {
-        tpl._stats = { total: 0, pending: 0, corrected: 0 }
-      }
+    if (templates.length) {
+      const statsRes = await api.post('/essays/tasks/stats', templates.map(t => t.id))
+      const statsMap = {}
+      ;(statsRes.data || []).forEach(s => { statsMap[s.task_id] = s })
+      templates.forEach(t => {
+        t._stats = statsMap[t.id] || { total: 0, pending: 0, corrected: 0 }
+      })
     }
     activeTasks.value = templates
   } catch {}
@@ -324,6 +327,16 @@ onMounted(async () => {
   font-weight: 600;
   color: #333;
 }
+
+.quick-sub {
+  font-size: 12px;
+  color: #999;
+  margin-top: 6px;
+}
+
+.quick-disabled { opacity: 0.5; cursor: not-allowed; }
+.quick-disabled:hover { transform: none; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.quick-disabled .quick-text { color: #999; }
 
 .upload-card { border-left: 4px solid #1677ff; }
 .list-card { border-left: 4px solid #52c41a; }
