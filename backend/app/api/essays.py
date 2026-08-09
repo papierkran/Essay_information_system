@@ -17,9 +17,8 @@ from ..models.models import User, Essay, Course, EssayTask, OperationLog, System
 from ..schemas.schemas import EssayCreate, EssayOut, TaskOut, OperationLogOut
 from ..utils.auth import get_current_user
 from ..utils.file_utils import (
-    get_essay_dir, generate_essay_filename, generate_correction_filename,
+    get_essay_dir, generate_correction_filename,
     has_correction, count_corrections_in_dir, get_upload_dir, resize_image_within,
-    safe_component,
 )
 from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text, count_cjk_chars
 from ..utils.crypto_utils import load_config_row_value
@@ -416,17 +415,7 @@ async def upload_essay(
                 essay_image = EssayImage(essay_id=essay.id, filename=img_name, image_data=content)
                 db.add(essay_image)
             elif ext in [".docx", ".doc"]:
-                essay.file_type = "docx"
-                safe_filename = generate_essay_filename(
-                    essay_title, student_name, essay_number,
-                    is_supplement, remark, ts, ext,
-                )
-                file_path = os.path.join(dir_path, safe_filename)
-                with open(file_path, "wb") as fw:
-                    fw.write(content)
-                uploaded_files.append(safe_filename)
-
-                # 解析docx内容作为修改前内容
+                # docx 不保存本地，解析全部内容作为修改前内容
                 if not essay.content_text and ext == ".docx":
                     try:
                         from docx import Document
