@@ -43,7 +43,7 @@ const routes = [
     path: '/review/operations',
     name: 'OperationHistory',
     component: () => import('../views/ReviewHistory.vue'),
-    meta: { requiresAuth: true, roles: ['reviewer', 'admin', 'guest'] },
+    meta: { requiresAuth: true },
   },
   {
     path: '/admin/users',

@@ -19,6 +19,7 @@ from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_essay_filename, generate_correction_filename,
     has_correction, count_corrections_in_dir, get_upload_dir, resize_image_within,
+    safe_component,
 )
 from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text, count_cjk_chars
 from ..utils.crypto_utils import load_config_row_value
@@ -1889,8 +1890,8 @@ def undo_operation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """撤回指定的操作记录"""
-    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+    """撤回指定的操作记录（仅管理员）"""
+    if "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
     log = db.query(OperationLog).filter(OperationLog.id == log_id).first()
@@ -2095,10 +2096,7 @@ def list_operations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取操作历史列表，keyword 可模糊匹配 详情(detail)"""
-    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
-        raise HTTPException(status_code=403, detail="无权限")
-
+    """获取操作历史列表，keyword 可模糊匹配 详情(detail)。所有已登录角色均可查看"""
     q = db.query(OperationLog)
     if keyword:
         kw = f"%{keyword}%"

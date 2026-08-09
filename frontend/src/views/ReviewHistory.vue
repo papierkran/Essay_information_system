@@ -10,7 +10,7 @@
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
-        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th v-if="!isGuest">操作</th>
+        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th v-if="isAdmin">操作</th>
       </tr></thead>
       <tbody>
         <tr v-for="op in list" :key="op.id">
@@ -25,7 +25,7 @@
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
           <td>{{ op.user_name }}</td>
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
-          <td v-if="!isGuest">
+          <td v-if="isAdmin">
             <button class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
               {{ undoingId === op.id ? '撤回中...' : '↩ 撤回' }}
             </button>
@@ -55,7 +55,7 @@
         @click="goDetail(op)">
         <template #extra>
           <span class="tag" :class="actionClass(op.action)" style="font-size:11px">{{ op.action }}</span>
-          <button v-if="!isGuest" class="btn btn-undo btn-undo-mobile" @click.stop="confirmUndo(op)">↩</button>
+          <button v-if="isAdmin" class="btn btn-undo btn-undo-mobile" @click.stop="confirmUndo(op)">↩</button>
         </template>
       </van-cell>
     </van-list>
@@ -82,7 +82,7 @@ import { formatDateTime } from '../utils/format'
 const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
-const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
+const isAdmin = computed(() => ((getAuth()?.user?.role) || '').includes('admin'))
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)

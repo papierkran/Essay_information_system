@@ -6,6 +6,8 @@ const tasks = ref([])
 let pollTimer = null
 
 export function useTaskMonitor() {
+  onUnmounted(() => stopPolling())
+
   function addTask(taskId, type, total) {
     tasks.value.push({
       id: taskId,
@@ -86,5 +88,3 @@ export function useTaskMonitor() {
 export function typeLabel(type) {
   return { ocr: 'OCR识别', ai_correct: 'AI错别字修正', ai_rewrite: 'AI一键修改', pipeline: '流水线修改' }[type] || type
 }
-
-onUnmounted(() => stopPolling())
