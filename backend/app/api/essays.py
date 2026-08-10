@@ -19,6 +19,7 @@ from ..utils.auth import get_current_user
 from ..utils.file_utils import (
     get_essay_dir, generate_correction_filename,
     has_correction, count_corrections_in_dir, get_upload_dir, resize_image_within,
+    safe_component,
 )
 from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text, count_cjk_chars
 from ..utils.crypto_utils import load_config_row_value
