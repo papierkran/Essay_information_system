@@ -27,6 +27,8 @@ class TaskOut(BaseModel):
     deadline: Optional[datetime] = None
     is_active: bool
     submitted_count: int = 0
+    pending_count: int = 0
+    corrected_count: int = 0
     created_at: datetime
 
     class Config:
@@ -81,6 +83,8 @@ class CourseOut(BaseModel):
     id: int
     name: str
     created_at: datetime
+    task_count: int = 0
+    essay_count: int = 0
 
     class Config:
         from_attributes = True

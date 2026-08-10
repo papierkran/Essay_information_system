@@ -6,6 +6,7 @@
       <button class="btn btn-success" @click="openCourseDialog()">+ 创建课程</button>
       <label class="btn btn-primary" style="cursor:pointer">📥 导入CSV<input type="file" accept=".csv" @change="previewCSV" style="display:none" /></label>
       <span v-if="importing" style="font-size:13px;color:#999">解析中...</span>
+      <input v-model="keyword" placeholder="搜索课程名称" class="filter-input" style="margin-left:auto" />
     </div>
 
     <!-- 导入预览弹窗 -->
@@ -31,24 +32,31 @@
 
     <!-- 手机端操作按钮 -->
     <template v-if="!isDesktop">
-      <van-button type="success" size="small" style="margin:12px" @click="openCourseDialog()">创建课程</van-button>
-      <van-button type="primary" size="small" style="margin:12px" @click="$refs.csvInput.click()">导入CSV</van-button>
+      <div style="display:flex;gap:8px;padding:12px 12px 0">
+        <van-button type="success" size="small" @click="openCourseDialog()">创建课程</van-button>
+        <van-button type="primary" size="small" @click="$refs.csvInput.click()">导入CSV</van-button>
+        <van-field v-model="keyword" placeholder="搜索课程名称" clearable style="flex:1" />
+      </div>
       <input type="file" ref="csvInput" accept=".csv" style="display:none" @change="previewCSV" />
     </template>
 
     <!-- 桌面端课程列表 -->
     <div v-if="isDesktop">
-      <table class="desktop-table" v-if="courses.length">
+      <table class="desktop-table" v-if="filteredCourses.length">
         <thead>
           <tr>
             <th>课程名称</th>
+            <th>关联任务</th>
+            <th>关联作文</th>
             <th>创建时间</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in courses" :key="c.id">
+          <tr v-for="c in filteredCourses" :key="c.id">
             <td>{{ c.name }}</td>
+            <td><span style="font-weight:600;color:#1677ff">{{ c.task_count || 0 }}</span></td>
+            <td><span style="font-weight:600;color:#52c41a">{{ c.essay_count || 0 }}</span></td>
             <td>{{ c.created_at?.substring(0,10) }}</td>
             <td style="white-space:nowrap">
               <button class="btn" style="font-size:12px;padding:2px 8px" @click="openCourseDialog(c)">编辑</button>
@@ -62,9 +70,10 @@
 
     <!-- 手机端课程列表 -->
     <van-cell-group v-if="!isDesktop" inset style="margin-top:12px">
-      <van-cell v-for="c in courses" :key="c.id" :title="c.name"
-        :label="c.created_at?.substring(0,10)"
+      <van-cell v-for="c in filteredCourses" :key="c.id" :title="c.name"
+        :label="`任务 ${c.task_count || 0} · 作文 ${c.essay_count || 0} · ${c.created_at?.substring(0,10)}`"
         is-link @click="openCourseDialog(c)" />
+      <van-cell v-if="!filteredCourses.length" title="暂无课程" />
     </van-cell-group>
 
     <!-- 课程弹窗 -->
@@ -77,13 +86,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
 
 const { isDesktop } = useScreen()
 const courses = ref([])
+const keyword = ref('')
+const filteredCourses = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return courses.value
+  return courses.value.filter(c => (c.name || '').toLowerCase().includes(kw))
+})
 const showCourseDialog = ref(false)
 const editingCourse = ref({})
 const courseForm = ref({ name:'' })
@@ -123,7 +138,11 @@ async function saveCourse() {
 }
 
 function confirmDelCourse(cls) {
-  showDialog({ title: '确认删除', message: `删除课程「${cls.name}」？`, showCancelButton: true })
+  showDialog({
+    title: '确认删除',
+    message: `删除课程「${cls.name}」？\n（关联 ${cls.task_count || 0} 个任务 / ${cls.essay_count || 0} 篇作文，删除后这些数据的课程关联将失效）`,
+    showCancelButton: true,
+  })
     .then(async () => {
       await api.delete(`/admin/courses/${cls.id}`)
       courses.value = courses.value.filter(x => x.id !== cls.id)
@@ -172,5 +191,14 @@ async function confirmImport() {
 
 <style scoped>
 .page { padding: 0; }
+.filter-input {
+  padding: 6px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  min-width: 160px;
+}
+.filter-input:focus { border-color: #4096ff; }
 @media (max-width: 767px) { .page { min-height: 100vh; } }
 </style>

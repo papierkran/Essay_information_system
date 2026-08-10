@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
     define: {
       // dev 模式用相对路径 /api（走 vite proxy → localhost:6886），局域网可直接访问
       // 生产构建保留公网后端域名
-      __API_BASE_URL__: JSON.stringify(isDev ? '' : 'https://zuowen.papierkran.top/api'),
+      __API_BASE_URL__: JSON.stringify(isDev ? '' : 'https://zwhd.papierkran.top'),
     },
     server: {
       host: '::',

@@ -18,6 +18,7 @@
     <aside v-if="!isLogin" class="sidebar" :class="{ open: sidebarOpen }">
       <nav>
         <router-link v-if="user.username" to="/dashboard" class="sidebar-link" @click="sidebarOpen=false">🏠 首页</router-link>
+        <router-link v-if="user.username" to="/stats" class="sidebar-link" @click="sidebarOpen=false">📊 数据统计</router-link>
         <router-link v-if="canCollect" to="/essay/upload" class="sidebar-link" @click="sidebarOpen=false">✏️ 上传作文</router-link>
         <span v-else-if="isGuest" class="sidebar-link disabled" title="游客无上传权限" @click="showGuestToast">✏️ 上传作文</span>
         <router-link v-if="canCollect" to="/essay/batch-upload" class="sidebar-link" @click="sidebarOpen=false">📁 批量上传</router-link>

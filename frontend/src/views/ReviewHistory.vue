@@ -2,6 +2,63 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">操作历史</div>
 
+    <!-- 桌面端筛选栏 -->
+    <div v-if="isDesktop" class="filter-bar">
+      <div class="filter-row"><input v-model="filters.keyword" placeholder="搜索学生/操作内容" class="filter-input" @keyup.enter="applyFilter" /></div>
+      <div class="filter-row">
+        <select v-model="filters.action" class="filter-input" @change="applyFilter">
+          <option value="">全部操作</option>
+          <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
+        </select>
+      </div>
+      <div class="filter-row" v-if="isAdmin">
+        <select v-model="filters.userId" class="filter-input" @change="applyFilter">
+          <option value="">全部操作者</option>
+          <option v-for="u in userList" :key="u.id" :value="u.id">{{ u.nickname || u.username }}</option>
+        </select>
+      </div>
+      <label v-else class="filter-row filter-check">
+        <input type="checkbox" v-model="filters.onlyMine" @change="applyFilter" style="width:auto" />
+        <span class="filter-label">只看我的操作</span>
+      </label>
+      <div class="filter-row"><input v-model="filters.studentName" placeholder="学生姓名" class="filter-input" @keyup.enter="applyFilter" /></div>
+      <div class="filter-row"><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:140px" @change="applyFilter" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
+      <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
+    </div>
+
+    <!-- 手机端筛选 -->
+    <div v-if="!isDesktop" class="mobile-filter">
+      <van-button size="small" block :type="mobileFilterActive ? 'primary' : 'default'" icon="filter-o" @click="showMobileFilter = !showMobileFilter">
+        筛选{{ mobileFilterActive ? '（已启用）' : '' }}
+      </van-button>
+      <div v-if="showMobileFilter" class="mobile-filter-panel">
+        <div class="m-filter-row">
+          <input v-model="filters.keyword" placeholder="搜索学生/操作内容" class="m-filter-input" @input="applyFilter" />
+          <select v-model="filters.action" class="m-filter-input" @change="applyFilter">
+            <option value="">全部操作</option>
+            <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </div>
+        <div class="m-filter-row" v-if="isAdmin">
+          <select v-model="filters.userId" class="m-filter-input" @change="applyFilter">
+            <option value="">全部操作者</option>
+            <option v-for="u in userList" :key="u.id" :value="u.id">{{ u.nickname || u.username }}</option>
+          </select>
+          <input v-model="filters.studentName" placeholder="学生姓名" class="m-filter-input" @input="applyFilter" />
+        </div>
+        <div class="m-filter-row" v-if="!isAdmin">
+          <label class="m-filter-check"><input type="checkbox" v-model="filters.onlyMine" @change="applyFilter" style="width:auto" /> 只看我的操作</label>
+          <input v-model="filters.studentName" placeholder="学生姓名" class="m-filter-input" @input="applyFilter" />
+        </div>
+        <div class="m-filter-row">
+          <input v-model="filters.dateFrom" type="date" class="m-filter-input" @change="applyFilter" />
+          <input v-model="filters.dateTo" type="date" class="m-filter-input" @change="applyFilter" />
+        </div>
+        <button class="btn" style="width:100%;margin-top:8px" @click="clearFilter">重置筛选</button>
+      </div>
+    </div>
+
     <!-- 统计行 -->
     <div class="stats-bar" v-if="isDesktop">
       <span>共 <strong>{{ total }}</strong> 条记录</span>
@@ -82,7 +139,8 @@ import { formatDateTime } from '../utils/format'
 const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
-const isAdmin = computed(() => ((getAuth()?.user?.role) || '').includes('admin'))
+const currentUser = computed(() => getAuth()?.user || {})
+const isAdmin = computed(() => ((currentUser.value.role) || '').includes('admin'))
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
@@ -90,8 +148,19 @@ const page = ref(1)
 const pageSize = ref(40)
 const finished = ref(false)
 const undoingId = ref(null)
+const showMobileFilter = ref(false)
+const userList = ref([])
 
 const undoDialog = ref({ show: false, id: null, action: '', detail: '' })
+
+const actionOptions = ['上传', '认领', '修改', '编辑', '删除', '恢复', '批改', 'OCR']
+
+const filters = ref({ keyword: '', action: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' })
+
+const mobileFilterActive = computed(() => {
+  const f = filters.value
+  return !!(f.keyword || f.action || f.userId || f.onlyMine || f.studentName || f.dateFrom || f.dateTo)
+})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
@@ -100,10 +169,35 @@ function actionClass(action) {
   return m[action] || ''
 }
 
+function buildParams() {
+  const p = { page: page.value, page_size: pageSize.value }
+  if (filters.value.keyword) p.keyword = filters.value.keyword
+  if (filters.value.action) p.action = filters.value.action
+  if (filters.value.userId) p.user_id = Number(filters.value.userId)
+  else if (filters.value.onlyMine) p.user_id = currentUser.value.id
+  if (filters.value.studentName) p.student_name = filters.value.studentName
+  if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
+  if (filters.value.dateTo) p.date_to = filters.value.dateTo
+  return p
+}
+
+let loadTimer = null
+function applyFilter() {
+  page.value = 1
+  finished.value = false
+  clearTimeout(loadTimer)
+  loadTimer = setTimeout(loadData, 300)
+}
+
+function clearFilter() {
+  filters.value = { keyword: '', action: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' }
+  applyFilter()
+}
+
 async function loadData() {
   loading.value = true
   try {
-    const res = await api.get('/essays/operations', { params: { page: page.value, page_size: pageSize.value } })
+    const res = await api.get('/essays/operations', { params: buildParams() })
     list.value = res.data.items
     total.value = res.data.total
     finished.value = list.value.length >= total.value
@@ -115,8 +209,9 @@ function goPage(p) { page.value = p; loadData() }
 
 async function loadMore() {
   page.value++
+  loading.value = true
   try {
-    const res = await api.get('/essays/operations', { params: { page: page.value, page_size: pageSize.value } })
+    const res = await api.get('/essays/operations', { params: buildParams() })
     list.value.push(...res.data.items)
     total.value = res.data.total
     finished.value = list.value.length >= total.value
@@ -154,11 +249,33 @@ async function doUndo() {
   }
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  loadData()
+  if (isAdmin.value) {
+    try { const res = await api.get('/admin/users'); userList.value = res.data || [] } catch {}
+  }
+})
 </script>
 
 <style scoped>
 .page { padding: 0; }
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.filter-row { display: flex; align-items: center; gap: 4px; }
+.filter-label { font-size: 13px; color: #666; white-space: nowrap; }
+.filter-check { gap: 6px; cursor: pointer; }
+.filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; background: #fff; min-width: 120px; }
+.filter-input:focus { border-color: #4096ff; }
 
 .stats-bar {
   display: flex;
@@ -201,6 +318,32 @@ onMounted(loadData)
   margin-left: 8px;
   padding: 2px 8px;
 }
+
+/* ===== 手机端筛选 ===== */
+.mobile-filter { margin-bottom: 10px; }
+.mobile-filter-panel {
+  margin-top: 8px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-filter-row { display: flex; gap: 8px; align-items: center; }
+.m-filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+.m-filter-input:focus { border-color: #4096ff; }
+.m-filter-check { font-size: 13px; color: #666; white-space: nowrap; }
 
 @media (max-width: 767px) { .page { min-height: 100vh; } }
 </style>

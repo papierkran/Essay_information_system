@@ -10,6 +10,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/stats',
+    name: 'DashboardStats',
+    component: () => import('../views/DashboardStats.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/essay/upload',
     name: 'EssayUpload',
     component: () => import('../views/EssayUpload.vue'),
@@ -78,6 +84,7 @@ const router = createRouter({
 
 const PAGE_TITLES = {
   '/dashboard': '工作台',
+  '/stats': '数据统计',
   '/essay/upload': '上传作文',
   '/essay/batch-upload': '批量上传',
   '/essay/list': '作文列表',

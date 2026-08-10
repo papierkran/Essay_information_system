@@ -45,6 +45,12 @@
 | F20 | ~~批量删除逐个请求~~ ✅ 已修复 2026-08-09 | `essays.py` + `EssayList.vue` | 新增 `POST /essays/batch-delete`（delete_file/permanent 语义与单条一致），前端批量删除一次请求完成，失败明细计数返回 |
 | F21 | 无前端工程化 | `frontend/package.json` | 无 eslint/测试脚本，回归靠人工 → 加 lint + 关键流程冒烟测试（**暂不处理**） |
 
+### 管理页专项优化（2026-08-09 已实施）
+
+- ✅ **操作历史**：新增筛选（关键词/操作类型/操作者[管理员下拉、普通用户"只看我的操作"]/学生姓名/日期范围），后端 `/operations` 补充 `action/user_id/student_name/date_from/date_to` 参数；手机端折叠筛选面板
+- ✅ **课程管理**：列表搜索框；每行显示关联任务数/作文数（后端 `/admin/courses` 返回 `task_count/essay_count`）；删除前提示关联数量
+- ✅ **任务列表**：移除无效「查询」按钮（筛选实时生效）；新增未改/已改进度列（后端 `/admin/tasks` 返回 `pending_count/corrected_count`）；截止时间跨年显示年份；新增「复制任务」功能（`POST /admin/tasks/{id}/clone`，默认停用，便于周期重复收集）
+
 ---
 
 ## 二、后端待办（此前已确认，尚未实施）

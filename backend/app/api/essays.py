@@ -2180,16 +2180,33 @@ def list_operations(
     page: int = 1,
     page_size: int = 50,
     keyword: str = None,
+    action: str = None,
+    user_id: int = None,
+    student_name: str = None,
+    date_from: str = None,
+    date_to: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取操作历史列表，keyword 可模糊匹配 详情(detail)。所有已登录角色均可查看"""
+    """获取操作历史列表，支持按关键词/操作类型/操作者/学生/日期筛选。"""
     q = db.query(OperationLog)
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter(
             (OperationLog.detail.like(kw)) | (OperationLog.action.like(kw))
         )
+    if action:
+        q = q.filter(OperationLog.action == action)
+    if user_id:
+        q = q.filter(OperationLog.user_id == user_id)
+    if student_name:
+        q = q.join(Essay, OperationLog.essay_id == Essay.id, isouter=True).filter(
+            Essay.student_name.like(f"%{student_name}%")
+        )
+    if date_from:
+        q = q.filter(OperationLog.created_at >= date_from)
+    if date_to:
+        q = q.filter(OperationLog.created_at <= date_to + " 23:59:59")
     q = q.order_by(OperationLog.created_at.desc())
     total = q.count()
     logs = q.offset((page - 1) * page_size).limit(page_size).all()

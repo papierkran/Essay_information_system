@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import os
 import json
 import shutil
@@ -48,7 +49,25 @@ def list_courses(
     require_admin(current_user)
     q = db.query(Course).filter(Course.deleted_at == None)
     courses = q.all()
-    return [CourseOut.model_validate(c) for c in courses]
+    task_counts = dict(
+        db.query(EssayTask.course_id, func.count(EssayTask.id))
+        .filter(EssayTask.course_id.isnot(None), EssayTask.deleted_at == None)
+        .group_by(EssayTask.course_id)
+        .all()
+    )
+    essay_counts = dict(
+        db.query(Essay.course_id, func.count(Essay.id))
+        .filter(Essay.course_id.isnot(None), Essay.deleted_at == None)
+        .group_by(Essay.course_id)
+        .all()
+    )
+    result = []
+    for c in courses:
+        out = CourseOut.model_validate(c)
+        out.task_count = task_counts.get(c.id, 0)
+        out.essay_count = essay_counts.get(c.id, 0)
+        result.append(out)
+    return result
 
 
 @router.put("/courses/{course_id}", response_model=CourseOut)
@@ -562,19 +581,64 @@ def list_tasks(
     require_admin(current_user)
     tasks = db.query(EssayTask).filter(EssayTask.deleted_at == None).order_by(EssayTask.created_at.desc()).all()
     # 统计每个任务下已提交的作文数量
-    from sqlalchemy import func
     counts = dict(
         db.query(Essay.task_id, func.count(Essay.id))
         .filter(Essay.task_id.isnot(None), Essay.deleted_at == None)
         .group_by(Essay.task_id)
         .all()
     )
+    # 按状态统计（未改= pending/confirming/rework，已改= corrected）
+    status_counts = db.query(Essay.task_id, Essay.status, func.count(Essay.id)).filter(
+        Essay.task_id.isnot(None), Essay.deleted_at == None
+    ).group_by(Essay.task_id, Essay.status).all()
+    pending_map = {}
+    corrected_map = {}
+    for task_id, status, cnt in status_counts:
+        if status == "corrected":
+            corrected_map[task_id] = corrected_map.get(task_id, 0) + cnt
+        else:
+            pending_map[task_id] = pending_map.get(task_id, 0) + cnt
     result = []
     for t in tasks:
         out = TaskOut.model_validate(t)
         out.submitted_count = counts.get(t.id, 0)
+        out.pending_count = pending_map.get(t.id, 0)
+        out.corrected_count = corrected_map.get(t.id, 0)
         result.append(out)
     return result
+
+
+@router.post("/tasks/{task_id}/clone", response_model=TaskOut)
+def clone_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """复制一个收集任务为新任务（方便周/月重复收集，不复制作文数据）"""
+    require_admin(current_user)
+    src = db.query(EssayTask).filter(EssayTask.id == task_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    base = src.name
+    new_name = base
+    idx = 2
+    while db.query(EssayTask).filter(EssayTask.name == new_name).first():
+        new_name = f"{base} (副本{idx})"
+        idx += 1
+    new_task = EssayTask(
+        name=new_name,
+        grade=src.grade,
+        essay_number=src.essay_number,
+        essay_topic=src.essay_topic,
+        course_id=src.course_id,
+        teaching_mode=src.teaching_mode,
+        deadline=src.deadline,
+        is_active=False,
+    )
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    return TaskOut.model_validate(new_task)
 
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)

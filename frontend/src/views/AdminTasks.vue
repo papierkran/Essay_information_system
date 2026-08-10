@@ -11,7 +11,7 @@
 
     <!-- 筛选栏 -->
     <div v-if="isDesktop" class="filter-bar">
-      <input v-model="filters.name" placeholder="任务名称" class="filter-input" @keyup.enter="applyFilter" />
+      <input v-model="filters.name" placeholder="任务名称" class="filter-input" />
       <select v-model="filters.grade" class="filter-input" @change="applyFilter">
         <option value="">全部年级</option>
         <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
@@ -31,15 +31,13 @@
         <option value="expired">已过期</option>
         <option value="ended">已结束</option>
       </select>
-      <input v-model="filters.topic" placeholder="文章主题" class="filter-input" @keyup.enter="applyFilter" />
-      <input v-model="filters.course" placeholder="课程名称" class="filter-input" @keyup.enter="applyFilter" />
-      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
+      <input v-model="filters.topic" placeholder="文章主题" class="filter-input" />
+      <input v-model="filters.course" placeholder="课程名称" class="filter-input" />
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
     </div>
     <div v-else style="display:flex;gap:8px;padding:0 12px;flex-wrap:wrap">
-      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" @keyup.enter="applyFilter" />
-      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" @keyup.enter="applyFilter" />
-      <van-button size="small" type="primary" @click="applyFilter">查询</van-button>
+      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" />
+      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" />
       <van-button size="small" @click="clearFilter">重置</van-button>
     </div>
 
@@ -76,12 +74,15 @@
               </template>
               <template v-else-if="col.key === 'actions'">
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
+                <button class="btn" style="font-size:12px;padding:2px 8px" @click="cloneTask(t)" title="复制为新任务">复制</button>
                 <button class="btn btn-primary" style="font-size:12px;padding:2px 8px" @click="goBatchUpload(t)">批量上传</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
               </template>
               <template v-else-if="col.key === 'teaching_mode'">{{ t.teaching_mode || '线下' }}</template>
               <template v-else-if="col.key === 'submitted'"><span style="font-weight:600;color:#1677ff">{{ t.submitted_count || 0 }}</span></template>
+              <template v-else-if="col.key === 'pending_count'"><span style="font-weight:600;color:#d46b08">{{ t.pending_count || 0 }}</span></template>
+              <template v-else-if="col.key === 'corrected_count'"><span style="font-weight:600;color:#52c41a">{{ t.corrected_count || 0 }}</span></template>
               <template v-else>{{ t[col.key] }}</template>
             </td>
           </tr>
@@ -97,7 +98,7 @@
       <van-cell-group inset v-if="filteredTasks.length" style="margin-top:12px">
         <van-cell v-for="t in filteredTasks" :key="t.id"
           :title="t.name"
-          :label="`${t.grade || '未定年级'} ${t.essay_number ? '第' + t.essay_number + '次' : '无第几次'} ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''}`"
+          :label="`${t.grade || '未定年级'} ${t.essay_number ? '第' + t.essay_number + '次' : '无第几次'} ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''} · 已交${t.submitted_count || 0} 未改${t.pending_count || 0} 已改${t.corrected_count || 0}`"
           is-link @click="openTaskDialog(t)">
           <template #right-icon>
             <span style="font-size:12px;color:#1677ff;margin-right:8px">{{ t.submitted_count || 0 }}人已交</span>
@@ -189,6 +190,8 @@ const columnDefs = [
   { key: 'course', label: '课程名称', sortable: true },
   { key: 'teaching_mode', label: '提交方式', sortable: true },
   { key: 'submitted', label: '已交学生数', sortable: true },
+  { key: 'pending_count', label: '未改', sortable: true },
+  { key: 'corrected_count', label: '已改', sortable: true },
   { key: 'deadline', label: '截止时间', sortable: true },
   { key: 'status', label: '状态', sortable: false },
   { key: 'actions', label: '操作', sortable: false },
@@ -285,9 +288,10 @@ function getSortValue(t, key) {
   if (key === 'teaching_mode') return t.teaching_mode || ''
   if (key === 'topic') return t.essay_topic || ''
   if (key === 'submitted') return t.submitted_count || 0
+  if (key === 'pending_count') return t.pending_count || 0
+  if (key === 'corrected_count') return t.corrected_count || 0
   return t[key] || ''
 }
-function applyFilter() {}
 function clearFilter() {
   filters.value = { name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' }
 }
@@ -317,7 +321,9 @@ async function loadData() {
 function formatDeadline(deadline) {
   if (!deadline) return '无限制'
   const d = new Date(deadline)
-  return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
+  const year = d.getFullYear()
+  const nowYear = new Date().getFullYear()
+  return `${year !== nowYear ? year + '-' : ''}${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
 function isExpired(tpl) {
@@ -391,6 +397,14 @@ async function toggleTaskActive(tpl) {
     showToast(res.data?.is_active ? '已开始收集' : '已结束收集')
     loadData()
   } catch(err) { showToast(err.response?.data?.detail || '操作失败') }
+}
+
+async function cloneTask(tpl) {
+  try {
+    await api.post(`/admin/tasks/${tpl.id}/clone`)
+    showToast('已复制为新任务（默认停用，请编辑后开始收集）')
+    loadData()
+  } catch(err) { showToast(err.response?.data?.detail || '复制失败') }
 }
 
 function confirmDelTask(tpl) {
