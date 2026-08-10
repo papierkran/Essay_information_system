@@ -139,6 +139,27 @@ def batch_task_stats(
     return result
 
 
+@router.get("/existing-students")
+def existing_students(
+    task_id: int,
+    essay_number: int = None,
+    is_supplement: bool = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量上传预检：返回指定任务下已存在的学生姓名列表（用于跳过重复上传）"""
+    q = db.query(Essay.student_name).filter(
+        Essay.task_id == task_id,
+        Essay.deleted_at == None,
+    )
+    if essay_number is not None:
+        q = q.filter(Essay.essay_number == essay_number)
+    if is_supplement is not None:
+        q = q.filter(Essay.is_supplement == is_supplement)
+    names = sorted({r[0] for r in q.all() if r[0]})
+    return {"students": names}
+
+
 def _build_download_filename(essay: Essay) -> str:
     """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交（第几次为0或空时省略）"""
     title = essay.essay_title or "无标题"
@@ -502,6 +523,7 @@ async def upload_correction_docx(
     task_id: int = Form(None),
     course_id: int = Form(None),
     collected_by: int = Form(None),
+    collector_note: str = Form(""),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -553,7 +575,7 @@ async def upload_correction_docx(
             raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
     try:
-        # 检查是否已存在同一条记录（同一学生同一次作文，优先匹配同一任务）
+        # 检查是否已存在同一条记录（同一学生同一次作文，严格按任务隔离）
         existing_query = db.query(Essay).filter(
             Essay.student_name == student_name,
             Essay.essay_number == essay_number,
@@ -562,6 +584,8 @@ async def upload_correction_docx(
         )
         if task_id is not None:
             existing_query = existing_query.filter(Essay.task_id == task_id)
+        else:
+            existing_query = existing_query.filter(Essay.task_id.is_(None))
         existing = existing_query.first()
 
         if existing:
@@ -575,6 +599,8 @@ async def upload_correction_docx(
             existing.teaching_mode = teaching_mode or existing.teaching_mode
             existing.collected_by = collector_id
             existing.is_supplement = is_supplement
+            if collector_note:
+                existing.collector_note = collector_note
             if task_id is not None:
                 existing.task_id = task_id
             if effective_course_id:
@@ -591,6 +617,7 @@ async def upload_correction_docx(
                 is_supplement=is_supplement,
                 teaching_mode=teaching_mode,
                 remark="",
+                collector_note=collector_note,
                 content_text=content_text,
                 corrected_text=corrected_text if corrected_text else "",
                 file_type="docx",

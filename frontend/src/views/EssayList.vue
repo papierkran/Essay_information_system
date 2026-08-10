@@ -139,7 +139,8 @@
                 <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
                 <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
                 <td v-else-if="col.key === 'corrected_at'">{{ formatDateTime(e.corrected_at) || '-' }}</td>
-                <td v-else>{{ e[col.field] || '-' }}</td>
+                <td v-else-if="col.key === 'collector_note' || col.key === 'reviewer_note'" class="td-note" :title="e[col.field] || ''">{{ e[col.field] || '-' }}</td>
+              <td v-else>{{ e[col.field] || '-' }}</td>
               </template>
               <td class="sticky-col" style="white-space:nowrap" @click.stop>
                 <template v-if="!isGuest && isOwner(e)">
@@ -972,6 +973,13 @@ onUnmounted(() => {
 }
 .inline-select:hover { border-color: #d9d9d9; background: #fff; }
 .inline-select:focus { border-color: #4096ff; outline: none; }
+
+.desktop-table td.td-note {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .row-selected { background: #e6f4ff !important; }
 
