@@ -192,20 +192,19 @@
               </div>
             <div class="pane-body">
               <div class="edit-wrapper">
-                <div v-show="editingOriginal" class="edit-area">
-                  <textarea ref="editTextareaRef" v-model="editOriginalText" class="edit-textarea" @input="autoResizeTextarea"></textarea>
-                  <div class="edit-actions">
-                    <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveOriginalEdit" :disabled="savingOriginalEdit">💾 保存</button>
-                    <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelOriginalEdit">取消</button>
-                  </div>
+                <div v-if="essay.content_text" class="content-text"
+                  ref="originalContentRef"
+                  :key="'orig-' + (editingOriginal ? 1 : 0)"
+                  :contenteditable="editingOriginal"
+                  :class="{ 'content-editing': editingOriginal }">
+                  <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
                 </div>
-                <div :class="{ 'content-hidden': editingOriginal }">
-                  <div v-if="essay.content_text" class="content-text">
-                    <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-                  </div>
-                  <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
-                  <div v-if="showWordCount" class="word-count">{{ countWords(essay.content_text) }} 字</div>
+                <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
+                <div v-if="editingOriginal" class="edit-actions inline-actions">
+                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveOriginalEdit" :disabled="savingOriginalEdit">💾 保存</button>
+                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelOriginalEdit">取消</button>
                 </div>
+                <div v-if="showWordCount" class="word-count">{{ countWords(essay.content_text) }} 字</div>
                 <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
                   <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
                 </div>
@@ -259,20 +258,19 @@
             </div>
             <div class="pane-body">
               <div class="edit-wrapper">
-                <div v-show="editingCorrected" class="edit-area">
-                  <textarea ref="editCorrectedRef" v-model="editCorrectedText" class="edit-textarea" @input="autoResizeCorrected"></textarea>
-                  <div class="edit-actions">
-                    <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
-                    <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
-                  </div>
+                <div v-if="essay.corrected_text" class="content-text corrected-content"
+                  ref="correctedContentRef"
+                  :key="'corr-' + (editingCorrected ? 1 : 0)"
+                  :contenteditable="editingCorrected"
+                  :class="{ 'content-editing': editingCorrected }">
+                  <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
                 </div>
-                <div :class="{ 'content-hidden': editingCorrected }">
-                  <div v-if="essay.corrected_text" class="content-text corrected-content">
-                    <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-                  </div>
-                  <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-                  <div v-if="showWordCount" class="word-count">{{ countWords(essay.corrected_text) }} 字</div>
+                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+                <div v-if="editingCorrected" class="edit-actions inline-actions">
+                  <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
+                  <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
                 </div>
+                <div v-if="showWordCount" class="word-count">{{ countWords(essay.corrected_text) }} 字</div>
               </div>
             </div>
             <!-- 重新上传面板（修改后：仅文字输入） -->
@@ -531,13 +529,11 @@ const showWordCount = ref(true)
 const ocrLoading = ref(false)
 const aiLoading = ref(false)
 const editingOriginal = ref(false)
-const editOriginalText = ref('')
+const originalContentRef = ref(null)
 const savingOriginalEdit = ref(false)
-const editTextareaRef = ref(null)
 const editingCorrected = ref(false)
-const editCorrectedText = ref('')
+const correctedContentRef = ref(null)
 const savingCorrectedEdit = ref(false)
-const editCorrectedRef = ref(null)
 const aiRewriteLoading = ref(false)
 
 const originalParagraphs = computed(() => {
@@ -716,31 +712,17 @@ async function doAiCorrect() {
   }
 }
 
-function autoResizeTextarea() {
-  const el = editTextareaRef.value
-  if (el) {
-    el.style.height = el.scrollHeight + 'px'
-  }
-}
-
 function toggleEditOriginal() {
   if (editingOriginal.value) {
     cancelOriginalEdit()
   } else {
-    editOriginalText.value = essay.value.content_text || ''
     editingOriginal.value = true
-    nextTick(() => {
-      const el = editTextareaRef.value
-      if (el) {
-        el.style.height = el.scrollHeight + 'px'
-      }
-    })
+    nextTick(() => originalContentRef.value?.focus())
   }
 }
 
 function cancelOriginalEdit() {
   editingOriginal.value = false
-  editOriginalText.value = ''
 }
 
 async function saveOriginalEdit() {
@@ -750,7 +732,8 @@ async function saveOriginalEdit() {
   }
   savingOriginalEdit.value = true
   try {
-    await api.put(`/essays/${route.params.id}`, null, { params: { content_text: editOriginalText.value } })
+    const text = (originalContentRef.value?.innerText || '').replace(/\n+$/, '')
+    await api.put(`/essays/${route.params.id}`, null, { params: { content_text: text } })
     showToast('保存成功')
     editingOriginal.value = false
     await loadEssay()
@@ -761,29 +744,17 @@ async function saveOriginalEdit() {
   }
 }
 
-function autoResizeCorrected() {
-  const el = editCorrectedRef.value
-  if (el) {
-    el.style.height = el.scrollHeight + 'px'
-  }
-}
-
 function toggleEditCorrected() {
   if (editingCorrected.value) {
     cancelCorrectedEdit()
   } else {
-    editCorrectedText.value = essay.value.corrected_text || ''
     editingCorrected.value = true
-    nextTick(() => {
-      const el = editCorrectedRef.value
-      if (el) el.style.height = el.scrollHeight + 'px'
-    })
+    nextTick(() => correctedContentRef.value?.focus())
   }
 }
 
 function cancelCorrectedEdit() {
   editingCorrected.value = false
-  editCorrectedText.value = ''
 }
 
 async function doAiRewrite() {
@@ -810,7 +781,8 @@ async function saveCorrectedEdit() {
   }
   savingCorrectedEdit.value = true
   try {
-    await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: editCorrectedText.value } })
+    const text = (correctedContentRef.value?.innerText || '').replace(/\n+$/, '')
+    await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: text } })
     showToast('保存成功')
     editingCorrected.value = false
     await loadEssay()
@@ -1119,6 +1091,17 @@ async function doReupload() {
 .breadcrumb-sep { color: #d9d9d9; }
 .breadcrumb-current { color: #333; }
 .content-text { padding: 12px 16px; }
+
+.content-text[contenteditable="true"] {
+  outline: 2px dashed #1677ff;
+  outline-offset: 3px;
+  border-radius: 6px;
+  min-height: 60px;
+  cursor: text;
+  background: #fffef5;
+}
+.content-text[contenteditable="true"]:focus { outline-style: solid; }
+.inline-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 .note-readonly {
   white-space: pre-wrap;
   word-break: break-word;
@@ -1374,22 +1357,6 @@ async function doReupload() {
 .picker-list { max-height: 300px; overflow-y: auto; }
 
 .edit-wrapper { position: relative; }
-.content-hidden { visibility: hidden; }
-.edit-area { position: absolute; top: 0; left: 0; right: 0; z-index: 5; padding: 8px 0; background: #fff; }
-.edit-textarea {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.8;
-  font-family: inherit;
-  resize: none;
-  overflow: hidden;
-  outline: none;
-  box-sizing: border-box;
-}
-.edit-textarea:focus { border-color: #4096ff; }
 .edit-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 .drop-zone {
