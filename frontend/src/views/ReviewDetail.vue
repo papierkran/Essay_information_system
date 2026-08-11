@@ -300,52 +300,112 @@
 
       <!-- ===== 手机端 ===== -->
       <template v-else>
-        <van-cell-group inset>
-          <van-cell title="当前状态">
-            <template #value>
-              <span class="tag" :class="'tag-' + essay.status">{{ statusLabel(essay.status) }}</span>
-              <span style="font-size:12px;color:#999;margin-left:4px">{{ statusHint }}</span>
-            </template>
-          </van-cell>
-          <van-field v-model="editForm.student_name" label="学生姓名" :disabled="!canEdit" />
-          <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
-          <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
-          <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
-          <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
-          <van-field :model-value="essay.course_name || '-'" label="课程" readonly />
-          <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
-          <van-field v-if="editForm.reviewer_note" v-model="editForm.reviewer_note" label="批改者备注" type="textarea" rows="2" disabled />
-          <van-field label="是否补交">
-            <template #input>
-              <van-radio-group v-model="editForm.is_supplement" :disabled="!canEdit" direction="horizontal">
-                <van-radio :name="false">否</van-radio>
-                <van-radio :name="true">是</van-radio>
-              </van-radio-group>
-            </template>
-          </van-field>
-          <van-cell title="收集者" :value="essay.collector_name" />
-          <van-cell title="修改前/后字数" :value="`${essay.word_count || 0} / ${essay.corrected_word_count || 0}`" />
-          <van-cell title="上传时间" :value="formatDateTime(essay.created_at)" />
-          <van-cell title="修改时间" :value="essay.corrected_at ? formatDateTime(essay.corrected_at) : '未修改'" />
-        </van-cell-group>
+        <van-tabs v-model:active="mobileTab" sticky class="mobile-tabs">
+          <!-- 作文内容 -->
+          <van-tab title="📄 作文内容">
+            <div style="padding:12px 0">
+              <div class="mobile-status">
+                <span class="tag" :class="'tag-' + essay.status">{{ statusLabel(essay.status) }}</span>
+                <span style="font-size:12px;color:#999">{{ statusHint }}</span>
+              </div>
 
-        <div style="margin:16px">
-          <van-button v-if="(essay.content_file || essay.content_text) && !isGuest" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
-          <van-button v-if="!isGuest" round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
-          <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection" style="margin-bottom:8px">📥 下载修改结果</van-button>
-          <van-button v-if="canEdit" round block @click="showReupload = !showReupload" style="margin-bottom:8px">📤 重新上传</van-button>
-          <van-button round block @click="saveEdit" :loading="savingEdit" :disabled="!canEdit">💾 保存修改</van-button>
-        </div>
+              <!-- 修改前 -->
+              <van-cell-group inset style="margin-top:12px">
+                <van-cell title="✏️ 修改前">
+                  <template #right-icon>
+                    <van-button v-if="essay.file_type === 'image' && canEdit" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:6px">🔍 OCR</van-button>
+                    <van-button v-if="essay.content_text && canEdit" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 修正</van-button>
+                  </template>
+                </van-cell>
+                <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
+                  <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
+                </div>
+                <div v-if="essay.content_text" class="content-text">
+                  <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                </div>
+                <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
+                <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
+                <div v-if="essay.content_text" class="mobile-word-count">共 {{ countWords(essay.content_text) }} 字</div>
+              </van-cell-group>
 
-        <div v-if="showReupload" style="margin:16px;padding:16px;background:#fff;border-radius:8px">
-          <van-field name="uploader" label="上传文件（可多选）">
-            <template #input>
-              <van-uploader v-model="reuploadFileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple />
-            </template>
-          </van-field>
-          <van-field v-model="reuploadText" label="或粘贴文字" type="textarea" rows="3" placeholder="粘贴文字..." />
-          <van-button round block type="primary" @click="doReupload" :loading="reuploading" style="margin-top:8px">确认上传</van-button>
-        </div>
+              <!-- 修改后 -->
+              <van-cell-group inset style="margin-top:12px">
+                <van-cell title="✅ 修改后">
+                  <template #right-icon>
+                    <van-button v-if="essay.content_text && canReview" size="mini" :loading="aiRewriteLoading" @click="doAiRewrite">🤖 一键修改</van-button>
+                  </template>
+                </van-cell>
+                <div v-if="essay.corrected_text" class="content-text corrected-content">
+                  <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+                </div>
+                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+                <div v-if="essay.corrected_text" class="mobile-word-count">共 {{ countWords(essay.corrected_text) }} 字</div>
+              </van-cell-group>
+
+              <!-- 操作 -->
+              <div style="margin:16px">
+                <van-button v-if="(essay.content_file || essay.content_text) && !isGuest" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
+                <van-button v-if="!isGuest" round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
+                <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection">📥 下载修改结果</van-button>
+              </div>
+            </div>
+          </van-tab>
+
+          <!-- 基本信息 -->
+          <van-tab title="📝 基本信息">
+            <van-cell-group inset style="margin-top:12px">
+              <van-field v-model="editForm.student_name" label="学生姓名" :disabled="!canEdit" />
+              <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
+              <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
+              <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
+              <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
+              <van-field :model-value="essay.course_name || '-'" label="课程" readonly />
+              <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
+              <van-field v-if="editForm.reviewer_note" v-model="editForm.reviewer_note" label="批改者备注" type="textarea" rows="2" disabled />
+              <van-field label="是否补交">
+                <template #input>
+                  <van-radio-group v-model="editForm.is_supplement" :disabled="!canEdit" direction="horizontal">
+                    <van-radio :name="false">否</van-radio>
+                    <van-radio :name="true">是</van-radio>
+                  </van-radio-group>
+                </template>
+              </van-field>
+              <van-cell title="收集者" :value="essay.collector_name" />
+              <van-cell title="修改前/后字数" :value="`${essay.word_count || 0} / ${essay.corrected_word_count || 0}`" />
+              <van-cell title="上传时间" :value="formatDateTime(essay.created_at)" />
+              <van-cell title="修改时间" :value="essay.corrected_at ? formatDateTime(essay.corrected_at) : '未修改'" />
+            </van-cell-group>
+
+            <div style="margin:16px">
+              <van-button round block @click="saveEdit" :loading="savingEdit" :disabled="!canEdit">💾 保存修改</van-button>
+              <van-button v-if="canEdit" round block plain style="margin-top:8px" @click="showReupload = !showReupload">📤 重新上传</van-button>
+            </div>
+
+            <div v-if="showReupload" style="margin:16px;padding:16px;background:#fff;border-radius:8px">
+              <van-field name="uploader" label="上传文件（可多选）">
+                <template #input>
+                  <van-uploader v-model="reuploadFileList" :max-count="10" accept=".docx,.doc,.txt,.jpg,.jpeg,.png" multiple />
+                </template>
+              </van-field>
+              <van-field v-model="reuploadText" label="或粘贴文字" type="textarea" rows="3" placeholder="粘贴文字..." />
+              <van-button round block type="primary" @click="doReupload" :loading="reuploading" style="margin-top:8px">确认上传</van-button>
+            </div>
+          </van-tab>
+
+          <!-- 批改 -->
+          <van-tab v-if="canReview && essay.status !== 'corrected'" title="✅ 批改">
+            <van-cell-group inset style="margin-top:12px">
+              <van-field v-model="correctionFile" is-link readonly label="上传修改结果" placeholder="选择修改后的 docx 文件" @click="selectFile" />
+              <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
+              <van-field v-model="correctionNote" label="批改者备注" type="textarea" rows="2" placeholder="批改者自定义备注（可选）..." />
+              <div style="margin:16px">
+                <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
+                <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
+                <van-button v-if="essay.status === 'confirming'" round block plain type="warning" style="margin-top:8px" @click="reworkEssay">🔄 重改</van-button>
+              </div>
+            </van-cell-group>
+          </van-tab>
+        </van-tabs>
 
         <van-action-sheet v-model:show="showMobileGrade" title="选择年级">
           <div class="picker-list">
@@ -363,44 +423,6 @@
             <van-cell v-if="!filteredDetailTasks.length && detailTaskSearch" title="无匹配任务" />
           </div>
         </van-action-sheet>
-
-        <!-- 修改前 -->
-        <van-cell-group inset style="margin-top:12px">
-          <van-cell title="✏️ 修改前">
-            <template v-if="canEdit">
-              <van-button v-if="essay.file_type === 'image'" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:8px">🔍 OCR识别</van-button>
-              <van-button v-if="essay.content_text" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 AI错别字修正</van-button>
-            </template>
-          </van-cell>
-          <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
-            <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
-          </div>
-          <div v-if="essay.content_text" class="content-text">
-            <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-          </div>
-          <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
-        </van-cell-group>
-
-        <!-- 修改后 -->
-        <van-cell-group inset style="margin-top:12px">
-          <van-cell title="✅ 修改后" />
-          <div v-if="essay.corrected_text" class="content-text corrected-content">
-            <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-          </div>
-          <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-        </van-cell-group>
-
-        <!-- 手机端修改上传 -->
-        <van-cell-group inset style="margin-top:12px" v-if="canReview && essay.status !== 'corrected'">
-          <van-field v-model="correctionFile" is-link readonly label="上传修改结果" placeholder="选择修改后的 docx 文件" @click="selectFile" />
-          <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
-          <van-field v-model="correctionNote" label="批改者备注" type="textarea" rows="2" placeholder="批改者自定义备注（可选）..." />
-          <div style="margin:16px">
-            <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
-            <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
-            <van-button v-if="essay.status === 'confirming'" round block plain type="warning" style="margin-top:8px" @click="reworkEssay">🔄 重改</van-button>
-          </div>
-        </van-cell-group>
 
         <input type="file" ref="fileInput" accept=".docx,.doc" style="display:none" @change="onFileSelected" />
       </template>
@@ -489,6 +511,7 @@ const previewImages = ref([])
 const savingEdit = ref(false)
 const showMobileGrade = ref(false)
 const showMobileTask = ref(false)
+const mobileTab = ref(0)
 const loading = ref(true)
 const reuploadFileList = ref([])
 const reuploadText = ref('')
@@ -969,6 +992,7 @@ async function confirmEssay() {
   try {
     await api.post(`/essays/${route.params.id}/confirm`)
     showToast('已确认修改')
+    mobileTab.value = 0
     await loadEssay()
   } catch (err) { showToast(err.response?.data?.detail || '确认失败') }
 }
@@ -977,6 +1001,7 @@ async function reworkEssay() {
   try {
     await api.post(`/essays/${route.params.id}/rework`)
     showToast('已标记为待重改')
+    mobileTab.value = 0
     await loadEssay()
   } catch (err) { showToast(err.response?.data?.detail || '标记重改失败') }
 }
@@ -1355,6 +1380,23 @@ async function doReupload() {
 }
 
 .picker-list { max-height: 300px; overflow-y: auto; }
+
+.mobile-tabs { --van-tabs-bottom-bar-color: #1677ff; --van-tab-active-text-color: #1677ff; }
+.mobile-tabs :deep(.van-tabs__nav) { position: sticky; top: 0; z-index: 10; }
+.mobile-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-size: 12px;
+}
+.mobile-word-count {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #999;
+  text-align: right;
+  border-top: 1px dashed #f0f0f0;
+}
 
 .edit-wrapper { position: relative; }
 .edit-actions { display: flex; gap: 8px; margin-top: 8px; }

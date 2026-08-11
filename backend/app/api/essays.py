@@ -76,7 +76,8 @@ def get_active_tasks(
     now = datetime.now()
     tasks = db.query(EssayTask).filter(
         EssayTask.is_active == True,
-        (EssayTask.deadline == None) | (EssayTask.deadline >= now)
+        (EssayTask.deadline == None) | (EssayTask.deadline >= now),
+        (EssayTask.start_time == None) | (EssayTask.start_time <= now)
     ).all()
     return [TaskOut.model_validate(t) for t in tasks]
 
@@ -738,7 +739,9 @@ def list_essays(
         q = q.filter(Essay.collected_by == collected_by)
     if essay_title:
         q = q.filter(Essay.essay_title.like(f"%{essay_title}%"))
-    if task_id is not None:
+    if task_id == 0:
+        q = q.filter((Essay.task_id.is_(None)) | (Essay.task_id == 0))
+    elif task_id is not None:
         q = q.filter(Essay.task_id == task_id)
     if reviewer_id is not None:
         q = q.filter(Essay.reviewer_id == reviewer_id)

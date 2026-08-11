@@ -11,17 +11,14 @@
         </div>
         <div v-if="tpl.essay_topic" class="task-topic-highlight">作文主题：{{ tpl.essay_topic }}</div>
         <div class="task-info">
-          <div class="task-main">
-            <div class="task-meta">
-              <span class="meta-item">{{ tpl.grade }}</span>
-              <span class="meta-divider">·</span>
-              <span class="meta-item">第{{ tpl.essay_number }}次</span>
-              <span class="meta-divider">·</span>
-              <span class="meta-item">{{ tpl.teaching_mode || '线下' }}</span>
-              <span v-if="tpl.course_name" class="meta-divider">·</span>
-              <span v-if="tpl.course_name" class="meta-item">{{ tpl.course_name }}</span>
+            <div class="task-main">
+              <div class="task-meta">
+                <span class="badge-mini tag-grade">{{ tpl.grade }}</span>
+                <span class="badge-mini tag-number">第{{ tpl.essay_number }}次</span>
+                <span class="badge-mini" :class="tpl.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ tpl.teaching_mode || '线下' }}</span>
+                <span v-if="tpl.course_name" class="badge-mini tag-course">{{ tpl.course_name }}</span>
+              </div>
             </div>
-          </div>
           <div class="task-stats">
             <div class="stat-item">
               <div class="stat-value">{{ tpl._stats?.total || 0 }}</div>

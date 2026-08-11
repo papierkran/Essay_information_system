@@ -31,6 +31,7 @@ class EssayTask(Base):
     essay_topic = Column(String(200), default="")  # 文章主题
     course_id = Column(Integer, ForeignKey("course.id"), nullable=True)  # 关联课程
     teaching_mode = Column(String(10), default="线下")  # 线下/线上
+    start_time = Column(DateTime, nullable=True)  # 收集开始时间
     deadline = Column(DateTime, nullable=True)  # 收集截止时间
     is_active = Column(Boolean, default=False)  # 是否为当前活跃任务
     deleted_at = Column(DateTime, nullable=True)

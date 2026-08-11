@@ -11,6 +11,7 @@ class TaskCreate(BaseModel):
     essay_topic: str = ""
     course_id: Optional[int] = None
     teaching_mode: str = "线下"
+    start_time: Optional[datetime] = None
     deadline: Optional[datetime] = None
     is_active: bool = False
 
@@ -24,6 +25,7 @@ class TaskOut(BaseModel):
     course_id: Optional[int] = None
     course_name: str
     teaching_mode: str
+    start_time: Optional[datetime] = None
     deadline: Optional[datetime] = None
     is_active: bool
     submitted_count: int = 0

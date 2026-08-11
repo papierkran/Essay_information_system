@@ -2,7 +2,7 @@
   <div class="app-shell">
     <!-- 顶栏 -->
     <header v-if="!isLogin" class="app-header">
-      <button class="menu-toggle" @click="sidebarOpen = !sidebarOpen">☰</button>
+      <button class="menu-toggle" :title="isDesktop && sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="toggleSidebar">☰</button>
       <h1 class="app-title">📖 作文收集管理系统</h1>
       <div class="header-right">
         <span class="user-badge" v-if="user.username">
@@ -15,7 +15,7 @@
 
     <!-- 遮罩 + 侧边栏 -->
     <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen=false"></div>
-    <aside v-if="!isLogin" class="sidebar" :class="{ open: sidebarOpen }">
+    <aside v-if="!isLogin" class="sidebar" :class="{ open: sidebarOpen, collapsed: isDesktop && sidebarCollapsed }">
       <nav>
         <router-link v-if="user.username" to="/dashboard" class="sidebar-link" @click="sidebarOpen=false">🏠 首页</router-link>
         <router-link v-if="user.username" to="/stats" class="sidebar-link" @click="sidebarOpen=false">📊 数据统计</router-link>
@@ -34,7 +34,7 @@
     </aside>
 
     <!-- 主内容 -->
-    <main :class="isLogin ? 'login-wrapper' : 'main-content'">
+    <main :class="isLogin ? 'login-wrapper' : 'main-content' + (isDesktop && sidebarCollapsed ? ' sidebar-hidden' : '')">
       <router-view />
     </main>
 
@@ -48,11 +48,23 @@ import { useRoute, useRouter } from 'vue-router'
 import TaskStatusBar from './components/TaskStatusBar.vue'
 import { showToast } from 'vant'
 import { useAuth } from './api'
+import { useScreen } from './composables/useScreen'
 
 const route = useRoute()
 const router = useRouter()
 const { getAuth, clearAuth } = useAuth()
+const { isDesktop } = useScreen()
 const sidebarOpen = ref(false)
+const sidebarCollapsed = ref(localStorage.getItem('appSidebarCollapsed') === '1')
+
+function toggleSidebar() {
+  if (isDesktop.value) {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    localStorage.setItem('appSidebarCollapsed', sidebarCollapsed.value ? '1' : '0')
+  } else {
+    sidebarOpen.value = !sidebarOpen.value
+  }
+}
 
 const isLogin = computed(() => route.path === '/login')
 
@@ -117,8 +129,9 @@ body {
   font-size: 20px;
   cursor: pointer;
   padding: 4px;
-  display: none;
+  display: block;
 }
+.menu-toggle:hover { color: #4096ff; }
 
 .app-title { font-size: 16px; font-weight: 600; flex: 1; }
 
@@ -177,13 +190,20 @@ body {
   z-index: 149;
 }
 
+@media (min-width: 768px) {
+  .sidebar.collapsed { transform: translateX(-100%); }
+}
+
 /* ===== 主内容 ===== */
 .main-content {
   margin-top: 48px;
   margin-left: 200px;
   min-height: calc(100vh - 48px);
   padding: 24px 32px;
+  transition: margin-left 0.25s;
 }
+
+.main-content.sidebar-hidden { margin-left: 0; }
 
 .login-wrapper {
   min-height: 100vh;
@@ -278,6 +298,23 @@ body {
 .tag-pending { background: #fff7e6; color: #d46b08; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
+
+/* 迷你徽标：年级/第几次/线上线下 可读性区分 */
+.badge-mini {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 18px;
+  margin-right: 4px;
+}
+.tag-grade { background: #f9f0ff; color: #722ed1; }
+.tag-number { background: #fff7e6; color: #d46b08; }
+.tag-mode-online { background: #f6ffed; color: #389e0d; }
+.tag-mode-offline { background: #e6f4ff; color: #1677ff; }
+.tag-course { background: #f0f5ff; color: #2f54eb; }
 
 .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-group { margin-bottom: 16px; }

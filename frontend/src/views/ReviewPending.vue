@@ -88,8 +88,8 @@
           <td>{{ e.student_name }}</td>
           <td>{{ e.essay_title || '无标题' }}</td>
           <td>{{ e.task_name || '-' }}</td>
-          <td>{{ e.teaching_mode || '-' }}</td>
-          <td>{{ e.essay_number || '-' }}</td>
+          <td><span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span></td>
+          <td><span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span></td>
           <td>{{ e.word_count || 0 }}</td>
           <td>{{ e.corrected_word_count || 0 }}</td>
           <td>{{ e.collector_name }}</td>
@@ -178,11 +178,12 @@
           </div>
           <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
         </div>
-        <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}<span v-if="e.essay_number"> · 第{{ e.essay_number }}次</span></div>
+        <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}</div>
         <div class="mobile-card-meta" @click="goDetail(e)">
-          <span>{{ e.grade || '未知' }}</span><span class="m-sep">·</span>
-          <span>{{ e.task_name || '无任务' }}</span><span class="m-sep">·</span>
-          <span>{{ e.collector_name }}</span>
+          <span class="badge-mini tag-grade">{{ e.grade || '未知' }}</span>
+          <span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span>
+          <span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span>
+          <span>{{ e.task_name || '无任务' }}</span>
         </div>
         <div class="mobile-card-foot">
           <span>{{ formatDateTime(e.created_at) }}</span>

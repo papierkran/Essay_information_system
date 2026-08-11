@@ -186,24 +186,32 @@
         <div class="task-split">
           <div class="task-col">
             <div class="task-col-title">线上</div>
-            <van-cell v-for="t in filteredOnlineTasks" :key="t.id"
-              :title="t.name"
-              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
-              @click="selectTask(t)">
-              <template #right-icon>
-                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+            <van-cell v-for="t in filteredOnlineTasks" :key="t.id" @click="selectTask(t)">
+              <template #title>
+                <span style="font-weight:500">{{ t.name }}</span>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+              </template>
+              <template #label>
+                <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
             <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
           </div>
           <div class="task-col">
             <div class="task-col-title">线下</div>
-            <van-cell v-for="t in filteredOfflineTasks" :key="t.id"
-              :title="t.name"
-              :label="`${t.grade} 第${t.essay_number}次 ${t.essay_topic || ''}`"
-              @click="selectTask(t)">
-              <template #right-icon>
-                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-right:8px">收集中</van-tag>
+            <van-cell v-for="t in filteredOfflineTasks" :key="t.id" @click="selectTask(t)">
+              <template #title>
+                <span style="font-weight:500">{{ t.name }}</span>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+              </template>
+              <template #label>
+                <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
             <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
@@ -344,7 +352,10 @@ const filteredOfflineTasks = computed(() => {
 })
 
 function taskIsActive(t) {
-  return t.is_active && (!t.deadline || new Date(t.deadline) >= new Date())
+  const now = new Date()
+  return t.is_active
+    && (!t.deadline || new Date(t.deadline) >= now)
+    && (!t.start_time || new Date(t.start_time) <= now)
 }
 
 onMounted(async () => {

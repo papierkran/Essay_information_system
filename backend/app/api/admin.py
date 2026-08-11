@@ -564,6 +564,7 @@ def create_task(
         essay_topic=data.essay_topic,
         course_id=data.course_id,
         teaching_mode=data.teaching_mode,
+        start_time=data.start_time,
         deadline=data.deadline,
         is_active=data.is_active,
     )
@@ -632,6 +633,7 @@ def clone_task(
         essay_topic=src.essay_topic,
         course_id=src.course_id,
         teaching_mode=src.teaching_mode,
+        start_time=src.start_time,
         deadline=src.deadline,
         is_active=False,
     )
@@ -664,6 +666,7 @@ def update_task(
     task.essay_topic = data.essay_topic
     task.course_id = data.course_id
     task.teaching_mode = data.teaching_mode
+    task.start_time = data.start_time
     task.deadline = data.deadline
     task.is_active = data.is_active
     db.commit()

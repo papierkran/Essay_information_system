@@ -39,7 +39,8 @@
         <span class="filter-label">任务</span>
         <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
         <div v-if="showTaskDropdown" class="task-dropdown">
-          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
+          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === '' || filters.taskId === null || filters.taskId === undefined }" class="task-item">全部</div>
+          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = '无任务'; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === 0 }" class="task-item" style="color:#999">无任务</div>
           <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
           <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
         </div>
@@ -132,6 +133,9 @@
                 <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
                 <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
                 <td v-else-if="col.key === 'is_supplement'"><span :style="{ color: e.is_supplement ? '#fa8c16' : '#d9d9d9', fontSize: '16px' }">{{ e.is_supplement ? '🔄' : '' }}</span></td>
+                <td v-else-if="col.key === 'grade'"><span class="badge-mini tag-grade">{{ e.grade || '-' }}</span></td>
+                <td v-else-if="col.key === 'essay_number'"><span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span></td>
+                <td v-else-if="col.key === 'teaching_mode'"><span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span></td>
                 <td v-else-if="col.key === 'word_count'">{{ e.word_count || 0 }}</td>
                 <td v-else-if="col.key === 'corrected_word_count'">{{ e.corrected_word_count || 0 }}</td>
                 <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
@@ -170,11 +174,12 @@
             </div>
             <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
           </div>
-          <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}<span v-if="e.essay_number"> · 第{{ e.essay_number }}次</span></div>
+          <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}</div>
           <div class="mobile-card-meta" @click="goDetail(e)">
-            <span>{{ e.grade || '-' }}</span><span class="m-sep">·</span>
-            <span>{{ e.task_name || '无任务' }}</span><span class="m-sep">·</span>
-            <span>{{ e.collector_name }}</span>
+            <span class="badge-mini tag-grade">{{ e.grade || '-' }}</span>
+            <span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span>
+            <span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span>
+            <span>{{ e.task_name || '无任务' }}</span>
           </div>
           <div class="mobile-card-foot">
             <span>{{ formatDateTime(e.created_at) }}</span>
@@ -315,6 +320,8 @@ const filteredTasks = computed(() => {
 })
 
 const filteredTaskOptions = computed(() => {
+  // 已通过下拉选中任务或无任务时，重新打开展示全部任务供切换
+  if (filters.value.taskId === 0 || filters.value.taskId) return taskList.value
   if (!filterTaskSearch.value) return taskList.value
   const kw = filterTaskSearch.value
   // 智能分段匹配：将搜索词拆为 中文段 + 数字段，按顺序匹配（允许中间有任意字符）
@@ -503,7 +510,8 @@ function buildParams() {
   if (filters.value.mode) p.teaching_mode = filters.value.mode
   if (filters.value.collectedBy) p.collected_by = Number(filters.value.collectedBy)
   if (filters.value.remark) p.remark = filters.value.remark
-  if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
+  if (filters.value.taskId === 0 || filters.value.taskId) p.task_id = Number(filters.value.taskId)
+  else if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
   if (filters.value.reviewerId) p.reviewer_id = Number(filters.value.reviewerId)
   if (filters.value.isSupplement) p.is_supplement = filters.value.isSupplement === 'true'
   if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
@@ -897,7 +905,9 @@ onMounted(async () => {
       filters.value.collectedBy = defaultCollectedBy.value
     }
     // 同步任务搜索框文字
-    if (filters.value.taskId && taskList.value.length) {
+    if (filters.value.taskId === 0) {
+      filterTaskSearch.value = '无任务'
+    } else if (filters.value.taskId && taskList.value.length) {
       const t = taskList.value.find(x => x.id == filters.value.taskId)
       if (t) filterTaskSearch.value = t.name
     }

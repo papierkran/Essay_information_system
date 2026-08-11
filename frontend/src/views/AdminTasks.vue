@@ -27,6 +27,7 @@
       </select>
       <select v-model="filters.status" class="filter-input" @change="applyFilter">
         <option value="">全部状态</option>
+        <option value="not_started">未开始</option>
         <option value="active">收集中</option>
         <option value="expired">已过期</option>
         <option value="ended">已结束</option>
@@ -65,9 +66,11 @@
               <template v-if="col.key === 'name'">
                 <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
               </template>
-              <template v-else-if="col.key === 'number'">{{ t.essay_number ? `第${t.essay_number}次` : '无' }}</template>
+              <template v-else-if="col.key === 'grade'"><span class="badge-mini tag-grade">{{ t.grade || '-' }}</span></template>
+              <template v-else-if="col.key === 'number'"><span class="badge-mini tag-number">{{ t.essay_number ? `第${t.essay_number}次` : '无' }}</span></template>
               <template v-else-if="col.key === 'topic'">{{ t.essay_topic || '-' }}</template>
               <template v-else-if="col.key === 'course'">{{ t.course_name || '-' }}</template>
+              <template v-else-if="col.key === 'start_time'">{{ t.start_time ? formatDate(t.start_time) : '-' }}</template>
               <template v-else-if="col.key === 'deadline'">{{ t.deadline ? formatDeadline(t.deadline) : '无限制' }}</template>
               <template v-else-if="col.key === 'status'">
                 <span :class="['tag', getTaskStatus(t).active ? 'tag-pending' : 'tag-corrected']">{{ getTaskStatus(t).label }}</span>
@@ -79,7 +82,7 @@
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
               </template>
-              <template v-else-if="col.key === 'teaching_mode'">{{ t.teaching_mode || '线下' }}</template>
+              <template v-else-if="col.key === 'teaching_mode'"><span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span></template>
               <template v-else-if="col.key === 'submitted'"><span style="font-weight:600;color:#1677ff">{{ t.submitted_count || 0 }}</span></template>
               <template v-else-if="col.key === 'pending_count'"><span style="font-weight:600;color:#d46b08">{{ t.pending_count || 0 }}</span></template>
               <template v-else-if="col.key === 'corrected_count'"><span style="font-weight:600;color:#52c41a">{{ t.corrected_count || 0 }}</span></template>
@@ -132,7 +135,8 @@
                 </van-radio-group>
               </template>
             </van-field>
-            <van-field v-model="taskForm.deadlineStr" label="截止时间" type="datetime-local" placeholder="可选" />
+            <van-field v-model="taskForm.startTimeStr" label="开始时间" type="date" placeholder="可选" />
+            <van-field v-model="taskForm.deadlineStr" label="截止时间" type="date" placeholder="可选" />
             <van-field name="is_active" label="立即开始收集">
               <template #input>
                 <van-switch v-model="taskForm.is_active" size="24" />
@@ -183,7 +187,7 @@ const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 const tasks = ref([])
 const courses = ref([])
 const filters = ref({ name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' })
-const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束' }
+const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束', not_started: '未开始' }
 
 const columnDefs = [
   { key: 'name', label: '任务名称', sortable: true },
@@ -195,6 +199,7 @@ const columnDefs = [
   { key: 'submitted', label: '已交学生数', sortable: true },
   { key: 'pending_count', label: '未改', sortable: true },
   { key: 'corrected_count', label: '已改', sortable: true },
+  { key: 'start_time', label: '开始时间', sortable: true },
   { key: 'deadline', label: '截止时间', sortable: true },
   { key: 'status', label: '状态', sortable: false },
 ]
@@ -293,6 +298,7 @@ const sortedTasks = computed(() => {
 
 function getSortValue(t, key) {
   if (key === 'number') return t.essay_number || 0
+  if (key === 'start_time') return t.start_time || ''
   if (key === 'deadline') return t.deadline || ''
   if (key === 'status') return getTaskStatus(t).label
   if (key === 'course') return t.course_name || ''
@@ -313,7 +319,7 @@ const showCoursePicker = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
 const taskForm = ref({
   name: '', grade: '', essay_number: 1, essay_topic: '', course_id: '', course_name: '',
-  teaching_mode: '线下', deadlineStr: '', is_active: false
+  teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: false
 })
 
 onMounted(() => { initColumns(); loadData() })
@@ -329,12 +335,17 @@ async function loadData() {
   } catch {}
 }
 
-function formatDeadline(deadline) {
-  if (!deadline) return '无限制'
-  const d = new Date(deadline)
+function formatDate(dateStr) {
+  if (!dateStr) return '-'
+  const d = new Date(dateStr)
   const year = d.getFullYear()
   const nowYear = new Date().getFullYear()
-  return `${year !== nowYear ? year + '-' : ''}${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
+  return `${year !== nowYear ? year + '-' : ''}${d.getMonth()+1}/${d.getDate()}`
+}
+
+function formatDeadline(deadline) {
+  if (!deadline) return '无限制'
+  return formatDate(deadline)
 }
 
 function isExpired(tpl) {
@@ -342,7 +353,13 @@ function isExpired(tpl) {
   return new Date(tpl.deadline) < new Date()
 }
 
+function notStarted(tpl) {
+  if (!tpl.start_time) return false
+  return new Date(tpl.start_time) > new Date()
+}
+
 function getTaskStatus(tpl) {
+  if (notStarted(tpl)) return { active: false, label: '未开始' }
   if (isExpired(tpl)) return { active: false, label: '已过期' }
   if (tpl.is_active) return { active: true, label: '收集中' }
   return { active: false, label: '已结束' }
@@ -351,17 +368,18 @@ function getTaskStatus(tpl) {
 function openTaskDialog(tpl) {
   if (tpl) {
     editingTask.value = tpl
-    const deadlineStr = tpl.deadline ? new Date(tpl.deadline).toISOString().slice(0, 16) : ''
+    const startTimeStr = tpl.start_time ? new Date(tpl.start_time).toISOString().slice(0, 10) : ''
+    const deadlineStr = tpl.deadline ? new Date(tpl.deadline).toISOString().slice(0, 10) : ''
     taskForm.value = {
       name: tpl.name, grade: tpl.grade, essay_number: tpl.essay_number,
       essay_topic: tpl.essay_topic || '', course_id: tpl.course_id || '', course_name: tpl.course_name || '',
-      teaching_mode: tpl.teaching_mode || '线下', deadlineStr, is_active: tpl.is_active
+      teaching_mode: tpl.teaching_mode || '线下', startTimeStr, deadlineStr, is_active: tpl.is_active
     }
   } else {
     editingTask.value = {}
     taskForm.value = {
       name: '', grade: '', essay_number: '', essay_topic: '', course_id: '', course_name: '',
-      teaching_mode: '线下', deadlineStr: '', is_active: false
+      teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: false
     }
   }
   showTaskDialog.value = true
@@ -387,6 +405,7 @@ async function saveTask() {
       essay_topic: taskForm.value.essay_topic,
       course_id: taskForm.value.course_id ? parseInt(taskForm.value.course_id) : null,
       teaching_mode: taskForm.value.teaching_mode,
+      start_time: taskForm.value.startTimeStr ? new Date(taskForm.value.startTimeStr).toISOString() : null,
       deadline: taskForm.value.deadlineStr ? new Date(taskForm.value.deadlineStr).toISOString() : null,
       is_active: taskForm.value.is_active,
     }
