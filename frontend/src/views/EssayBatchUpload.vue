@@ -54,9 +54,9 @@
     <!-- 共用表单 -->
     <van-form @submit="onSubmit">
       <van-cell-group inset>
-        <van-field :model-value="selectedGrade" is-link readonly label="年级" placeholder="请选择"
-          @click="showGradePicker = true" :rules="[{ required: true }]" />
-        <van-field v-model="activeForm.essay_number" label="第几次" placeholder="数字" type="digit" :rules="[{ required: true }]" />
+        <van-field :model-value="selectedGrade" is-link readonly label="年级" placeholder="请选择（可不选）"
+          @click="showGradePicker = true" />
+        <van-field v-model="activeForm.essay_number" label="第几次" placeholder="数字（可不填）" type="digit" />
         <van-field name="teaching_mode" label="提交方式">
           <template #input>
             <van-radio-group v-model="activeForm.teaching_mode" direction="horizontal">
@@ -728,7 +728,8 @@ function buildEssayFormData(name) {
     fd.append('collected_by', String(selectedCollector.value))
   }
   fd.append('grade', form.value.grade)
-  fd.append('essay_number', form.value.essay_number || 1)
+  const essayNumber = parseInt(form.value.essay_number)
+  fd.append('essay_number', isNaN(essayNumber) || essayNumber <= 0 ? '0' : String(essayNumber))
   fd.append('student_name', name)
   fd.append('is_supplement', form.value.is_supplement ? 'true' : 'false')
   fd.append('teaching_mode', form.value.teaching_mode)
@@ -822,7 +823,8 @@ async function uploadCorrections(items, skipCount = 0) {
         fd.append('course_id', String(selectedCourseId.value))
       }
       fd.append('grade', corForm.value.grade)
-      fd.append('essay_number', corForm.value.essay_number || 1)
+      const essayNumber = parseInt(corForm.value.essay_number)
+      fd.append('essay_number', isNaN(essayNumber) || essayNumber <= 0 ? '0' : String(essayNumber))
       fd.append('teaching_mode', corForm.value.teaching_mode)
       fd.append('student_name', item.studentName)
       fd.append('essay_title', item.title || '')
@@ -886,7 +888,24 @@ function copyResult() {
 }
 
 async function onSubmit() {
-  if (!activeForm.value.grade) { showToast('请选择年级'); return }
+  if (!activeForm.value.grade) {
+    const ok = await showConfirmDialog({
+      title: '提示',
+      message: '未选择年级，将按「未定年级」归档。确定继续上传吗？',
+      confirmButtonText: '继续上传',
+      cancelButtonText: '取消',
+    }).then(() => true).catch(() => false)
+    if (!ok) return
+  }
+  if (!activeForm.value.essay_number) {
+    const ok = await showConfirmDialog({
+      title: '提示',
+      message: '未填写第几次，将按「无第几次」归档。确定继续上传吗？',
+      confirmButtonText: '继续上传',
+      cancelButtonText: '取消',
+    }).then(() => true).catch(() => false)
+    if (!ok) return
+  }
   if (mode.value === 'essay') {
     await uploadEssays()
   } else {

@@ -968,6 +968,8 @@ def download_by_course(
     current_user: User = Depends(get_current_user),
 ):
     """按课程打包下载全部作文"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无下载权限")
     cls = db.query(Course).filter(Course.id == course_id).first()
     if not cls:
         raise HTTPException(status_code=404, detail="课程不存在")
@@ -1127,6 +1129,8 @@ async def upload_correction(
     current_user: User = Depends(get_current_user),
 ):
     """上传修改结果（支持文件上传 + 文字修改）"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -1356,6 +1360,8 @@ def ocr_essay(
     current_user: User = Depends(get_current_user),
 ):
     """对作文图片进行 OCR 识别，提取文字保存到 content_text"""
+    if "collector" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -1392,6 +1398,8 @@ def ai_correct_essay(
     current_user: User = Depends(get_current_user),
 ):
     """对作文内容进行 AI 错别字修正，保存到 corrected_text"""
+    if "collector" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -1449,6 +1457,8 @@ def ai_rewrite_essay(
     current_user: User = Depends(get_current_user),
 ):
     """对作文原文进行 AI 改写，结果保存到 corrected_text"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -1582,6 +1592,8 @@ def batch_export_docx(
     current_user: User = Depends(get_current_user),
 ):
     """批量导出选中作文的docx（修改前后），打包为zip下载"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无导出权限")
     from pydantic import BaseModel
 
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
@@ -1627,6 +1639,8 @@ def batch_export_docx_merged(
 ):
     """一键合并修改前后 docx：把选中作文的修改前后内容合并为一个 docx。
     文件名使用任务名称，存在多个任务时按多数任务名称命名。"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无导出权限")
     from collections import Counter
     from docx import Document
 
@@ -2297,10 +2311,11 @@ def update_essay(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
-    # 收集者可修改大部分字段，批改者可修改 reviewer_note
+    # 收集者可修改大部分字段，批改者可修改 reviewer_note，修改后内容仅批改者/管理员可改
     can_edit = "admin" in current_user.role or essay.collected_by == current_user.id
     can_edit_review_note = can_edit or essay.reviewer_id == current_user.id
-    if not can_edit and not can_edit_review_note:
+    can_edit_corrected = "reviewer" in current_user.role or "admin" in current_user.role
+    if not can_edit and not can_edit_review_note and not can_edit_corrected:
         raise HTTPException(status_code=403, detail="无权限编辑此作文")
 
     # 记录修改前的路径关键字段
@@ -2309,27 +2324,27 @@ def update_essay(
     old_student = essay.student_name
     old_mode = essay.teaching_mode
 
-    if grade:
+    if grade and can_edit:
         essay.grade = grade
-    if essay_number is not None:
+    if essay_number is not None and can_edit:
         essay.essay_number = essay_number
-    if essay_title:
+    if essay_title and can_edit:
         essay.essay_title = essay_title
-    if student_name:
+    if student_name and can_edit:
         essay.student_name = student_name
-    if teaching_mode:
+    if teaching_mode and can_edit:
         essay.teaching_mode = teaching_mode
-    if remark is not None:
+    if remark is not None and can_edit:
         essay.remark = remark
     if collected_by is not None and "admin" in current_user.role:
         essay.collected_by = collected_by
-    if is_supplement is not None:
+    if is_supplement is not None and can_edit:
         essay.is_supplement = is_supplement
-    if task_id is not None:
+    if task_id is not None and can_edit:
         essay.task_id = task_id if task_id > 0 else None
-    if content_text is not None:
+    if content_text is not None and can_edit:
         essay.content_text = content_text
-    if corrected_text is not None and can_edit:
+    if corrected_text is not None and can_edit_corrected:
         essay.corrected_text = corrected_text
     if collector_note is not None and can_edit:
         essay.collector_note = collector_note

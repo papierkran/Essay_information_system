@@ -248,12 +248,12 @@
               <div class="pane-header-left">
                 <span class="pane-title">✅ 修改后</span>
                 <button class="btn-mini" @click="toggleReuploadCorrected" v-if="canEdit">📤 重新上传</button>
-                <button class="btn-mini" @click="doAiRewrite" :disabled="aiRewriteLoading" v-if="essay.content_text && canEdit">
+                <button class="btn-mini" @click="doAiRewrite" :disabled="aiRewriteLoading" v-if="essay.content_text && canReview">
                   {{ aiRewriteLoading ? '⏳ AI改写中...' : '🤖 一键修改' }}
                 </button>
               </div>
               <div style="display:flex;gap:4px">
-                <button class="btn-mini" @click="toggleEditCorrected" v-if="essay.corrected_text && canEdit">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
+                <button class="btn-mini" @click="toggleEditCorrected" v-if="essay.corrected_text && canReview">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
                 <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
               </div>
             </div>
@@ -804,7 +804,7 @@ async function doAiRewrite() {
 }
 
 async function saveCorrectedEdit() {
-  if (!canEdit.value) {
+  if (!canReview.value) {
     showToast('无权修改')
     return
   }
