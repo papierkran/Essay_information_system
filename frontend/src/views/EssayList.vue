@@ -22,7 +22,6 @@
           <option value="corrected">已修改</option>
         </select>
       </div>
-      <div v-show="showMoreFilters" class="filter-more">
       <div class="filter-row"><span class="filter-label">提交方式</span>
         <select v-model="filters.mode" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
@@ -63,10 +62,8 @@
       <div class="filter-row"><span class="filter-label">修改前字数</span><input v-model.number="filters.wordMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.wordMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
       <div class="filter-row"><span class="filter-label">修改后字数</span><input v-model.number="filters.correctedMin" type="number" min="0" placeholder="最少" class="filter-input" style="width:70px" /><span style="color:#d9d9d9;font-size:12px">~</span><input v-model.number="filters.correctedMax" type="number" min="0" placeholder="最多" class="filter-input" style="width:70px" /></div>
       <div class="filter-row"><span class="filter-label">收集者备注</span><input v-model="filters.remark" placeholder="搜索收集者备注" class="filter-input" @keyup.enter="applyFilter" /></div>
-      </div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-      <button class="btn" style="font-size:13px;padding:6px 14px" @click="showMoreFilters = !showMoreFilters">{{ showMoreFilters ? '收起筛选' : '更多筛选' }}</button>
       <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV" :title="`仅导出当前页 ${list.length} 条，如需全部请配合筛选分批导出`">导出CSV(当前页)</button>
     </div>
 
@@ -354,12 +351,6 @@ const defaultCollectedBy = computed(() => {
 })
 const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' })
 
-const showMoreFilters = ref(false)
-const hasAdvancedFilter = computed(() => {
-  const f = filters.value
-  return !!(f.mode || f.collectedBy || filterTaskSearch.value || f.reviewerId || f.isSupplement || f.dateFrom || f.dateTo || f.correctedFrom || f.correctedTo || f.wordMin || f.wordMax || f.correctedMin || f.correctedMax || f.remark)
-})
-
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
 function saveFilters() {
@@ -380,7 +371,7 @@ function loadFilters() {
 }
 
 // ===== 列配置 =====
-const COLUMN_KEY = 'essay_list_columns_v2'
+const COLUMN_KEY = 'essay_list_columns_v3'
 const allColumns = ref([
   { key: 'student_name', label: '学生姓名', field: 'student_name', sortable: true, sort: 'student_name', visible: true, fixed: true },
   { key: 'grade', label: '年级', field: 'grade', sortable: false, visible: true },
@@ -390,16 +381,16 @@ const allColumns = ref([
   { key: 'status', label: '是否修改', field: 'status', sortable: true, sort: 'status', visible: true },
   { key: 'collector_name', label: '收集者', field: 'collector_name', sortable: true, sort: 'collector_name', visible: true },
   { key: 'reviewer_name', label: '批改者', field: 'reviewer_name', sortable: true, sort: 'reviewer_name', visible: false },
-  { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: false },
+  { key: 'task_name', label: '任务名称', field: 'task_name', sortable: false, visible: true },
   { key: 'course_name', label: '课程名称', field: 'course_name', sortable: false, visible: false },
-  { key: 'collector_note', label: '收集者备注', field: 'collector_note', sortable: false, visible: true },
-  { key: 'reviewer_note', label: '批改者备注', field: 'reviewer_note', sortable: false, visible: true },
-  { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: false },
+  { key: 'collector_note', label: '收集者备注', field: 'collector_note', sortable: false, visible: false },
+  { key: 'reviewer_note', label: '批改者备注', field: 'reviewer_note', sortable: false, visible: false },
+  { key: 'is_supplement', label: '是否补交', field: 'is_supplement', sortable: true, sort: 'is_supplement', visible: true },
   { key: 'word_count', label: '修改前字数', field: 'word_count', sortable: true, sort: 'word_count', visible: false },
   { key: 'corrected_word_count', label: '修改后字数', field: 'corrected_word_count', sortable: true, sort: 'corrected_word_count', visible: false },
   { key: 'created_at', label: '收集时间', field: 'created_at', sortable: true, sort: 'created_at', visible: true },
   { key: 'corrected_at', label: '修改时间', field: 'corrected_at', sortable: true, sort: 'corrected_at', visible: true },
-  { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: true },
+  { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: false },
 ])
 const showColumnSettings = ref(false)
 const dragColIndex = ref(-1)
@@ -436,13 +427,13 @@ function onColDrop() {
 }
 function saveColumnOrder() {
   const keys = allColumns.value.map(c => c.key)
-  localStorage.setItem('essay_list_column_order', JSON.stringify(keys))
+  localStorage.setItem('essay_list_column_order_v3', JSON.stringify(keys))
 }
 
 function loadColumnSettings() {
   try {
     // 恢复列顺序
-    const orderSaved = localStorage.getItem('essay_list_column_order')
+    const orderSaved = localStorage.getItem('essay_list_column_order_v3')
     if (orderSaved) {
       const orderKeys = JSON.parse(orderSaved)
       if (Array.isArray(orderKeys) && orderKeys.length) {
@@ -471,7 +462,7 @@ function saveColumns() {
   showColumnSettings.value = false
 }
 function resetColumns() {
-  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: false, collector_note: true, reviewer_note: true, is_supplement: false, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: true }
+  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: true, course_name: false, collector_note: false, reviewer_note: false, is_supplement: true, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: false }
   allColumns.value.forEach(c => { c.visible = defaults[c.key] !== undefined ? defaults[c.key] : false })
 }
 function moveColumn() {
@@ -911,7 +902,6 @@ onMounted(async () => {
       if (t) filterTaskSearch.value = t.name
     }
   }
-  showMoreFilters.value = hasAdvancedFilter.value
   await applyFilter()
 })
 onUnmounted(() => {
@@ -936,7 +926,6 @@ onUnmounted(() => {
 }
 
 .filter-row { display: flex; align-items: center; gap: 4px; }
-.filter-more { display: contents; }
 .filter-label { font-size: 13px; color: #666; white-space: nowrap; }
 .filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
 .filter-input:focus { border-color: #4096ff; }
