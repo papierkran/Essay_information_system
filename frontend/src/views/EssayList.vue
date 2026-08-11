@@ -145,11 +145,15 @@
               <td class="sticky-col" style="white-space:nowrap" @click.stop>
                 <template v-if="!isGuest && isOwner(e)">
                   <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
+                  <button v-if="e.status === 'corrected'" class="btn" style="font-size:12px;padding:4px 8px;color:#1677ff" @click.stop="exportSingleDocx(e)">导出docx</button>
                   <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click.stop="confirmDelete(e)">删除</button>
                 </template>
-                <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
-                  <span class="text-readonly">仅查看</span>
-                </router-link>
+                <template v-else>
+                  <router-link :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
+                    <span class="text-readonly">仅查看</span>
+                  </router-link>
+                  <button v-if="e.status === 'corrected' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#1677ff;margin-left:4px" @click.stop="exportSingleDocx(e)">导出docx</button>
+                </template>
               </td>
             </tr>
           </tbody>
@@ -181,6 +185,7 @@
               <span v-if="e.file_saved === false" class="tag tag-pending">文件丢失</span>
               <router-link v-if="!isGuest && isOwner(e)" :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
               <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#1677ff" @click.stop>仅查看</router-link>
+              <button v-if="e.status === 'corrected' && !isGuest" class="btn" style="font-size:12px;padding:3px 10px;color:#1677ff" @click.stop="exportSingleDocx(e)">导出docx</button>
             </div>
           </div>
         </div>
@@ -646,6 +651,40 @@ async function inlineEdit(e, field, val) {
     Object.assign(e, res.data)
     showToast('已更新')
   } catch(err) { showToast(err.response?.data?.detail || '更新失败') }
+}
+
+async function exportSingleDocx(e) {
+  try {
+    showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
+    const res = await api.get(`/essays/${e.id}/export-docx`, { responseType: 'blob' })
+    const disposition = res.headers['content-disposition']
+    let filename = '作文导出.docx'
+    if (disposition) {
+      const p = disposition.split(';')
+      for (const part of p) {
+        const trim = part.trim()
+        if (trim.startsWith('filename*=')) {
+          const val = trim.split("''").pop()
+          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+          break
+        } else if (trim.startsWith('filename=')) {
+          const val = trim.split('=')[1]
+          if (val) filename = val.replace(/"/g, '')
+        }
+      }
+    }
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    window.URL.revokeObjectURL(url)
+    closeToast()
+    showSuccessToast('导出成功')
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '导出失败')
+  }
 }
 
 async function batchDelete() {
