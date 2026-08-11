@@ -578,7 +578,7 @@ def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_admin(current_user)
+    """任务列表（所有登录角色可见，仅管理员可操作）"""
     tasks = db.query(EssayTask).filter(EssayTask.deleted_at == None).order_by(EssayTask.created_at.desc()).all()
     # 统计每个任务下已提交的作文数量
     counts = dict(

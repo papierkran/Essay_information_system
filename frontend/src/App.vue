@@ -25,7 +25,7 @@
         <span v-else-if="isGuest" class="sidebar-link disabled" title="游客无上传权限" @click="showGuestToast">📁 批量上传</span>
         <router-link v-if="canViewList" to="/essay/list" class="sidebar-link" @click="sidebarOpen=false">📋 作文列表</router-link>
         <router-link v-if="canReview || isGuest" to="/review/pending" class="sidebar-link" @click="sidebarOpen=false">📝 未改列表</router-link>
-        <router-link v-if="isAdmin" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
+        <router-link v-if="canViewTasks" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
         <router-link v-if="isAdmin" to="/admin/course" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
         <router-link v-if="user.username" to="/review/operations" class="sidebar-link" @click="sidebarOpen=false">🕐 操作历史</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
@@ -70,6 +70,7 @@ const isGuest = computed(() => userRole.value.includes('guest'))
 const canCollect = computed(() => userRole.value.includes('collector') || isAdmin.value)
 const canReview = computed(() => userRole.value.includes('reviewer') || isAdmin.value)
 const canViewList = computed(() => canCollect.value || canReview.value || isGuest.value)
+const canViewTasks = computed(() => Boolean(userRole.value))
 const roleLabel = computed(() => {
   const labels = { admin: '管理员', collector: '收集者', reviewer: '修改者', guest: '游客' }
   return (user.value.role || '').split(',').map(r => labels[r] || r).join(' + ')

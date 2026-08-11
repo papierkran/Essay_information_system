@@ -3,10 +3,10 @@
     <div v-if="isDesktop" class="page-title">任务列表</div>
 
     <div v-if="isDesktop" style="margin-bottom:16px;display:flex;gap:8px;align-items:center">
-      <button class="btn btn-success" @click="openTaskDialog()">+ 创建收集任务</button>
+      <button v-if="isAdmin" class="btn btn-success" @click="openTaskDialog()">+ 创建收集任务</button>
     </div>
     <div v-else style="margin:12px">
-      <van-button type="success" size="small" @click="openTaskDialog()">创建收集任务</van-button>
+      <van-button v-if="isAdmin" type="success" size="small" @click="openTaskDialog()">创建收集任务</van-button>
     </div>
 
     <!-- 筛选栏 -->
@@ -99,7 +99,7 @@
         <van-cell v-for="t in filteredTasks" :key="t.id"
           :title="t.name"
           :label="`${t.grade || '未定年级'} ${t.essay_number ? '第' + t.essay_number + '次' : '无第几次'} ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''} · 已交${t.submitted_count || 0} 未改${t.pending_count || 0} 已改${t.corrected_count || 0}`"
-          is-link @click="openTaskDialog(t)">
+          is-link @click="isAdmin ? openTaskDialog(t) : viewEssays(t)">
           <template #right-icon>
             <span style="font-size:12px;color:#1677ff;margin-right:8px">{{ t.submitted_count || 0 }}人已交</span>
             <van-tag :type="getTaskStatus(t).active ? 'primary' : 'default'" style="margin-right:8px">
@@ -172,10 +172,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api from '../api'
+import api, { useAuth } from '../api'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
+const { getAuth } = useAuth()
+const currentUser = computed(() => getAuth()?.user || {})
+const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 
 const tasks = ref([])
 const courses = ref([])
@@ -194,8 +197,15 @@ const columnDefs = [
   { key: 'corrected_count', label: '已改', sortable: true },
   { key: 'deadline', label: '截止时间', sortable: true },
   { key: 'status', label: '状态', sortable: false },
-  { key: 'actions', label: '操作', sortable: false },
 ]
+
+function visibleColumnDefs() {
+  const defs = [...columnDefs]
+  if (isAdmin.value) {
+    defs.push({ key: 'actions', label: '操作', sortable: false })
+  }
+  return defs
+}
 
 const columns = ref([])
 const sortKey = ref('')
@@ -203,23 +213,24 @@ const sortDir = ref('asc')
 let draggedIndex = null
 
 function initColumns() {
+  const defs = visibleColumnDefs()
+  const validKeys = new Set(defs.map(c => c.key))
   const saved = localStorage.getItem('taskColumns')
   if (saved) {
     try {
       const savedCols = JSON.parse(saved)
-      // 合并：保留已保存的顺序，同时补充新增的列
+      // 合并：保留已保存的顺序，同时补充新增的列；过滤不可见列
       const merged = []
-      for (const def of columnDefs) {
+      for (const def of defs) {
         const found = savedCols.find(c => c && c.key === def.key)
         merged.push(found ? { ...def, ...found } : { ...def })
       }
-      // 去除已不存在的列（不在columnDefs中的旧列）
-      const validKeys = new Set(columnDefs.map(c => c.key))
+      // 去除已不存在的列（不在columnDefs中的旧列）或当前角色不可见的列
       columns.value = merged.filter(c => validKeys.has(c.key))
       return
     } catch {}
   }
-  columns.value = columnDefs.map(c => ({ ...c }))
+  columns.value = defs.map(c => ({ ...c }))
 }
 
 function saveColumns() {
@@ -311,7 +322,7 @@ async function loadData() {
   try {
     const [taskRes, courseRes] = await Promise.all([
       api.get('/admin/tasks'),
-      api.get('/admin/courses')
+      api.get('/essays/courses')
     ])
     tasks.value = taskRes.data
     courses.value = courseRes.data || []
