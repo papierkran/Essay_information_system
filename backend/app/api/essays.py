@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -35,6 +36,25 @@ def _count_non_ws(text: str) -> int:
 def _char_count_sql(col):
     """与 _count_non_ws 对应的 SQL 表达式（用于筛选/排序）。"""
     return func.char_length(func.regexp_replace(col, r"\s", "", "g"))
+
+
+def _parse_uploaded_text(text: str):
+    """解析上传的 docx/txt 文本：
+    - 含「修改前/修改后」关键字 → 分别存入修改前/修改后
+    - 不含 → 全部作为修改前
+    返回 (content_text, corrected_text)
+    """
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    if "修改后" not in text:
+        return text.strip(), ""
+    m_after = re.search(r"修改后[：:]\s*([\s\S]*?)$", text)
+    after = m_after.group(1).strip() if m_after else ""
+    m_before = re.search(r"修改前[：:]\s*([\s\S]*?)(?=修改后[：:]|$)", text)
+    if m_before:
+        before = m_before.group(1).strip()
+    else:
+        before = text.split("修改后", 1)[0].strip()
+    return before, after
 
 
 @router.get("/tasks", response_model=list[TaskOut])
@@ -468,6 +488,7 @@ async def upload_essay(
     if files:
         img_index = 1
         uploaded_files = []
+        text_buffer = []
         for f in files:
             if not f.filename:
                 continue
@@ -484,21 +505,36 @@ async def upload_essay(
                 uploaded_files.append(img_name)
                 essay_image = EssayImage(essay_id=essay.id, filename=img_name, image_data=content)
                 db.add(essay_image)
-            elif ext in [".docx", ".doc"]:
-                # docx 不保存本地，解析全部内容作为修改前内容
-                if not essay.content_text and ext == ".docx":
-                    try:
-                        from docx import Document
-                        import io
-                        doc = Document(io.BytesIO(content))
-                        text_lines = []
-                        for para in doc.paragraphs:
-                            if para.text.strip():
-                                text_lines.append(para.text.strip())
-                        if text_lines:
-                            essay.content_text = "\n".join(text_lines)
-                    except Exception:
-                        pass
+            elif ext == ".docx":
+                # docx 不保存本地，解析文本（含 修改前/修改后 拆分）
+                try:
+                    from docx import Document
+                    import io
+                    doc = Document(io.BytesIO(content))
+                    text_lines = []
+                    for para in doc.paragraphs:
+                        if para.text.strip():
+                            text_lines.append(para.text.strip())
+                    if text_lines:
+                        text_buffer.append("\n".join(text_lines))
+                except Exception:
+                    pass
+            elif ext == ".txt":
+                # txt 直接读取文本（含 修改前/修改后 拆分）
+                try:
+                    text = content.decode("utf-8", errors="replace").strip()
+                    if text:
+                        text_buffer.append(text)
+                except Exception:
+                    pass
+
+        if text_buffer:
+            combined = "\n".join(text_buffer)
+            before_text, after_text = _parse_uploaded_text(combined)
+            if before_text:
+                essay.content_text = before_text
+            if after_text:
+                essay.corrected_text = after_text
 
         if uploaded_files:
             essay.content_file = os.path.relpath(

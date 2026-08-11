@@ -5,7 +5,7 @@
     <!-- 模板选择区域 -->
     <van-cell-group inset style="margin-bottom:12px">
       <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
-        placeholder="选择收集任务（自动填充年级等信息）" @click="showTaskPicker = true" />
+        placeholder="选择收集任务（将自动填充年级等信息）" @click="showTaskPicker = true" />
       <!-- 显示选中模板的文章主题 -->
       <van-cell v-if="selectedTaskTopic" title="文章主题" :label="selectedTaskTopic" />
     </van-cell-group>
@@ -13,14 +13,14 @@
     <van-form @submit="onSubmit">
       <van-cell-group inset>
         <van-field :model-value="selectedGrade" is-link readonly label="年级"
-          :placeholder="selectedGrade || '请选择年级（可暂不选择）'" @click="showGradePicker = true" />
+          :placeholder="selectedGrade || '请选择年级'" @click="showGradePicker = true" />
         <van-field v-model="form.grade" v-show="false" />
         <van-field v-model="form.essay_number" label="第几次作文" placeholder="数字（不填表示无）" type="digit" />
-        <van-field v-model="form.essay_title" label="作文标题" placeholder="输入标题" />
+        <van-field v-model="form.essay_title" label="作文标题" required placeholder="输入标题（必填）" />
         <div v-if="recentTitles.length" style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:6px">
           <van-tag v-for="t in recentTitles" :key="t" plain size="medium" @click="form.essay_title = t" style="cursor:pointer">{{ t }}</van-tag>
         </div>
-        <van-field v-model="form.student_name" label="学生姓名" placeholder="输入姓名" :rules="[{ required: true }]" />
+        <van-field v-model="form.student_name" label="学生姓名" required placeholder="输入姓名（必填）" />
         <van-field name="is_supplement" label="是否补交">
           <template #input><van-switch v-model="form.is_supplement" size="24" /></template>
         </van-field>
@@ -37,16 +37,22 @@
         <van-field v-model="form.collector_note" label="收集者备注" placeholder="收集者自定义备注（可选）" />
       </van-cell-group>
       <van-cell-group inset style="margin-top:12px">
-        <van-field name="uploader" label="上传文件（docx/图片，可多选）">
+        <van-field name="uploader" label="上传文件（docx/txt/图片，可多选）">
           <template #input>
-            <div>
-              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.jpg,.jpeg,.png" multiple :before-read="beforeRead" :after-read="afterRead" />
-              <div style="font-size:12px;color:#999;margin-top:4px">图片大小不超过 4MB</div>
+            <div class="drop-zone" @dragover.prevent @dragenter.prevent @drop.prevent="onUploadDrop">
+              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.txt,.jpg,.jpeg,.png" multiple :before-read="beforeRead" :after-read="afterRead" :preview-full-image="false" @click-preview="onPreviewClick" />
+              <div style="font-size:12px;color:#999;margin-top:8px">支持拖拽文件到此处 · docx/txt 自动读取内容 · 图片大小不超过 4MB</div>
             </div>
           </template>
         </van-field>
-        <van-image-preview v-model:show="showPreview" :images="previewImages" :closeable="true" />
+        <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" :closeable="true" />
         <van-field v-model="form.content_text" label="或粘贴文字" type="textarea" placeholder="粘贴文字..." rows="4" autosize />
+        <div v-if="contentParagraphs.length" class="upload-preview">
+          <div class="upload-preview-title">📄 预览</div>
+          <div class="content-text">
+            <p v-for="(para, i) in contentParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+          </div>
+        </div>
       </van-cell-group>
       <div style="margin:16px">
         <van-button round block type="primary" native-type="submit" :loading="loading">提交作文</van-button>
@@ -105,6 +111,18 @@
         <van-cell v-for="c in collectorList" :key="c.id" :title="c.nickname || c.username" @click="selectCollector(c)" />
       </div>
     </van-action-sheet>
+
+    <!-- 上传成功弹窗 -->
+    <van-dialog v-model:show="uploadSuccessDialog.show" title="✅ 上传成功" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="false" class="upload-success-dialog">
+      <div style="padding:16px">
+        <p style="white-space:pre-line;font-size:15px;line-height:1.8;margin-bottom:12px">{{ uploadSuccessDialog.body }}</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="btn" @click="goUploadList">去列表查看</button>
+          <button class="btn" @click="viewUploaded" :disabled="!uploadSuccessDialog.id">查看刚上传的作文</button>
+          <button class="btn btn-primary" @click="continueUpload">继续上传</button>
+        </div>
+      </div>
+    </van-dialog>
   </div>
 </template>
 
@@ -125,10 +143,12 @@ const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 const fileList = ref([])
 const loading = ref(false)
 const keepTask = ref(false)
+const uploadSuccessDialog = ref({ show: false, id: null, body: '' })
 const showGradePicker = ref(false)
 const showTaskPicker = ref(false)
 const showCollectorPicker = ref(false)
 const showPreview = ref(false)
+const previewIndex = ref(0)
 const previewImages = ref([])
 const selectedGrade = ref('')
 const selectedTaskName = ref('')
@@ -141,6 +161,10 @@ const collectorList = ref([])
 const recentTitles = ref([])
 const grades = ['初一','初二','初三','高一','高二','高三']
 const tasks = ref([])
+
+const contentParagraphs = computed(() => {
+  return (form.value.content_text || '').split('\n').filter(s => s.trim())
+})
 
 const sortedTasks = computed(() => {
   return [...tasks.value].sort((a, b) => {
@@ -226,10 +250,47 @@ function beforeRead(file) {
   return true
 }
 
-function afterRead(file) {
+const ACCEPT_EXTS = ['.docx', '.doc', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+
+function buildPreviewImages() {
   previewImages.value = fileList.value
     .filter(item => item.file?.type?.startsWith('image/'))
     .map(item => item.objectUrl || URL.createObjectURL(item.file))
+}
+
+function afterRead() {
+  buildPreviewImages()
+}
+
+function onUploadDrop(e) {
+  const files = Array.from(e.dataTransfer?.files || [])
+  if (!files.length) return
+  let added = 0
+  for (const file of files) {
+    if (fileList.value.length >= 10) break
+    const ext = '.' + file.name.split('.').pop().toLowerCase()
+    if (!ACCEPT_EXTS.includes(ext)) continue
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) && file.size > 4 * 1024 * 1024) {
+      showToast(`${file.name} 图片超过 4MB，已跳过`)
+      continue
+    }
+    fileList.value.push({ file, status: 'done', message: '' })
+    added++
+  }
+  if (added) {
+    buildPreviewImages()
+  } else {
+    showToast('没有可添加的文件（支持 docx/doc/txt/图片）')
+  }
+}
+
+function onPreviewClick(item, detail) {
+  if (!item?.file?.type?.startsWith('image/')) return
+  buildPreviewImages()
+  const imageItems = fileList.value.filter(x => x.file?.type?.startsWith('image/'))
+  const idx = imageItems.findIndex(x => x === item || (x.file && item?.file && x.file === item.file))
+  previewIndex.value = idx >= 0 ? idx : 0
+  showPreview.value = true
 }
 
 function selectTask(tpl) {
@@ -263,6 +324,7 @@ function selectTask(tpl) {
 
 async function onSubmit() {
   if (!form.value.student_name) { showToast('请填写学生姓名'); return }
+  if (!form.value.essay_title || !form.value.essay_title.trim()) { showToast('请填写作文标题'); return }
   loading.value = true
   try {
     const fd = new FormData()
@@ -287,20 +349,13 @@ async function onSubmit() {
     if (fileList.value.length > 0) {
       fileList.value.forEach(item => fd.append('files', item.file))
     }
-    await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const res = await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     const keep = keepTask.value
-    showDialog({
-      title: '✅ 上传成功',
-      message: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
-      confirmButtonText: '继续上传',
-      cancelButtonText: '去列表查看',
-      showCancelButton: true,
-      className: 'upload-success-dialog',
-    }).then((action) => {
-      if (action === 'cancel') {
-        router.push('/essay/list')
-      }
-    })
+    uploadSuccessDialog.value = {
+      show: true,
+      id: res.data?.id || null,
+      body: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
+    }
     const gradeBackup = form.value.grade
     form.value = { grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, teaching_mode: form.value.teaching_mode, collector_note: '', content_text: '' }
     fileList.value = []
@@ -342,17 +397,65 @@ async function onSubmit() {
     showDialog({
       title: '❌ 上传失败',
       message: msg,
-      confirmButtonText: '知道了',
+      confirmButtonText: '重试',
+      cancelButtonText: '知道了',
+      showCancelButton: true,
       className: 'upload-msg-dialog',
+    }).then((action) => {
+      if (action === 'confirm') onSubmit()
     })
   }
   finally { loading.value = false }
+}
+
+function continueUpload() {
+  uploadSuccessDialog.value.show = false
+}
+
+function goUploadList() {
+  uploadSuccessDialog.value.show = false
+  router.push('/essay/list')
+}
+
+function viewUploaded() {
+  if (!uploadSuccessDialog.value.id) return
+  uploadSuccessDialog.value.show = false
+  router.push(`/review/detail/${uploadSuccessDialog.value.id}`)
 }
 </script>
 
 <style scoped>
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
+
+.upload-preview {
+  margin: 8px 16px 16px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.drop-zone {
+  width: 100%;
+  padding: 10px;
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+.drop-zone:hover, .drop-zone:active { border-color: #1677ff; background: #f0f7ff; }
+.upload-preview-title {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #999;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+  border-radius: 8px 8px 0 0;
+}
+.content-text { padding: 12px 16px; }
+.content-text p { font-size: 14px; line-height: 1.8; margin: 0 0 8px 0; text-indent: 2em; }
+.content-text .para-center-bold { text-indent: 0; text-align: center; font-weight: bold; }
 
 :deep(.upload-msg-dialog) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;

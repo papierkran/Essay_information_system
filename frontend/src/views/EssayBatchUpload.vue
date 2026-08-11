@@ -28,7 +28,8 @@
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 作文.docx
           </div>
           <div class="tip-note">* 二级目录名称作为学生姓名</div>
-          <div class="tip-note">* 支持格式：jpg/jpeg/png/gif/webp/docx/doc</div>
+          <div class="tip-note">* 支持格式：jpg/jpeg/png/gif/webp/docx/doc/txt</div>
+          <div class="tip-note">* docx/txt 自动读取内容；含「修改前/修改后」则拆分，否则全部作修改前</div>
           <div class="tip-note">* 文件夹名可含「{年级}第{次数}次」自动填充（如：高二第三次作文）</div>
         </div>
       </div>
@@ -489,7 +490,7 @@ function onFolderChange(e) {
   if (files.length === 0) return
 
   const map = {}
-  const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.doc']
+  const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.doc', '.txt']
   const skipFolders = ['修改后']
   skipStats.value = { total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0 }
 
