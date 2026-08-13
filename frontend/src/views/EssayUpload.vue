@@ -54,6 +54,10 @@
           </div>
         </div>
       </van-cell-group>
+      <div v-if="loading" style="margin:0 16px 8px">
+        <van-progress :percentage="uploadProgress" stroke-width="8" />
+        <div style="font-size:12px;color:#999;margin-top:4px;text-align:center">正在上传 {{ uploadProgress }}%...</div>
+      </div>
       <div style="margin:16px">
         <van-button round block type="primary" native-type="submit" :loading="loading">提交作文</van-button>
         <van-checkbox v-model="keepTask" icon-size="16px" style="margin-top:10px;justify-content:center;font-size:13px;color:#666">连续上传时保持当前任务选择</van-checkbox>
@@ -151,6 +155,7 @@ const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 
 const fileList = ref([])
 const loading = ref(false)
+const uploadProgress = ref(0)
 const keepTask = ref(false)
 const uploadSuccessDialog = ref({ show: false, id: null, body: '' })
 const showGradePicker = ref(false)
@@ -357,6 +362,7 @@ async function onSubmit() {
     if (!ok) return
   }
   loading.value = true
+  uploadProgress.value = 0
   try {
     const fd = new FormData()
     if (selectedTaskId.value) {
@@ -380,15 +386,37 @@ async function onSubmit() {
     if (fileList.value.length > 0) {
       fileList.value.forEach(item => fd.append('files', item.file))
     }
-    const res = await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    const res = await api.post('/essays/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+      onUploadProgress: (e) => {
+        if (e.total) uploadProgress.value = Math.min(99, Math.round(e.loaded / e.total * 100))
+      },
+    })
+    uploadProgress.value = 100
     const keep = keepTask.value
+    const keepFields = {
+      grade: form.value.grade,
+      essay_number: form.value.essay_number,
+      teaching_mode: form.value.teaching_mode,
+      is_supplement: form.value.is_supplement,
+    }
     uploadSuccessDialog.value = {
       show: true,
       id: res.data?.id || null,
       body: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
     }
     const gradeBackup = form.value.grade
-    form.value = { grade: '', essay_number: '', essay_title: '', student_name: '', is_supplement: false, teaching_mode: form.value.teaching_mode, collector_note: '', content_text: '' }
+    form.value = {
+      grade: keep ? keepFields.grade : '',
+      essay_number: keep ? keepFields.essay_number : '',
+      essay_title: '',
+      student_name: '',
+      is_supplement: keep ? keepFields.is_supplement : false,
+      teaching_mode: keepFields.teaching_mode,
+      collector_note: '',
+      content_text: '',
+    }
     fileList.value = []
     previewImages.value = []
     if (keep) {
