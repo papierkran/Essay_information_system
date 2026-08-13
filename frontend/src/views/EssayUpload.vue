@@ -40,7 +40,7 @@
         <van-field name="uploader" label="上传文件（docx/txt/图片，可多选）">
           <template #input>
             <div class="drop-zone" @dragover.prevent @dragenter.prevent @drop.prevent="onUploadDrop">
-              <van-uploader v-model="fileList" :max-count="10" accept=".docx,.doc,.txt,.jpg,.jpeg,.png" multiple :before-read="beforeRead" :after-read="afterRead" :preview-full-image="false" @click-preview="onPreviewClick" />
+              <van-uploader v-model="fileList" :max-count="10" accept="image/*,.docx,.doc,.txt" multiple :before-read="beforeRead" :after-read="afterRead" :preview-full-image="false" @click-preview="onPreviewClick" />
               <div style="font-size:12px;color:#999;margin-top:8px">支持拖拽文件到此处 · docx/txt 自动读取内容 · 图片大小不超过 4MB</div>
             </div>
           </template>
@@ -252,11 +252,14 @@ function selectCollector(c) {
 }
 
 function beforeRead(file) {
-  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-  const ext = '.' + file.name.split('.').pop().toLowerCase()
-  if (imageExts.includes(ext) && file.size > 4 * 1024 * 1024) {
-    showToast('图片大小不能超过 4MB')
-    return false
+  const files = Array.isArray(file) ? file : [file]
+  for (const f of files) {
+    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+    const ext = '.' + f.name.split('.').pop().toLowerCase()
+    if (imageExts.includes(ext) && f.size > 4 * 1024 * 1024) {
+      showToast('图片大小不能超过 4MB')
+      return false
+    }
   }
   return true
 }
