@@ -140,6 +140,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast, showDialog, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
+import { compressImageFile } from '../utils/imageCompress'
 
 const route = useRoute()
 const router = useRouter()
@@ -251,17 +252,12 @@ function selectCollector(c) {
   showCollectorPicker.value = false
 }
 
-function beforeRead(file) {
-  const files = Array.isArray(file) ? file : [file]
-  for (const f of files) {
-    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-    const ext = '.' + f.name.split('.').pop().toLowerCase()
-    if (imageExts.includes(ext) && f.size > 4 * 1024 * 1024) {
-      showToast('图片大小不能超过 4MB')
-      return false
-    }
+async function beforeRead(file) {
+  if (Array.isArray(file)) {
+    const compressed = await Promise.all(file.map(f => compressImageFile(f)))
+    return compressed
   }
-  return true
+  return compressImageFile(file)
 }
 
 const ACCEPT_EXTS = ['.docx', '.doc', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
@@ -276,7 +272,7 @@ function afterRead() {
   buildPreviewImages()
 }
 
-function onUploadDrop(e) {
+async function onUploadDrop(e) {
   const files = Array.from(e.dataTransfer?.files || [])
   if (!files.length) return
   let added = 0
@@ -284,11 +280,8 @@ function onUploadDrop(e) {
     if (fileList.value.length >= 10) break
     const ext = '.' + file.name.split('.').pop().toLowerCase()
     if (!ACCEPT_EXTS.includes(ext)) continue
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) && file.size > 4 * 1024 * 1024) {
-      showToast(`${file.name} 图片超过 4MB，已跳过`)
-      continue
-    }
-    fileList.value.push({ file, status: 'done', message: '' })
+    const out = await compressImageFile(file)
+    fileList.value.push({ file: out, status: 'done', message: '' })
     added++
   }
   if (added) {
@@ -372,7 +365,7 @@ async function onSubmit() {
     if (fileList.value.length > 0) {
       fileList.value.forEach(item => fd.append('files', item.file))
     }
-    const res = await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const res = await api.post('/essays/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
     const keep = keepTask.value
     uploadSuccessDialog.value = {
       show: true,

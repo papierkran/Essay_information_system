@@ -237,6 +237,7 @@ import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import JSZip from 'jszip'
+import { compressImageFile } from '../utils/imageCompress'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -496,7 +497,7 @@ function getFolderPath(files) {
 }
 
 // ===== 作文模式 =====
-function onFolderChange(e) {
+async function onFolderChange(e) {
   const files = Array.from(e.target.files)
   if (files.length === 0) return
 
@@ -520,8 +521,9 @@ function onFolderChange(e) {
     const ext = '.' + file.name.split('.').pop().toLowerCase()
     if (!supportedExts.includes(ext)) { skipStats.value.unsupported++; continue }
 
+    const out = await compressImageFile(file)
     if (!map[studentName]) map[studentName] = []
-    map[studentName].push(file)
+    map[studentName].push(out)
   }
   skipStats.value.total = skipStats.value.modifiedFolder + skipStats.value.unsupported + skipStats.value.noStudent
 
@@ -781,7 +783,7 @@ async function uploadEssays() {
   await runConcurrent(toUpload, async (name) => {
     currentStudent.value = name
     try {
-      await api.post('/essays/upload', buildEssayFormData(name), { headers: { 'Content-Type': 'multipart/form-data' } })
+      await api.post('/essays/upload', buildEssayFormData(name), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
       essaysSuccess.value++
     } catch (err) {
       const status = err.response?.status
@@ -848,7 +850,7 @@ async function uploadCorrections(items, skipCount = 0) {
       if (selectedCollector.value) {
         fd.append('collected_by', String(selectedCollector.value))
       }
-      await api.post('/essays/upload-correction-docx', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      await api.post('/essays/upload-correction-docx', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
       corSuccess.value++
     } catch (err) {
       corFail.value++

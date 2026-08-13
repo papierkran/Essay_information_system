@@ -221,7 +221,7 @@ body {
   .sidebar-overlay { display: block; }
   .main-content {
     margin-left: 0;
-    padding: 16px;
+    padding: 8px;
   }
   .user-name { display: none; }
 }
