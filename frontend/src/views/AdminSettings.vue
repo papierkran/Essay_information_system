@@ -547,5 +547,5 @@ async function importDB(e) {
 }
 .nav-btn:hover { border-color: #1677ff; color: #1677ff; }
 .card { scroll-margin-top: 70px; }
-@media (max-width: 767px) { .page { padding: 16px; } }
+@media (max-width: 767px) { .page { padding: 0; } }
 </style>

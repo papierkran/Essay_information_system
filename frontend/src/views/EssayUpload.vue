@@ -458,6 +458,7 @@ function viewUploaded() {
 <style scoped>
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
+@media (max-width: 767px) { .page { padding: 0; } }
 
 .upload-preview {
   margin: 8px 16px 16px;

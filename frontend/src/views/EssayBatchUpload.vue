@@ -950,6 +950,7 @@ async function onSubmit() {
 <style scoped>
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
+@media (max-width: 767px) { .page { padding: 0; } }
 
 .mode-boxes {
   display: grid;

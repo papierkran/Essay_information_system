@@ -306,57 +306,8 @@
             <span style="font-size:12px;color:#999">{{ statusHint }}</span>
           </div>
 
-          <!-- 修改前 -->
-          <van-cell-group style="margin-top:12px">
-            <van-cell title="✏️ 修改前">
-              <template #right-icon>
-                <van-button v-if="essay.content_text && canEdit" size="mini" @click="toggleEditOriginal" style="margin-right:6px">{{ editingOriginal ? '✕ 取消' : '✏️ 编辑' }}</van-button>
-                <van-button v-if="essay.file_type === 'image' && canEdit" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:6px">🔍 OCR</van-button>
-                <van-button v-if="essay.content_text && canEdit" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 修正</van-button>
-              </template>
-            </van-cell>
-            <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
-              <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
-            </div>
-            <div v-if="essay.content_text" class="content-text"
-              ref="originalContentRef"
-              :key="'orig-' + (editingOriginal ? 1 : 0)"
-              :contenteditable="editingOriginal"
-              :class="{ 'content-editing': editingOriginal }">
-              <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-            </div>
-            <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
-            <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
-            <div v-if="editingOriginal" class="mobile-edit-actions">
-              <van-button size="small" type="primary" @click="saveOriginalEdit" :loading="savingOriginalEdit">💾 保存</van-button>
-              <van-button size="small" @click="cancelOriginalEdit">取消</van-button>
-            </div>
-            <div v-if="essay.content_text && !editingOriginal" class="mobile-word-count">共 {{ countWords(essay.content_text) }} 字</div>
-          </van-cell-group>
-
-          <!-- 修改后 -->
-          <van-cell-group style="margin-top:12px">
-            <van-cell title="✅ 修改后">
-              <template #right-icon>
-                <van-button v-if="essay.content_text && canReview" size="mini" :loading="aiRewriteLoading" @click="doAiRewrite">🤖 一键修改</van-button>
-              </template>
-            </van-cell>
-            <div v-if="essay.corrected_text" class="content-text corrected-content">
-              <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
-            </div>
-            <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
-            <div v-if="essay.corrected_text" class="mobile-word-count">共 {{ countWords(essay.corrected_text) }} 字</div>
-          </van-cell-group>
-
-          <!-- 下载 -->
-          <div style="margin:16px 0">
-            <van-button v-if="(essay.content_file || essay.content_text) && !isGuest" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
-            <van-button v-if="!isGuest" round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
-            <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection">📥 下载修改结果</van-button>
-          </div>
-
           <!-- 基本信息 -->
-          <van-cell-group>
+          <van-cell-group style="margin-top:12px">
             <van-cell title="📝 基本信息" />
             <van-field v-model="editForm.student_name" label="学生姓名" :disabled="!canEdit" />
             <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
@@ -394,6 +345,64 @@
             <van-field v-model="reuploadText" label="或粘贴文字" type="textarea" rows="3" placeholder="粘贴文字..." />
             <van-button round block type="primary" @click="doReupload" :loading="reuploading" style="margin-top:8px">确认上传</van-button>
           </div>
+
+          <!-- 下载 -->
+          <div style="margin:0 0 16px">
+            <van-button v-if="(essay.content_file || essay.content_text) && !isGuest" round block type="primary" @click="downloadOriginal" style="margin-bottom:8px">📥 下载原文</van-button>
+            <van-button v-if="!isGuest" round block @click="exportDocx" style="margin-bottom:8px">📥 导出修改前后docx</van-button>
+            <van-button v-if="essay.has_correction" round block type="success" @click="downloadCorrection">📥 下载修改结果</van-button>
+          </div>
+
+          <!-- 修改前 -->
+          <van-cell-group>
+            <van-cell title="✏️ 修改前">
+              <template #right-icon>
+                <van-button v-if="essay.content_text && canEdit" size="mini" @click="toggleEditOriginal" style="margin-right:6px">{{ editingOriginal ? '✕ 取消' : '✏️ 编辑' }}</van-button>
+                <van-button v-if="essay.file_type === 'image' && canEdit" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:6px">🔍 OCR</van-button>
+                <van-button v-if="essay.content_text && canEdit" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 修正</van-button>
+              </template>
+            </van-cell>
+            <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
+              <img v-for="(img, i) in images" :key="i" :src="img" :class="['essay-image', { 'essay-image-selected': expandedImage === img }]" @click.stop="toggleExpandImage(img)" @dblclick="previewImage(img)" />
+            </div>
+            <div v-if="essay.content_text" class="content-text"
+              ref="originalContentRef"
+              :key="'orig-' + (editingOriginal ? 1 : 0)"
+              :contenteditable="editingOriginal"
+              :class="{ 'content-editing': editingOriginal }">
+              <p v-for="(para, i) in originalParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+            </div>
+            <div v-else-if="essay.file_type !== 'image'" class="empty-state" style="padding:20px"><p>无文字内容</p></div>
+            <img v-if="expandedImage" :src="expandedImage" class="expanded-image" @click="expandedImage = ''" />
+            <div v-if="editingOriginal" class="mobile-edit-actions">
+              <van-button size="small" type="primary" @click="saveOriginalEdit" :loading="savingOriginalEdit">💾 保存</van-button>
+              <van-button size="small" @click="cancelOriginalEdit">取消</van-button>
+            </div>
+            <div v-if="essay.content_text && !editingOriginal" class="mobile-word-count">共 {{ countWords(essay.content_text) }} 字</div>
+          </van-cell-group>
+
+          <!-- 修改后 -->
+          <van-cell-group style="margin-top:12px">
+            <van-cell title="✅ 修改后">
+              <template #right-icon>
+                <van-button v-if="essay.corrected_text && canReview" size="mini" @click="toggleEditCorrected" style="margin-right:6px">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</van-button>
+                <van-button v-if="essay.content_text && canReview" size="mini" :loading="aiRewriteLoading" @click="doAiRewrite">🤖 一键修改</van-button>
+              </template>
+            </van-cell>
+            <div v-if="essay.corrected_text" class="content-text corrected-content"
+              ref="correctedContentRef"
+              :key="'corr-' + (editingCorrected ? 1 : 0)"
+              :contenteditable="editingCorrected"
+              :class="{ 'content-editing': editingCorrected }">
+              <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
+            </div>
+            <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+            <div v-if="editingCorrected" class="mobile-edit-actions">
+              <van-button size="small" type="primary" @click="saveCorrectedEdit" :loading="savingCorrectedEdit">💾 保存</van-button>
+              <van-button size="small" @click="cancelCorrectedEdit">取消</van-button>
+            </div>
+            <div v-if="essay.corrected_text && !editingCorrected" class="mobile-word-count">共 {{ countWords(essay.corrected_text) }} 字</div>
+          </van-cell-group>
 
           <!-- 批改 -->
           <van-cell-group v-if="canReview && essay.status !== 'corrected'" style="margin-top:12px">
