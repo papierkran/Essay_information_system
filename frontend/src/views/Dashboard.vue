@@ -1,10 +1,17 @@
 <template>
   <div class="dashboard-page">
-    <div v-if="isDesktop" class="page-title">工作台</div>
+    <div class="dashboard-toolbar">
+      <div v-if="isDesktop" class="page-title">工作台</div>
+      <div class="mode-filter">
+        <button class="filter-pill" :class="{ active: taskFilter === '' }" @click="taskFilter = ''">全部</button>
+        <button class="filter-pill" :class="{ active: taskFilter === '线上' }" @click="taskFilter = '线上'">线上</button>
+        <button class="filter-pill" :class="{ active: taskFilter === '线下' }" @click="taskFilter = '线下'">线下</button>
+      </div>
+    </div>
 
     <!-- 当前收集任务 -->
-    <div v-if="activeTasks.length > 0">
-      <div v-for="tpl in activeTasks" :key="tpl.id" class="card active-task-card" @click="goUploadWithTask(tpl)">
+    <div v-if="sortedActiveTasks.length > 0">
+      <div v-for="tpl in sortedActiveTasks" :key="tpl.id" class="card active-task-card" @click="goUploadWithTask(tpl)">
         <div class="card-header">
           <h3>📝 {{ tpl.name }}</h3>
           <span class="task-status">收集中</span>
@@ -40,6 +47,9 @@
         </div>
         <div class="task-click-hint">点击上传作文</div>
       </div>
+    </div>
+    <div v-else-if="taskFilter && activeTasks.length > 0" class="card" style="padding:24px;text-align:center;color:#999">
+      暂无「{{ taskFilter }}」方式的收集任务
     </div>
 
     <!-- 快捷按钮 -->
@@ -98,6 +108,20 @@ const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest')
 
 const recentList = ref([])
 const activeTasks = ref([])
+const taskFilter = ref('')
+
+const sortedActiveTasks = computed(() => {
+  let list = activeTasks.value
+  if (taskFilter.value) {
+    list = list.filter(t => (t.teaching_mode || '线下') === taskFilter.value)
+  }
+  return [...list].sort((a, b) => {
+    const aOnline = (a.teaching_mode || '线下') === '线上'
+    const bOnline = (b.teaching_mode || '线下') === '线上'
+    if (aOnline !== bOnline) return aOnline ? -1 : 1
+    return 0
+  })
+})
 
 function formatDeadline(deadline) {
   if (!deadline) return '无限制'
@@ -151,6 +175,35 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard-page { padding: 0; }
+
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dashboard-toolbar .page-title { margin-bottom: 0; }
+.mode-filter {
+  display: flex;
+  gap: 4px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.filter-pill {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-pill:hover { color: #1677ff; }
+.filter-pill.active { background: #1677ff; color: #fff; }
 
 .active-task-card {
   border-left: 4px solid #1677ff;
@@ -360,6 +413,8 @@ onMounted(async () => {
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 
 @media (max-width: 767px) {
+  .dashboard-toolbar { margin-bottom: 12px; }
+  .mode-filter { margin-left: auto; }
   .task-info {
     flex-direction: column;
   }

@@ -8,3 +8,4 @@ aiofiles==23.2.1
 openai>=1.0.0
 requests>=2.31.0
 socksio
+opencv-python-headless>=4.8.0

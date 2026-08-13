@@ -94,9 +94,13 @@ def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_confi
         if e.file_type != "image" or not e.content_file:
             raise RuntimeError("非图片类型或无文件")
         essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
-        text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg)
+        meta = {}
+        text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg, meta=meta)
         e.content_text = text
-        _log_operation(sdb, e.id, current_user_id, "OCR", "批量 OCR 识别完成")
+        op_text = "批量 OCR 识别完成"
+        if meta.get("image_corrected"):
+            op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
+        _log_operation(sdb, e.id, current_user_id, "OCR", op_text)
 
     _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "OCR识别")
 
@@ -216,9 +220,13 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
     def ocr_worker(sdb, e):
         if (not e.content_text or not e.content_text.strip()) and e.file_type == "image" and e.content_file:
             essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
-            text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}))
+            meta = {}
+            text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}), meta=meta)
             e.content_text = text
-            _log_operation(sdb, e.id, current_user_id, "OCR", "流水线 OCR 识别完成")
+            op_text = "流水线 OCR 识别完成"
+            if meta.get("image_corrected"):
+                op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
+            _log_operation(sdb, e.id, current_user_id, "OCR", op_text)
         elif not e.content_text or not e.content_text.strip():
             raise RuntimeError("无文字内容")
 

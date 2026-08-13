@@ -11,6 +11,8 @@ import httpx
 import requests
 from openai import OpenAI
 
+from .image_corrector import correct_document_image
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +43,18 @@ def ocr_image(image_path: str, config: dict, timeout: int = 30) -> list[str]:
     return ocr_image_bytes(img_data, config, timeout)
 
 
-def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30) -> list[str]:
+def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30, meta: dict = None) -> list[str]:
     url = config.get("url", "")
     if not url:
         raise RuntimeError("OCR URL 未配置")
+
+    if config.get("correct_image", True):
+        corrected, angle = correct_document_image(img_data)
+        if corrected is not img_data:
+            img_data = corrected
+            if meta is not None:
+                meta["image_corrected"] = meta.get("image_corrected", 0) + 1
+                meta["max_rotation"] = max(meta.get("max_rotation") or 0, abs(angle))
 
     data = {"image": base64.b64encode(img_data).decode("utf-8")}
     headers = _get_xfyun_header(config)
@@ -98,12 +108,13 @@ def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30) -> list[st
     return paragraphs
 
 
-def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None) -> str:
+def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None, meta: dict = None) -> str:
     """对一篇作文的图片做 OCR。
 
     - 传入 ``images``(list[(filename, bytes)) 时，直接对这些图片的字节做 OCR，不读取本地目录。
     - 否则从本地目录扫描图片文件做 OCR。
     二者都无可用图片时报错。
+    - 传入 ``meta``(dict) 时，记录图片矫正统计（image_corrected / max_rotation）。
     """
     if images is not None:
         collected = list(images)
@@ -127,7 +138,7 @@ def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None) -> s
     all_paragraphs = []
     for fname, content in collected:
         logger.info(f"OCR 识别: {fname}")
-        paragraphs = ocr_image_bytes(content, ocr_config)
+        paragraphs = ocr_image_bytes(content, ocr_config, meta=meta)
         all_paragraphs.extend(paragraphs)
 
     if not all_paragraphs:
@@ -166,14 +177,15 @@ def _list_dir_images(essay_dir: str) -> list:
     return items
 
 
-def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config: dict) -> str:
+def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config: dict, meta: dict = None) -> str:
     """对一篇作文图片做 OCR，优先本地目录，目录里没有图片时用数据库中的图片兜底。
 
     使用数据库兜底时记录一条日志，便于排查本地图片是否缺失。
+    - 传入 ``meta``(dict) 时，记录图片矫正统计。
     """
     local_images = _list_dir_images(essay_dir)
     if local_images:
-        return ocr_essay_images(essay_dir, ocr_config)
+        return ocr_essay_images(essay_dir, ocr_config, meta=meta)
 
     db_images = fetch_essay_images_from_db(db, essay_id)
     if db_images:
@@ -181,7 +193,7 @@ def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config
             "本地目录无图片，已使用数据库图片兜底 (essay_id=%s, images=%s, dir=%s)",
             essay_id, len(db_images), essay_dir,
         )
-        return ocr_essay_images("", ocr_config, images=db_images)
+        return ocr_essay_images("", ocr_config, images=db_images, meta=meta)
 
     raise RuntimeError("目录中没有可识别的图片")
 

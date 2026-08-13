@@ -5,6 +5,9 @@ from .models.models import Essay, OperationLog
 from .utils.file_utils import get_upload_dir
 from .api import auth, admin, essays
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="作文修改收集信息系统", version="0.1.0")
 

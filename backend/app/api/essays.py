@@ -1419,13 +1419,22 @@ def ocr_essay(
         raise HTTPException(status_code=400, detail="讯飞 OCR 配置不完整")
 
     essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+    meta = {}
     try:
-        text = ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg)
+        text = ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg, meta=meta)
         essay.content_text = text
-        _log_operation(db, essay.id, current_user.id, "OCR", "OCR 识别完成")
+        op_text = "OCR 识别完成"
+        if meta.get("image_corrected"):
+            op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
+        _log_operation(db, essay.id, current_user.id, "OCR", op_text)
         db.commit()
         db.refresh(essay)
-        return {"content_text": text, "word_count": len(text)}
+        return {
+            "content_text": text,
+            "word_count": len(text),
+            "image_corrected": meta.get("image_corrected", 0),
+            "max_rotation": meta.get("max_rotation"),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR 识别失败: {str(e)}")
 
@@ -1751,9 +1760,13 @@ def batch_ocr_essays(
             continue
         try:
             essay_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
-            text = ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg)
+            meta = {}
+            text = ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg, meta=meta)
             e.content_text = text
-            _log_operation(db, e.id, current_user.id, "OCR", "批量 OCR 识别完成")
+            op_text = "批量 OCR 识别完成"
+            if meta.get("image_corrected"):
+                op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
+            _log_operation(db, e.id, current_user.id, "OCR", op_text)
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
