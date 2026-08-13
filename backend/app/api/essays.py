@@ -296,7 +296,7 @@ def list_collectors(
 
 
 @router.get("/recent-titles")
-def list_recent_titles(
+def recent_titles(
     limit: int = 5,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -318,6 +318,27 @@ def list_recent_titles(
         if len(result) >= limit:
             break
     return result
+
+
+@router.get("/student-names")
+def student_names(
+    keyword: str = "",
+    limit: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """上传作文时学生姓名查找：返回已有学生姓名列表（limit=0 返回全部，供前端本地过滤）"""
+    q = db.query(Essay.student_name).filter(
+        Essay.deleted_at == None,
+        Essay.student_name != None,
+        Essay.student_name != "",
+    )
+    if keyword:
+        q = q.filter(Essay.student_name.like(f"%{keyword}%"))
+    names = sorted({r[0] for r in q.all() if r[0]})
+    if limit and limit > 0:
+        names = names[:limit]
+    return {"names": names}
 
 
 @router.get("/reviewers")

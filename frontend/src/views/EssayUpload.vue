@@ -20,7 +20,12 @@
         <div v-if="recentTitles.length" style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:6px">
           <van-tag v-for="t in recentTitles" :key="t" plain size="medium" @click="form.essay_title = t" style="cursor:pointer">{{ t }}</van-tag>
         </div>
-        <van-field v-model="form.student_name" label="学生姓名" required placeholder="输入姓名（必填）" />
+        <div class="student-name-cell">
+          <van-field :model-value="form.student_name" label="学生姓名" required placeholder="输入姓名（必填）" @update:model-value="onNameChange" @focus="onStudentInput" @blur="onStudentBlur" />
+          <div v-if="studentSuggestions.length" class="student-suggest">
+            <div v-for="n in studentSuggestions" :key="n" class="student-suggest-item" @mousedown.prevent @click="pickStudent(n)">{{ n }}</div>
+          </div>
+        </div>
         <van-field name="is_supplement" label="是否补交">
           <template #input><van-switch v-model="form.is_supplement" size="24" /></template>
         </van-field>
@@ -139,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showDialog, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -179,6 +184,38 @@ const tasks = ref([])
 const contentParagraphs = computed(() => {
   return (form.value.content_text || '').split('\n').filter(s => s.trim())
 })
+
+const studentSuggestions = ref([])
+const studentNames = ref([])
+let studentNamesLoaded = false
+async function loadStudentNames() {
+  if (studentNamesLoaded) return
+  try {
+    const res = await api.get('/essays/student-names', { params: { limit: 0 }, __toastError: false })
+    studentNames.value = res.data.names || []
+    studentNamesLoaded = true
+  } catch {}
+}
+function onNameChange(val) {
+  form.value.student_name = val
+  onStudentInput()
+}
+function onStudentInput() {
+  const kw = form.value.student_name.trim()
+  if (!kw) { studentSuggestions.value = []; return }
+  if (!studentNamesLoaded) loadStudentNames()
+  studentSuggestions.value = studentNames.value
+    .filter(n => n && n !== form.value.student_name && n.includes(kw))
+    .slice(0, 8)
+}
+watch(studentNames, () => onStudentInput())
+function onStudentBlur() {
+  setTimeout(() => { studentSuggestions.value = [] }, 150)
+}
+function pickStudent(name) {
+  form.value.student_name = name
+  studentSuggestions.value = []
+}
 
 const sortedTasks = computed(() => {
   return [...tasks.value].sort((a, b) => {
@@ -238,6 +275,7 @@ onMounted(async () => {
     const res = await api.get('/essays/recent-titles', { params: { limit: 5 } })
     recentTitles.value = res.data || []
   } catch {}
+  loadStudentNames()
 })
 
 function selectGrade(g) {
@@ -516,6 +554,25 @@ function viewUploaded() {
 .content-text { padding: 12px 16px; }
 .content-text p { font-size: 14px; line-height: 1.8; margin: 0 0 8px 0; text-indent: 2em; }
 .content-text .para-center-bold { text-indent: 0; text-align: center; font-weight: bold; }
+
+.student-suggest {
+  margin: 0 12px 8px;
+  border: 1px solid #e8f0ff;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 5;
+}
+.student-suggest-item {
+  padding: 10px 16px;
+  font-size: 14px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+}
+.student-suggest-item:last-child { border-bottom: none; }
+.student-suggest-item:hover { background: #f5f8ff; color: #1677ff; }
 
 :deep(.upload-msg-dialog) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
