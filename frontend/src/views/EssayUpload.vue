@@ -140,7 +140,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast, showDialog, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
-import { compressImageFile } from '../utils/imageCompress'
+import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
 
 const route = useRoute()
 const router = useRouter()
@@ -253,11 +253,18 @@ function selectCollector(c) {
 }
 
 async function beforeRead(file) {
-  if (Array.isArray(file)) {
-    const compressed = await Promise.all(file.map(f => compressImageFile(f)))
-    return compressed
+  const list = Array.isArray(file) ? file : [file]
+  const accepted = []
+  for (const f of list) {
+    if (isImageFile(f) && f.size > IMAGE_UPLOAD_MAX_BYTES) {
+      showToast(`${f.name} 超过 8MB，请压缩后重试`)
+      continue
+    }
+    accepted.push(f)
   }
-  return compressImageFile(file)
+  if (accepted.length === 0) return false
+  const compressed = await Promise.all(accepted.map(f => compressImageFile(f)))
+  return Array.isArray(file) ? compressed : compressed[0]
 }
 
 const ACCEPT_EXTS = ['.docx', '.doc', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
@@ -276,13 +283,21 @@ async function onUploadDrop(e) {
   const files = Array.from(e.dataTransfer?.files || [])
   if (!files.length) return
   let added = 0
+  let rejected = 0
   for (const file of files) {
     if (fileList.value.length >= 10) break
     const ext = '.' + file.name.split('.').pop().toLowerCase()
     if (!ACCEPT_EXTS.includes(ext)) continue
+    if (isImageFile(file) && file.size > IMAGE_UPLOAD_MAX_BYTES) {
+      rejected++
+      continue
+    }
     const out = await compressImageFile(file)
     fileList.value.push({ file: out, status: 'done', message: '' })
     added++
+  }
+  if (rejected) {
+    showToast(`${rejected} 张图片超过 8MB，未添加`)
   }
   if (added) {
     buildPreviewImages()

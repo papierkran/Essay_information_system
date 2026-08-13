@@ -1,7 +1,8 @@
 const IMAGE_MAX_DIM = 4000
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024
+export const IMAGE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024
 
-function isImageFile(file) {
+export function isImageFile(file) {
   return file.type && file.type.startsWith('image/')
 }
 

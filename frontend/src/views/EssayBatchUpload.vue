@@ -99,7 +99,7 @@
           <button class="preview-remove" title="移除该学生" @click="removeStudent(name)">✕</button>
         </div>
         <div v-if="skipStats.total > 0" class="skip-note">
-          已跳过 {{ skipStats.total }} 个文件（修改后目录 {{ skipStats.modifiedFolder }} / 不支持格式 {{ skipStats.unsupported }} / 非学生目录 {{ skipStats.noStudent }}）
+          已跳过 {{ skipStats.total }} 个文件（修改后目录 {{ skipStats.modifiedFolder }} / 不支持格式 {{ skipStats.unsupported }} / 非学生目录 {{ skipStats.noStudent }} / 图片超8MB {{ skipStats.oversize }}）
         </div>
       </div>
 
@@ -237,7 +237,7 @@ import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import JSZip from 'jszip'
-import { compressImageFile } from '../utils/imageCompress'
+import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -277,7 +277,7 @@ const checkedExisting = ref(false)
 // 作文模式状态
 const studentMap = ref({})
 const folderSelected = ref(false)
-const skipStats = ref({ total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0 })
+const skipStats = ref({ total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0, oversize: 0 })
 const loading = ref(false)
 const uploadedCount = ref(0)
 const currentStudent = ref('')
@@ -504,7 +504,7 @@ async function onFolderChange(e) {
   const map = {}
   const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.doc', '.txt']
   const skipFolders = ['修改后']
-  skipStats.value = { total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0 }
+  skipStats.value = { total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0, oversize: 0 }
 
   const folderName = getFolderPath(files)
 
@@ -521,11 +521,13 @@ async function onFolderChange(e) {
     const ext = '.' + file.name.split('.').pop().toLowerCase()
     if (!supportedExts.includes(ext)) { skipStats.value.unsupported++; continue }
 
+    if (isImageFile(file) && file.size > IMAGE_UPLOAD_MAX_BYTES) { skipStats.value.oversize++; continue }
+
     const out = await compressImageFile(file)
     if (!map[studentName]) map[studentName] = []
     map[studentName].push(out)
   }
-  skipStats.value.total = skipStats.value.modifiedFolder + skipStats.value.unsupported + skipStats.value.noStudent
+  skipStats.value.total = skipStats.value.modifiedFolder + skipStats.value.unsupported + skipStats.value.noStudent + skipStats.value.oversize
 
   if (Object.keys(map).length === 0) {
     showToast('未找到有效的学生文件')

@@ -471,7 +471,7 @@ import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth, getBaseUrl } from '../api'
 import { formatDateTime, countWords } from '../utils/format'
-import { compressImageFile } from '../utils/imageCompress'
+import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -639,19 +639,34 @@ function toggleReuploadCorrected() {
 function previewable(item) { return item.type?.startsWith('image/') }
 
 async function beforeReuploadRead(file) {
-  if (Array.isArray(file)) {
-    const compressed = await Promise.all(file.map(f => compressImageFile(f)))
-    return compressed
+  const list = Array.isArray(file) ? file : [file]
+  const accepted = []
+  for (const f of list) {
+    if (isImageFile(f) && f.size > IMAGE_UPLOAD_MAX_BYTES) {
+      showToast(`${f.name} 超过 8MB，请压缩后重试`)
+      continue
+    }
+    accepted.push(f)
   }
-  return compressImageFile(file)
+  if (accepted.length === 0) return false
+  const compressed = await Promise.all(accepted.map(f => compressImageFile(f)))
+  return Array.isArray(file) ? compressed : compressed[0]
 }
 
 async function onDesktopFiles(e) {
   const files = Array.from(e.target.files)
+  let rejected = 0
   for (const f of files) {
+    if (isImageFile(f) && f.size > IMAGE_UPLOAD_MAX_BYTES) {
+      rejected++
+      continue
+    }
     const out = await compressImageFile(f)
     const url = URL.createObjectURL(out)
     desktopFileList.value.push({ file: out, name: out.name, type: out.type, url })
+  }
+  if (rejected) {
+    showToast(`${rejected} 张图片超过 8MB，未添加`)
   }
   e.target.value = ''
 }
@@ -671,10 +686,18 @@ function previewDesktopImage(item) {
 
 async function onDropFiles(e) {
   const files = Array.from(e.dataTransfer.files)
+  let rejected = 0
   for (const f of files) {
+    if (isImageFile(f) && f.size > IMAGE_UPLOAD_MAX_BYTES) {
+      rejected++
+      continue
+    }
     const out = await compressImageFile(f)
     const url = URL.createObjectURL(out)
     desktopFileList.value.push({ file: out, name: out.name, type: out.type, url })
+  }
+  if (rejected) {
+    showToast(`${rejected} 张图片超过 8MB，未添加`)
   }
 }
 
