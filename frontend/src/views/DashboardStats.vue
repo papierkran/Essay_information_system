@@ -92,17 +92,33 @@ const STATUS_LABELS = { pending: '未修改', confirming: '待确认', rework: '
 
 const palette = ['#1677ff', '#52c41a', '#fa8c16', '#722ed1', '#eb2f96', '#13c2c2', '#f5222d', '#2f54eb', '#a0d911', '#faad14']
 
-const trendOption = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  legend: { data: ['上传', '修改'], top: 0 },
-  grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
-  xAxis: { type: 'category', data: (stats.value.trend || []).map(t => t.date), axisLabel: { fontSize: 10 } },
-  yAxis: { type: 'value', minInterval: 1 },
-  series: [
-    { name: '上传', type: 'line', smooth: true, data: (stats.value.trend || []).map(t => t.uploaded), areaStyle: { opacity: 0.15 }, itemStyle: { color: '#1677ff' } },
-    { name: '修改', type: 'line', smooth: true, data: (stats.value.trend || []).map(t => t.corrected), areaStyle: { opacity: 0.15 }, itemStyle: { color: '#52c41a' } },
-  ],
-}))
+const COLLECTOR_COLORS = ['#13c2c2', '#722ed1', '#eb2f96', '#f5222d', '#faad14', '#a0d911', '#2f54eb', '#d4380d']
+
+const trendOption = computed(() => {
+  const days = (stats.value.trend || []).map(t => t.date)
+  const collectors = stats.value.trend_collectors || []
+  const legendData = ['上传', '修改', ...collectors.map(c => c.name)]
+  const series = [
+    { name: '上传', type: 'line', smooth: true, data: (stats.value.trend || []).map(t => t.uploaded), areaStyle: { opacity: 0.15 }, itemStyle: { color: '#1677ff' }, lineStyle: { width: 3 } },
+    { name: '修改', type: 'line', smooth: true, data: (stats.value.trend || []).map(t => t.corrected), areaStyle: { opacity: 0.15 }, itemStyle: { color: '#52c41a' }, lineStyle: { width: 3 } },
+    ...collectors.map((c, i) => ({
+      name: c.name,
+      type: 'line',
+      smooth: true,
+      data: (stats.value.trend || []).map(t => (t.by_collector || {})[String(c.id)] || 0),
+      itemStyle: { color: COLLECTOR_COLORS[i % COLLECTOR_COLORS.length] },
+      lineStyle: { width: 1.5, type: 'dashed' },
+    })),
+  ]
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: legendData, top: 0, type: 'scroll', textStyle: { fontSize: 11 } },
+    grid: { left: 8, right: 8, top: 40, bottom: 8, containLabel: true },
+    xAxis: { type: 'category', data: days, axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', minInterval: 1 },
+    series,
+  }
+})
 
 const statusOption = computed(() => ({
   tooltip: { trigger: 'item' },

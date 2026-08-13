@@ -997,6 +997,34 @@ def essay_stats(
     )
     collector_rank = [{"name": n or u, "value": c} for n, u, c in collector_rows]
 
+    # 近14天有上传的收集者（用于趋势图按人分组展示）
+    window_start = datetime.combine(today - timedelta(days=13), datetime.min.time())
+    collector_rows = (
+        db.query(Essay.collected_by, User.nickname, User.username, func.count(Essay.id).label("cnt"))
+        .join(User, User.id == Essay.collected_by)
+        .filter(Essay.deleted_at == None, Essay.created_at >= window_start)
+        .group_by(Essay.collected_by, User.nickname, User.username)
+        .order_by(func.count(Essay.id).desc())
+        .limit(8)
+        .all()
+    )
+    trend_collectors = [{"id": cid, "name": nickname or username} for cid, nickname, username, _ in collector_rows]
+    trend_collector_ids = [cid for cid, _, _, _ in collector_rows]
+
+    day_collector_rows = (
+        db.query(func.date(Essay.created_at).label("day"), Essay.collected_by, func.count(Essay.id).label("cnt"))
+        .filter(
+            Essay.deleted_at == None,
+            Essay.created_at >= window_start,
+            Essay.collected_by.in_(trend_collector_ids or [0]),
+        )
+        .group_by("day", Essay.collected_by)
+        .all()
+    )
+    day_collector_map = {}
+    for day, cid, cnt in day_collector_rows:
+        day_collector_map.setdefault(str(day), {})[cid] = cnt
+
     trend = []
     for i in range(13, -1, -1):
         d = today - timedelta(days=i)
@@ -1004,7 +1032,13 @@ def essay_stats(
         d_end = datetime.combine(d, datetime.max.time())
         uploaded = base.filter(Essay.created_at >= d_start, Essay.created_at <= d_end).count()
         done = base.filter(Essay.corrected_at >= d_start, Essay.corrected_at <= d_end).count()
-        trend.append({"date": d.strftime("%m-%d"), "uploaded": uploaded, "corrected": done})
+        by_collector = {str(cid): day_collector_map.get(d.strftime("%Y-%m-%d"), {}).get(cid, 0) for cid in trend_collector_ids}
+        trend.append({
+            "date": d.strftime("%m-%d"),
+            "uploaded": uploaded,
+            "corrected": done,
+            "by_collector": by_collector,
+        })
 
     return {
         "total": total,
@@ -1017,6 +1051,7 @@ def essay_stats(
         "class_dist": class_dist,
         "collector_rank": collector_rank,
         "trend": trend,
+        "trend_collectors": trend_collectors,
     }
 
 

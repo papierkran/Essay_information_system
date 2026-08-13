@@ -253,6 +253,13 @@ const form = ref({
   student_name: '', is_supplement: false, teaching_mode: '线上', collector_note: '', content_text: '',
 })
 
+watch(contentParagraphs, (paras) => {
+  const first = (paras[0] || '').trim()
+  if (first && !form.value.essay_title) {
+    form.value.essay_title = first
+  }
+})
+
 onMounted(async () => {
   try {
     const res = await api.get('/essays/tasks')
