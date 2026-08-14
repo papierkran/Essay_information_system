@@ -127,7 +127,7 @@
               <label>批改者备注</label>
                 <textarea v-model="correctionNote" rows="2" placeholder="批改者自定义备注（可选）..."></textarea>
             </div>
-            <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()" style="width:100%">
+            <button class="btn btn-primary" @click="uploadCorrection()" :disabled="!selectedFile && !correctionText.trim()" style="width:100%">
                 {{ uploading ? '提交中...' : '提交修改' }}
             </button>
             <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="width:100%;margin-top:8px">
@@ -415,7 +415,7 @@
             <van-field v-model="correctionText" label="文字修改" type="textarea" rows="3" placeholder="输入修改文字..." />
             <van-field v-model="correctionNote" label="批改者备注" type="textarea" rows="2" placeholder="批改者自定义备注（可选）..." />
             <div style="margin:16px">
-              <van-button round block type="primary" @click="uploadCorrection" :loading="uploading">提交修改</van-button>
+              <van-button round block type="primary" @click="uploadCorrection()" :loading="uploading">提交修改</van-button>
               <van-button v-if="essay.status === 'confirming'" round block type="success" style="margin-top:8px" @click="confirmEssay">✅ 确认修改</van-button>
               <van-button v-if="essay.status === 'confirming'" round block plain type="warning" style="margin-top:8px" @click="reworkEssay">🔄 重改</van-button>
             </div>
@@ -760,7 +760,7 @@ async function doReuploadDesktop() {
       fd.append('course_id', String(essay.value.course_id))
     }
     fd.append('grade', editForm.value.grade || essay.value.grade || '')
-    fd.append('essay_number', String(editForm.value.essay_number || essay.value.essay_number || 1))
+    fd.append('essay_number', String(editForm.value.essay_number ?? essay.value.essay_number ?? 0))
     fd.append('essay_title', editForm.value.essay_title || essay.value.essay_title || '')
     fd.append('student_name', editForm.value.student_name || essay.value.student_name)
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')
@@ -1084,7 +1084,7 @@ async function exportDocx() {
 }
 
 async function uploadCorrection(fromReupload = false) {
-  const srcText = fromReupload ? reuploadCorrectedText.value : correctionText.value
+  const srcText = fromReupload === true ? reuploadCorrectedText.value : correctionText.value
   if (!selectedFile.value && !srcText.trim()) {
     showToast('请选择文件或输入修改文字')
     return
@@ -1286,7 +1286,7 @@ async function doReupload() {
       fd.append('course_id', String(essay.value.course_id))
     }
     fd.append('grade', editForm.value.grade || essay.value.grade || '')
-    fd.append('essay_number', String(editForm.value.essay_number || essay.value.essay_number || 1))
+    fd.append('essay_number', String(editForm.value.essay_number ?? essay.value.essay_number ?? 0))
     fd.append('essay_title', editForm.value.essay_title || essay.value.essay_title || '')
     fd.append('student_name', editForm.value.student_name || essay.value.student_name)
     fd.append('is_supplement', essay.value.is_supplement ? 'true' : 'false')

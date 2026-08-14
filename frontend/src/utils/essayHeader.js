@@ -1,5 +1,5 @@
 export function getParagraphs(content) {
-  return (content || '').split('\n').filter(s => s.trim())
+  return (content || '').split(/\r?\n/).filter(s => s.trim())
 }
 
 export function extractHeader(content) {
@@ -19,8 +19,8 @@ export function ensureContentHeader(content, title, name) {
   const changed = []
   let idx = 0
 
-  if (!paras[0] || paras[0] === t) {
-    if (paras[0]) out.push(paras[0])
+  if (!paras[0] || paras[0].trim() === t) {
+    if (paras[0]) out.push(paras[0].trim())
     idx = 1
   } else {
     out.push(t)
@@ -28,10 +28,10 @@ export function ensureContentHeader(content, title, name) {
   }
 
   const second = paras[idx]
-  if (second === nl) {
-    out.push(second)
+  if (second && second.trim() === nl) {
+    out.push(second.trim())
     idx += 1
-  } else if (second && second.startsWith('——')) {
+  } else if (second && second.trim().startsWith('——')) {
     out.push(nl)
     changed.push('name')
     idx += 1
@@ -45,5 +45,5 @@ export function ensureContentHeader(content, title, name) {
 }
 
 export function firstLineTitle(content) {
-  return getParagraphs(content)[0] || ''
+  return (getParagraphs(content)[0] || '').trim()
 }
