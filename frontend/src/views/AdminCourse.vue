@@ -77,8 +77,8 @@
     </van-cell-group>
 
     <!-- 课程弹窗 -->
-    <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button @confirm="saveCourse">
-      <van-form>
+    <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose">
+      <van-form ref="courseFormRef">
         <van-field v-model="courseForm.name" label="课程名称" :rules="[{required:true}]" />
       </van-form>
     </van-dialog>
@@ -100,6 +100,7 @@ const filteredCourses = computed(() => {
   return courses.value.filter(c => (c.name || '').toLowerCase().includes(kw))
 })
 const showCourseDialog = ref(false)
+const courseFormRef = ref(null)
 const editingCourse = ref({})
 const courseForm = ref({ name:'' })
 const importing = ref(false)
@@ -135,6 +136,11 @@ async function saveCourse() {
     }
     showCourseDialog.value = false; loadData()
   } catch(err) { showToast(err.response?.data?.detail || '操作失败') }
+}
+
+function onCourseClose(action) {
+  if (action !== 'confirm') return true
+  return courseFormRef.value.validate().then(() => saveCourse().then(() => true)).catch(() => false)
 }
 
 function confirmDelCourse(cls) {

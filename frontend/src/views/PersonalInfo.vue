@@ -5,15 +5,7 @@
     <!-- 统计信息 -->
     <div class="card" style="max-width:520px">
       <div class="card-header"><h3>📊 我的统计</h3></div>
-      <div v-if="isDesktop" class="stats-grid">
-        <div class="stat-item"><span class="stat-num">{{ stats.collected_total }}</span><span class="stat-label">我收集的作文</span></div>
-        <div class="stat-item"><span class="stat-num">{{ stats.collected_pending }}</span><span class="stat-label">未修改</span></div>
-        <div class="stat-item"><span class="stat-num">{{ stats.collected_corrected }}</span><span class="stat-label">已修改</span></div>
-        <div class="stat-item"><span class="stat-num">{{ stats.reviewed_total }}</span><span class="stat-label">我批改的作文</span></div>
-        <div class="stat-item"><span class="stat-num">{{ stats.reviewed_corrected }}</span><span class="stat-label">批改已确认</span></div>
-        <div class="stat-item"><span class="stat-num">{{ stats.uploaded_today }}</span><span class="stat-label">今日上传</span></div>
-      </div>
-      <div v-else class="stats-grid">
+      <div class="stats-grid">
         <div class="stat-item"><span class="stat-num">{{ stats.collected_total }}</span><span class="stat-label">我收集的作文</span></div>
         <div class="stat-item"><span class="stat-num">{{ stats.collected_pending }}</span><span class="stat-label">未修改</span></div>
         <div class="stat-item"><span class="stat-num">{{ stats.collected_corrected }}</span><span class="stat-label">已修改</span></div>

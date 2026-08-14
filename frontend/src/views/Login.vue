@@ -81,7 +81,7 @@ function saveServerUrl() {
   }
   serverUrl.value = url
   showServerConfig.value = false
-  showToast('服务器地址已保存，请刷新页面')
+  window.location.reload()
 }
 
 // 列出所有已保存的账号

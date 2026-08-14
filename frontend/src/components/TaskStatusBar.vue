@@ -1,26 +1,36 @@
 <template>
-  <div v-if="tasks.length" class="task-status-bar">
-    <div v-for="t in tasks" :key="t.id" class="task-item">
-      <span class="task-type">{{ typeLabel(t.type) }}</span>
-      <span v-if="t.stage && t.status === 'running'" class="task-stage">{{ t.stage }}</span>
-      <div class="task-progress-wrap">
-        <div class="task-progress-bar" :style="{ width: progressPercent(t) + '%' }" :class="'progress-' + t.status"></div>
+  <div v-if="tasks.length" class="task-status-bar" :class="{ collapsed }">
+    <div class="task-bar-head" @click="collapsed = !collapsed">
+      <span class="task-bar-title">📋 批量任务{{ runningCount ? `（${runningCount} 运行中）` : '' }}</span>
+      <button class="task-toggle" @click.stop="collapsed = !collapsed">{{ collapsed ? '展开' : '收起' }}</button>
+    </div>
+    <div v-if="!collapsed" class="task-list">
+      <div v-for="t in tasks" :key="t.id" class="task-item">
+        <span class="task-type">{{ typeLabel(t.type) }}</span>
+        <span v-if="t.stage && t.status === 'running'" class="task-stage">{{ t.stage }}</span>
+        <div class="task-progress-wrap">
+          <div class="task-progress-bar" :style="{ width: progressPercent(t) + '%' }" :class="'progress-' + t.status"></div>
+        </div>
+        <span class="task-count">{{ t.success }}/{{ t.total }}</span>
+        <span class="task-status" :class="'status-' + t.status">
+          {{ t.status === 'running' ? '⏳' : t.status === 'completed' ? '✅' : '❌' }}
+        </span>
+        <button v-if="t.status !== 'running'" class="task-dismiss" @click="dismissTask(t.id)">✕</button>
+        <span v-if="t.current && t.status === 'running'" class="task-current">📄 正在处理：{{ t.current }}</span>
+        <span v-if="t.message" class="task-msg">{{ t.message }}</span>
       </div>
-      <span class="task-count">{{ t.success }}/{{ t.total }}</span>
-      <span class="task-status" :class="'status-' + t.status">
-        {{ t.status === 'running' ? '⏳' : t.status === 'completed' ? '✅' : '❌' }}
-      </span>
-      <button v-if="t.status !== 'running'" class="task-dismiss" @click="dismissTask(t.id)">✕</button>
-      <span v-if="t.current && t.status === 'running'" class="task-current">📄 正在处理：{{ t.current }}</span>
-      <span v-if="t.message" class="task-msg">{{ t.message }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { useTaskMonitor, typeLabel } from '../composables/useTaskMonitor'
 
 const { tasks, dismissTask } = useTaskMonitor()
+const collapsed = ref(false)
+
+const runningCount = computed(() => tasks.value.filter(t => t.status === 'running').length)
 
 function progressPercent(t) {
   if (!t.total) return 0
@@ -34,18 +44,47 @@ function progressPercent(t) {
   bottom: 16px;
   right: 16px;
   z-index: 9999;
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.task-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+}
+.task-bar-title { font-size: 13px; font-weight: 600; color: #333; }
+.task-toggle {
+  background: none;
+  border: none;
+  color: #1677ff;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.task-list {
+  max-height: 45vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 360px;
-  width: 100%;
+  padding: 8px 12px;
 }
+.task-status-bar.collapsed .task-list { display: none; }
+.task-status-bar.collapsed { overflow: hidden; }
 .task-item {
   background: #fff;
   border: 1px solid #e8e8e8;
   border-radius: 8px;
   padding: 10px 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   font-size: 13px;
 }
 .task-type { font-weight: 600; color: #333; display: block; margin-bottom: 4px; }

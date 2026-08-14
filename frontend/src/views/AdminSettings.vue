@@ -230,7 +230,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 
@@ -509,6 +509,11 @@ async function importDB(e) {
   const file = e.target.files[0]
   if (!file) return
   dbMsg.value = ''
+  const confirmed = await showConfirmDialog({
+    title: '确认导入数据库？',
+    message: '将使用所选 SQL 文件恢复数据库，现有数据可能被覆盖。建议先导出备份，再执行导入。',
+  }).catch(() => false)
+  if (!confirmed) { e.target.value = ''; return }
   try {
     const fd = new FormData(); fd.append('file', file)
     const res = await api.post('/admin/database/import', fd)

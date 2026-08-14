@@ -28,7 +28,7 @@
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── 作文.docx
           </div>
           <div class="tip-note">* 二级目录名称作为学生姓名</div>
-          <div class="tip-note">* 支持格式：jpg/jpeg/png/gif/webp/docx/doc/txt</div>
+          <div class="tip-note">* 支持格式：jpg/jpeg/png/gif/webp/docx/txt（不支持 .doc 旧版格式）</div>
           <div class="tip-note">* docx/txt 自动读取内容；含「修改前/修改后」则拆分，否则全部作修改前</div>
           <div class="tip-note">* 文件夹名可含「{年级}第{次数}次」自动填充（如：高二第三次作文）</div>
         </div>
@@ -45,7 +45,7 @@
             改_作文——李四.docx
           </div>
           <div class="tip-note">* 破折号「——」后的名字为学生姓名</div>
-          <div class="tip-note">* 支持格式：docx/doc</div>
+          <div class="tip-note">* 支持格式：docx（不支持 .doc 旧版格式）</div>
           <div class="tip-note">* 将自动识别学生姓名、标题和作文内容</div>
           <div class="tip-note">* 内容格式：第一行「修改前：」、第二行标题、第三行——（学生姓名），之后再「修改后：」</div>
         </div>
@@ -232,7 +232,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
@@ -240,10 +240,12 @@ import JSZip from 'jszip'
 import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
 
 const route = useRoute()
+const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
 const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
+const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 
 const CONCURRENCY = 3
 const mode = ref('essay')
@@ -360,6 +362,11 @@ function taskIsActive(t) {
 }
 
 onMounted(async () => {
+  if (isGuest.value) {
+    router.replace('/dashboard')
+    showToast('游客无上传权限')
+    return
+  }
   try {
     const res = await api.get('/essays/tasks')
     tasks.value = res.data
@@ -417,8 +424,8 @@ function selectTask(tpl) {
     form.value.grade = tpl.grade
     corForm.value.grade = tpl.grade
     selectedGrade.value = tpl.grade
-    form.value.essay_number = String(tpl.essay_number)
-    corForm.value.essay_number = String(tpl.essay_number)
+    form.value.essay_number = tpl.essay_number ? String(tpl.essay_number) : ''
+    corForm.value.essay_number = tpl.essay_number ? String(tpl.essay_number) : ''
     if (tpl.teaching_mode) {
       form.value.teaching_mode = tpl.teaching_mode
       corForm.value.teaching_mode = tpl.teaching_mode

@@ -73,7 +73,7 @@
       <span>共 <strong>{{ total }}</strong> 条</span>
       <span class="stat-pending">未改 <strong>{{ pendingTotal }}</strong></span>
       <span class="stat-corrected">已修改 <strong>{{ correctedTotal }}</strong></span>
-      <template v-if="!isGuest">
+      <template v-if="!isGuest && (isDesktop || selectedIds.length)">
         <span style="color:#d9d9d9">|</span>
         <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
         <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
@@ -83,7 +83,7 @@
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
         <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds=[]">取消选择</button>
       </template>
-      <span style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
+      <span v-if="isDesktop" style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="showColumnSettings = true">⚙️ 列设置</button>
         每页
         <select v-model.number="pageSize" @change="applyFilter" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px">
@@ -96,6 +96,8 @@
         条
       </span>
     </div>
+
+    <div v-if="loading" style="padding:24px;text-align:center;color:#999">⏳ 加载中...</div>
 
     <!-- 桌面端：表格 -->
     <template v-if="isDesktop">
@@ -131,7 +133,7 @@
               <td v-if="!isGuest" @click.stop><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
               <template v-for="col in visibleColumns" :key="col.key">
                 <td v-if="col.key === 'status'"><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
-                <td v-else-if="col.key === 'file_saved'"><span class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span></td>
+                <td v-else-if="col.key === 'file_saved'"><span v-if="hasFile(e)" class="tag" :class="e.file_saved ? 'tag-corrected' : 'tag-pending'">{{ e.file_saved ? '已存' : '丢失' }}</span><span v-else>-</span></td>
                 <td v-else-if="col.key === 'is_supplement'"><span :style="{ color: e.is_supplement ? '#fa8c16' : '#d9d9d9', fontSize: '16px' }">{{ e.is_supplement ? '🔄' : '' }}</span></td>
                 <td v-else-if="col.key === 'grade'"><span class="badge-mini tag-grade">{{ e.grade || '-' }}</span></td>
                 <td v-else-if="col.key === 'essay_number'"><span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span></td>
@@ -150,7 +152,10 @@
                   <button class="btn" style="font-size:12px;padding:4px 8px;color:#ff4d4f" @click.stop="confirmDelete(e)">删除</button>
                 </template>
                 <template v-else>
-                  <router-link :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
+                  <router-link v-if="canReview" :to="`/review/detail/${e.id}`" class="readonly-hint" style="text-decoration:none">
+                    <span class="text-readonly">查看</span>
+                  </router-link>
+                  <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="readonly-hint" style="text-decoration:none">
                     <span class="text-readonly">仅查看</span>
                   </router-link>
                   <button v-if="e.status === 'corrected' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#1677ff;margin-left:4px" @click.stop="exportSingleDocx(e)">导出docx</button>
@@ -184,8 +189,9 @@
           <div class="mobile-card-foot">
             <span>{{ formatDateTime(e.created_at) }}</span>
             <div class="mobile-card-actions">
-              <span v-if="e.file_saved === false" class="tag tag-pending">文件丢失</span>
+              <span v-if="hasFile(e) && e.file_saved === false" class="tag tag-pending">文件丢失</span>
               <router-link v-if="!isGuest && isOwner(e)" :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
+              <router-link v-else-if="canReview" :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#1677ff" @click.stop>查看</router-link>
               <router-link v-else :to="`/review/detail/${e.id}?readonly=1`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#1677ff" @click.stop>仅查看</router-link>
               <button v-if="e.status === 'corrected' && !isGuest" class="btn" style="font-size:12px;padding:3px 10px;color:#1677ff" @click.stop="exportSingleDocx(e)">导出docx</button>
             </div>
@@ -194,7 +200,7 @@
       </div>
     </template>
 
-    <div v-if="!list.length && !loading" class="empty-state"><div class="icon">📭</div><p>暂无作文</p></div>
+    <div v-if="!list.length && !loading" class="empty-state"><div class="icon">📭</div><p>没有符合条件的作文，请调整筛选条件</p></div>
 
     <!-- 分页 -->
     <div class="pagination" v-if="total > 0">
@@ -290,6 +296,8 @@ const { isDesktop } = useScreen()
 const currentUser = computed(() => getAuth()?.user || {})
 const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
+const isReviewer = computed(() => (currentUser.value.role || '').includes('reviewer'))
+const canReview = computed(() => !isGuest.value && (isReviewer.value || isAdmin.value))
 const isOwner = (essay) => currentUser.value.role?.includes('admin') || essay.collected_by === currentUser.value.id
 
 const deletingEssay = ref(null)
@@ -492,6 +500,8 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.v
 const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
 
 function statusLabel(s) { return { pending:'未修改', confirming:'待确认', rework:'待重改', corrected:'已修改' }[s] || s }
+
+function hasFile(e) { return !!(e.content_file && e.file_type !== 'text') }
 function sortIcon(field) { if (sortBy.value !== field) return '⇅'; return sortOrder.value === 'asc' ? '↑' : '↓' }
 
 function toggleSort(field) {
@@ -567,7 +577,7 @@ async function loadData() {
   }
 }
 
-function goPage(p) { page.value = p; loadData() }
+function goPage(p) { page.value = p; window.scrollTo(0, 0); loadData() }
 function jumpToPage() {
   const p = parseInt(jumpPage.value)
   if (isNaN(p) || p < 1 || p > totalPages.value) {
@@ -579,11 +589,13 @@ function jumpToPage() {
 function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
+  if (isGuest.value) return
   const idx = selectedIds.value.indexOf(id)
   if (idx > -1) selectedIds.value.splice(idx, 1)
   else selectedIds.value.push(id)
 }
 function toggleAll() {
+  if (isGuest.value) return
   if (allSelected.value) selectedIds.value = []
   else selectedIds.value = list.value.map(e => e.id)
 }
@@ -655,14 +667,6 @@ function dragEnd() {
   }
   dragState.value = { active: false, startId: null, moved: false, min: -1, max: -1 }
   document.removeEventListener('mouseup', dragEnd)
-}
-
-async function inlineEdit(e, field, val) {
-  try {
-    const res = await api.put(`/essays/${e.id}`, null, { params: { [field]: val } })
-    Object.assign(e, res.data)
-    showToast('已更新')
-  } catch(err) { showToast(err.response?.data?.detail || '更新失败') }
 }
 
 async function exportSingleDocx(e) {
@@ -883,7 +887,7 @@ function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 function exportCSV() {
   const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
   const rows = list.value.map(e => [
-    e.student_name, e.grade, e.essay_title, `第${e.essay_number}次`,
+    e.student_name, e.grade, e.essay_title, e.essay_number ? `第${e.essay_number}次` : '',
     e.teaching_mode, statusLabel(e.status), e.collector_name,
     e.collector_note || '', e.reviewer_note || '',
     e.created_at ? formatDateTime(e.created_at) : '', e.corrected_at ? formatDateTime(e.corrected_at) : '',

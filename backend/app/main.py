@@ -54,17 +54,22 @@ if os.environ.get("ESSAY_ENV", "development") == "production":
 @app.on_event("startup")
 def on_startup():
     init_db()
-    # 启动时同步 file_saved 状态（仅标记，不删除记录）
+    # 启动时同步 file_saved 状态（分批处理，仅标记，不删除记录）
     db = SessionLocal()
     try:
-        essays = db.query(Essay).all()
-        for e in essays:
-            if e.content_file:
-                full = os.path.join(get_upload_dir(), e.content_file)
-                e.file_saved = os.path.exists(full)
-            else:
-                e.file_saved = True
-        db.commit()
+        last_id = 0
+        while True:
+            batch = db.query(Essay).filter(Essay.id > last_id).order_by(Essay.id.asc()).limit(1000).all()
+            if not batch:
+                break
+            for e in batch:
+                if e.content_file:
+                    full = os.path.join(get_upload_dir(), e.content_file)
+                    e.file_saved = os.path.exists(full)
+                else:
+                    e.file_saved = True
+                last_id = e.id
+            db.commit()
     finally:
         db.close()
 

@@ -25,19 +25,19 @@ const routes = [
     path: '/essay/upload',
     name: 'EssayUpload',
     component: () => import('../views/EssayUpload.vue'),
-    meta: { requiresAuth: true, roles: ['collector', 'admin', 'guest'] },
+    meta: { requiresAuth: true, roles: ['collector', 'admin'] },
   },
   {
     path: '/essay/batch-upload',
     name: 'EssayBatchUpload',
     component: () => import('../views/EssayBatchUpload.vue'),
-    meta: { requiresAuth: true, roles: ['collector', 'admin', 'guest'] },
+    meta: { requiresAuth: true, roles: ['collector', 'admin'] },
   },
   {
     path: '/essay/list',
     name: 'EssayList',
     component: () => import('../views/EssayList.vue'),
-    meta: { requiresAuth: true, roles: ['collector', 'admin', 'guest'] },
+    meta: { requiresAuth: true, roles: ['collector', 'admin', 'reviewer', 'guest'] },
   },
   {
     path: '/review/pending',

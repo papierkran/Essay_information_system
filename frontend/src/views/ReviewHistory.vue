@@ -64,6 +64,8 @@
       <span>共 <strong>{{ total }}</strong> 条记录</span>
     </div>
 
+    <div v-if="loading" style="padding:24px;text-align:center;color:#999">⏳ 加载中...</div>
+
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>

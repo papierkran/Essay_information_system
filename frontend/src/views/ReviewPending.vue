@@ -1,14 +1,5 @@
 <template>
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
-    <div class="breadcrumb">
-      <router-link to="/dashboard" class="breadcrumb-link">首页</router-link>
-      <span class="breadcrumb-sep">/</span>
-      <span class="breadcrumb-current">未改列表</span>
-      <template v-if="activeTaskName">
-        <span class="breadcrumb-sep">/</span>
-        <span class="breadcrumb-current">任务：{{ activeTaskName }}</span>
-      </template>
-    </div>
     <div v-if="isDesktop" class="page-title">未改列表</div>
 
     <!-- 筛选栏 -->
@@ -47,7 +38,8 @@
         <span class="filter-label">任务</span>
         <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
         <div v-if="showTaskDropdown" class="task-dropdown">
-          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
+          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
+          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = '无任务'; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === 0 }" class="task-item" style="color:#999">无任务</div>
           <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
           <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
         </div>
@@ -62,21 +54,23 @@
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
     </div>
 
+    <div v-if="loading" style="padding:24px;text-align:center;color:#999">⏳ 加载中...</div>
+
     <!-- 批量操作工具栏 -->
-    <div v-if="list.length" class="batch-bar">
+    <div v-if="list.length && !isGuest" class="batch-bar">
       <span style="font-size:13px;color:#666">共 <strong>{{ total }}</strong> 条（本页 {{ list.length }}）/ 已选 {{ selectedIds.length }} 条</span>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
+      <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
+      <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
+      <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#52c41a;border-color:#52c41a" :disabled="!selectedIds.length" @click="batchConfirm">✅ 批量确认修改</button>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#fa8c16;border-color:#fa8c16" @click="batchPipeline">⏩ 一键批量流程修改</button>
+      <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#fa8c16;border-color:#fa8c16" @click="batchPipeline">⏩ 一键批量流程修改</button>
       <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds = []">取消选择</button>
     </div>
 
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
-        <th style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
+        <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
         <th>状态</th>
         <th>学生姓名</th>
         <th>作文标题</th>
@@ -92,7 +86,7 @@
       </tr></thead>
       <tbody>
         <tr v-for="e in list" :key="e.id" :class="{ 'row-selected': selectedIds.includes(e.id) }">
-          <td><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
+          <td v-if="!isGuest"><input type="checkbox" :checked="selectedIds.includes(e.id)" @change="toggleSelect(e.id)" style="width:auto" /></td>
           <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
           <td>{{ e.student_name }}</td>
           <td>{{ e.essay_title || '无标题' }}</td>
@@ -105,7 +99,7 @@
           <td>{{ e.file_type === 'image' ? '图片' : e.file_type === 'docx' ? '文档' : '文本' }}</td>
           <td>{{ formatDateTime(e.created_at) }}</td>
           <td style="white-space:nowrap">
-            <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
+            <router-link :to="`/review/detail/${e.id}?from=pending`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
             <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#52c41a;margin-left:4px" @click="confirmSingle(e)">✅ 确认修改</button>
             <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:4px 8px;color:#fa8c16;margin-left:4px" @click="reworkSingle(e)">🔄 重改</button>
           </td>
@@ -198,7 +192,9 @@
           <span>{{ formatDateTime(e.created_at) }}</span>
           <div class="mobile-card-actions">
             <span class="mobile-card-filetype">{{ e.file_type === 'image' ? '图片' : e.file_type === 'docx' ? '文档' : '文本' }}</span>
-            <router-link :to="`/review/detail/${e.id}`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
+            <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:3px 8px;color:#52c41a" @click.stop="confirmSingle(e)">✅ 确认</button>
+            <button v-if="e.status === 'confirming' && !isGuest" class="btn" style="font-size:12px;padding:3px 8px;color:#fa8c16" @click.stop="reworkSingle(e)">🔄 重改</button>
+            <router-link :to="`/review/detail/${e.id}?from=pending`" class="btn" style="font-size:12px;padding:3px 10px;text-decoration:none;color:#333" @click.stop>详情</router-link>
           </div>
         </div>
       </div>
@@ -251,7 +247,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showSuccessToast, showFailToast } from 'vant'
+import { showToast, showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
@@ -262,6 +258,7 @@ const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
 const isAdmin = computed(() => ((getAuth()?.user?.role) || '').includes('admin'))
+const isReviewer = computed(() => ((getAuth()?.user?.role) || '').includes('reviewer'))
 const { tasks: monitorTasks, addTask, addTasks } = useTaskMonitor()
 const list = ref([])
 const loading = ref(false)
@@ -321,7 +318,7 @@ const filters = ref({
   essayNumber: '',
   teachingMode: '',
   collectedBy: '',
-  taskId: 0,
+  taskId: '',
   dateFrom: '',
   dateTo: '',
   wordCountMin: '',
@@ -331,15 +328,6 @@ const filters = ref({
 const mobileFilterActive = computed(() => {
   const f = filters.value
   return !!(f.name || f.essayTitle || f.status || f.grade || f.essayNumber || f.teachingMode || f.collectedBy || f.dateFrom || f.dateTo || f.wordCountMin || f.wordCountMax || filterTaskSearch.value)
-})
-
-const activeTaskName = computed(() => {
-  if (filters.value.taskId) {
-    const t = taskList.value.find(x => x.id == filters.value.taskId)
-    return t ? t.name : `任务#${filters.value.taskId}`
-  }
-  if (filterTaskSearch.value) return filterTaskSearch.value
-  return ''
 })
 
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
@@ -383,6 +371,7 @@ function sortIcon(field) {
 const allSelected = computed(() => list.value.length > 0 && list.value.every(e => selectedIds.value.includes(e.id)))
 
 function toggleAll() {
+  if (isGuest.value) return
   if (allSelected.value) {
     selectedIds.value = []
   } else {
@@ -392,6 +381,7 @@ function toggleAll() {
   }
 }
 function toggleSelect(id) {
+  if (isGuest.value) return
   const idx = selectedIds.value.indexOf(id)
   if (idx >= 0) selectedIds.value.splice(idx, 1)
   else selectedIds.value.push(id)
@@ -412,7 +402,7 @@ function buildParams() {
   if (filters.value.essayNumber) p.essay_number = filters.value.essayNumber
   if (filters.value.teachingMode) p.teaching_mode = filters.value.teachingMode
   if (filters.value.collectedBy) p.collected_by = filters.value.collectedBy
-  if (filters.value.taskId) p.task_id = filters.value.taskId
+  if (filters.value.taskId !== '' && filters.value.taskId !== null && filters.value.taskId !== undefined) p.task_id = filters.value.taskId
   if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
   if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
   if (filters.value.dateTo) p.date_to = filters.value.dateTo
@@ -443,16 +433,21 @@ function goPage(p) { page.value = p; load() }
 function onPageSizeChange() { page.value = 1; load() }
 
 function clearFilter() {
-  filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: 0, dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
+  filters.value = { name: '', essayTitle: '', status: '', grade: '', essayNumber: '', teachingMode: '', collectedBy: '', taskId: '', dateFrom: '', dateTo: '', wordCountMin: '', wordCountMax: '' }
   filterTaskSearch.value = ''
   page.value = 1
   load()
 }
 
-function goDetail(e) { router.push(`/review/detail/${e.id}`) }
+function goDetail(e) { router.push(`/review/detail/${e.id}?from=pending`) }
 
 async function batchOcr() {
   if (!selectedIds.value.length) return
+  const confirmed = await showConfirmDialog({
+    title: '批量OCR识别',
+    message: `将对选中的 ${selectedIds.value.length} 篇作文执行 OCR 识别，是否继续？`,
+  }).catch(() => false)
+  if (!confirmed) return
   try {
     const res = await api.post('/essays/batch-task/ocr/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ocr', res.data.total)
@@ -466,6 +461,11 @@ async function batchOcr() {
 
 async function batchAiCorrect() {
   if (!selectedIds.value.length) return
+  const confirmed = await showConfirmDialog({
+    title: '批量AI错别字修正',
+    message: `将对选中的 ${selectedIds.value.length} 篇作文执行 AI 错别字修正，是否继续？`,
+  }).catch(() => false)
+  if (!confirmed) return
   try {
     const res = await api.post('/essays/batch-task/ai-correct/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ai_correct', res.data.total)
@@ -479,6 +479,11 @@ async function batchAiCorrect() {
 
 async function batchAiRewrite() {
   if (!selectedIds.value.length) return
+  const confirmed = await showConfirmDialog({
+    title: '批量AI一键修改',
+    message: `将对选中的 ${selectedIds.value.length} 篇作文执行 AI 改写，是否继续？`,
+  }).catch(() => false)
+  if (!confirmed) return
   try {
     const res = await api.post('/essays/batch-task/ai-rewrite/start', { ids: selectedIds.value })
     addTask(res.data.task_id, 'ai_rewrite', res.data.total)
@@ -503,6 +508,12 @@ async function batchPipeline() {
     if (!pendingIds.length) { showToast('选中的条目中没有状态为「未修改」的作文'); return }
     ids = pendingIds
   }
+
+  const confirmed = await showConfirmDialog({
+    title: '一键批量流程修改',
+    message: `将对 ${ids.length} 篇「未修改」作文执行 流水线（OCR→AI修正→AI改写），是否继续？`,
+  }).catch(() => false)
+  if (!confirmed) return
 
   try {
     const res = await api.post('/essays/batch-task/pipeline/start', { ids })
@@ -574,24 +585,6 @@ onUnmounted(() => {
 <style scoped>
 .page { padding: 0; }
 @media (max-width: 767px) { .page { min-height: 100vh; } }
-
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px 0;
-  font-size: 13px;
-  color: #666;
-}
-.breadcrumb-link {
-  color: #1677ff;
-  text-decoration: none;
-  cursor: pointer;
-}
-.breadcrumb-link:hover { text-decoration: underline; }
-.breadcrumb-sep { color: #d9d9d9; }
-.breadcrumb-current { color: #333; }
 
 .filter-bar {
   display: flex;

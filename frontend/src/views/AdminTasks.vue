@@ -202,6 +202,7 @@ import { useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
+import { formatDate as formatShortDate, formatDateTime } from '../utils/format'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
@@ -293,6 +294,8 @@ function onDrop(e, ci) {
 }
 
 function toggleSort(key) {
+  const col = columns.value.find(c => c.key === key)
+  if (col && !col.sortable) return
   if (sortKey.value === key) {
     sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
   } else {
@@ -380,16 +383,12 @@ async function loadData() {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  const year = d.getFullYear()
-  const nowYear = new Date().getFullYear()
-  return `${year !== nowYear ? year + '-' : ''}${d.getMonth()+1}/${d.getDate()}`
+  return formatShortDate(dateStr) || '-'
 }
 
 function formatDeadline(deadline) {
   if (!deadline) return '无限制'
-  return formatDate(deadline)
+  return formatDateTime(deadline)
 }
 
 function isExpired(tpl) {
@@ -571,7 +570,7 @@ function goBatchUpload(tpl) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   position: sticky;
-  top: 0;
+  top: 48px;
   background: #fff;
   z-index: 10;
 }

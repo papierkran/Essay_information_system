@@ -1,4 +1,4 @@
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import api from '../api'
 import { showSuccessToast } from 'vant'
 
@@ -6,8 +6,6 @@ const tasks = ref([])
 let pollTimer = null
 
 export function useTaskMonitor() {
-  onUnmounted(() => stopPolling())
-
   function addTask(taskId, type, total) {
     tasks.value.push({
       id: taskId,

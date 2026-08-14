@@ -59,9 +59,9 @@
           </div>
         </div>
       </van-cell-group>
-      <div v-if="loading" style="margin:0 16px 8px">
+      <div v-if="loading || showProgress" style="margin:0 16px 8px">
         <van-progress :percentage="uploadProgress" stroke-width="8" />
-        <div style="font-size:12px;color:#999;margin-top:4px;text-align:center">正在上传 {{ uploadProgress }}%...</div>
+        <div style="font-size:12px;color:#999;margin-top:4px;text-align:center">{{ uploadProgress >= 100 ? '上传完成 ✓' : `正在上传 ${uploadProgress}%...` }}</div>
       </div>
       <div style="margin:16px">
         <van-button round block type="primary" native-type="submit" :loading="loading">提交作文</van-button>
@@ -133,6 +133,14 @@
     <van-dialog v-model:show="uploadSuccessDialog.show" title="✅ 上传成功" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="false" class="upload-success-dialog">
       <div style="padding:16px">
         <p style="white-space:pre-line;font-size:15px;line-height:1.8;margin-bottom:12px">{{ uploadSuccessDialog.body }}</p>
+        <div v-if="sessionUploaded.length > 1" style="margin-bottom:12px;font-size:13px;color:#666">
+          本次会话已连续成功上传 <strong>{{ sessionUploaded.length }}</strong> 篇
+          <div style="margin-top:6px;max-height:120px;overflow-y:auto;border:1px solid #f0f0f0;border-radius:6px;padding:4px 8px">
+            <div v-for="(s, i) in sessionUploaded" :key="s.id" style="padding:3px 0;cursor:pointer;color:#1677ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" @click="openUploaded(s)">
+              {{ i + 1 }}. {{ s.name }}《{{ s.title || '无标题' }}》
+            </div>
+          </div>
+        </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
           <button class="btn" @click="goUploadList">去列表查看</button>
           <button class="btn" @click="viewUploaded" :disabled="!uploadSuccessDialog.id">查看刚上传的作文</button>
@@ -158,12 +166,15 @@ const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
 const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
+const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 
 const fileList = ref([])
 const loading = ref(false)
 const uploadProgress = ref(0)
+const showProgress = ref(false)
 const keepTask = ref(false)
 const uploadSuccessDialog = ref({ show: false, id: null, body: '' })
+const sessionUploaded = ref([])
 const showGradePicker = ref(false)
 const showTaskPicker = ref(false)
 const showCollectorPicker = ref(false)
@@ -262,6 +273,11 @@ watch(contentParagraphs, (paras) => {
 })
 
 onMounted(async () => {
+  if (isGuest.value) {
+    router.replace('/dashboard')
+    showToast('游客无上传权限')
+    return
+  }
   try {
     const res = await api.get('/essays/tasks')
     tasks.value = res.data
@@ -370,7 +386,7 @@ function selectTask(tpl) {
   if (tpl) {
     form.value.grade = tpl.grade
     selectedGrade.value = tpl.grade
-    form.value.essay_number = String(tpl.essay_number)
+    form.value.essay_number = tpl.essay_number ? String(tpl.essay_number) : ''
     if (tpl.teaching_mode) {
       form.value.teaching_mode = tpl.teaching_mode
     }
@@ -409,6 +425,7 @@ async function onSubmit() {
   }
   loading.value = true
   uploadProgress.value = 0
+  showProgress.value = true
   try {
     const fd = new FormData()
     if (selectedTaskId.value) {
@@ -459,6 +476,9 @@ async function onSubmit() {
       id: res.data?.id || null,
       body: `学生：${form.value.student_name}\n年级：${form.value.grade || '暂不选择'}\n第${isNaN(essayNumber) || essayNumber <= 0 ? '无' : essayNumber}次\n提交方式：${form.value.teaching_mode}`,
     }
+    if (res.data?.id) {
+      sessionUploaded.value.push({ id: res.data.id, name: form.value.student_name, title: form.value.essay_title })
+    }
     const gradeBackup = form.value.grade
     form.value = {
       grade: keep ? keepFields.grade : '',
@@ -482,6 +502,7 @@ async function onSubmit() {
       selectedCourseId.value = null
     }
   } catch (err) {
+    showProgress.value = false
     const detail = err.response?.data?.detail
     const status = err.response?.status
     let msg = '上传失败'
@@ -522,17 +543,27 @@ async function onSubmit() {
 
 function continueUpload() {
   uploadSuccessDialog.value.show = false
+  showProgress.value = false
 }
 
 function goUploadList() {
   uploadSuccessDialog.value.show = false
+  showProgress.value = false
   router.push('/essay/list')
 }
 
 function viewUploaded() {
   if (!uploadSuccessDialog.value.id) return
   uploadSuccessDialog.value.show = false
+  showProgress.value = false
   router.push(`/review/detail/${uploadSuccessDialog.value.id}`)
+}
+
+function openUploaded(s) {
+  if (!s.id) return
+  uploadSuccessDialog.value.show = false
+  showProgress.value = false
+  router.push(`/review/detail/${s.id}`)
 }
 </script>
 

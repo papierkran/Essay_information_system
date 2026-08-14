@@ -38,7 +38,7 @@
     </table>
 
     <!-- 手机端 -->
-    <van-list v-if="!isDesktop" v-model:loading="loading" @load="load">
+    <van-list v-if="!isDesktop" v-model:loading="loading" :finished="finished" @load="load">
       <van-cell v-for="u in list" :key="u.id" :title="u.nickname || u.username"
         :label="`${u.username} · ${roleLabel(u.role)}`">
         <template #right-icon>
@@ -55,8 +55,8 @@
     </van-list>
 
     <!-- 添加用户弹窗 -->
-    <van-dialog v-model:show="showAdd" title="添加用户" show-cancel-button @confirm="addUser">
-      <van-form>
+    <van-dialog v-model:show="showAdd" title="添加用户" show-cancel-button :before-close="onAddClose">
+      <van-form ref="addFormRef">
         <van-field v-model="newUser.username" label="用户名" placeholder="必填" :rules="[{required:true}]" />
         <van-field v-model="newUser.password" label="密码" type="password" placeholder="必填" :rules="[{required:true}]" />
         <van-field v-model="newUser.nickname" label="姓名" placeholder="选填" />
@@ -126,6 +126,8 @@ const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const list = ref([])
 const loading = ref(false)
+const finished = ref(false)
+const addFormRef = ref(null)
 const showAdd = ref(false)
 const showEdit = ref(false)
 const editForm = ref({})
@@ -147,7 +149,7 @@ async function load() {
   loading.value = true
   try { const res = await api.get('/admin/users'); list.value = res.data }
   catch { showToast('加载失败') }
-  finally { loading.value = false }
+  finally { loading.value = false; finished.value = true }
 }
 
 function roleLabel(r) {
@@ -163,6 +165,11 @@ async function addUser() {
     selectedRoles.value = ['collector']
     load()
   } catch(err) { showToast(err.response?.data?.detail || '添加失败') }
+}
+
+function onAddClose(action) {
+  if (action !== 'confirm') return true
+  return addFormRef.value.validate().then(() => addUser().then(() => true)).catch(() => false)
 }
 
 function editUser(u) {

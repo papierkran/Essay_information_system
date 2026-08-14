@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import shutil
 import tempfile
 import zipfile
 import uuid
@@ -31,6 +30,38 @@ router = APIRouter(prefix="/api/essays", tags=["作文"])
 def _count_non_ws(text: str) -> int:
     """字数统计口径：不含空格/换行等空白字符，标点符号计入。"""
     return len([c for c in (text or "") if not c.isspace()])
+
+
+def _essay_owned_filenames(essay, db=None):
+    """该作文在磁盘上拥有的文件名（content_file + 图片），避免整目录误删/误搬其它作文的文件。"""
+    names = set()
+    if essay.content_file:
+        names.add(os.path.basename(essay.content_file))
+    if db is not None:
+        imgs = db.query(EssayImage).filter(EssayImage.essay_id == essay.id).all()
+        for img in imgs:
+            if img.filename:
+                names.add(img.filename)
+    return names
+
+
+def _delete_essay_disk_files(essay, db):
+    """删除该作文自己的磁盘文件（原文 + 图片 + 对应修改文件），不动同目录下其它作文。"""
+    if not essay.content_file:
+        return
+    base_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
+    base = os.path.basename(essay.content_file)
+    to_delete = _essay_owned_filenames(essay, db)
+    to_delete.add(f"改_{base}")
+    for fname in to_delete:
+        p = os.path.join(base_dir, fname)
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+    from ..utils.file_utils import _cleanup_empty_dirs
+    _cleanup_empty_dirs(base_dir)
 
 
 def _char_count_sql(col):
@@ -63,7 +94,7 @@ def list_tasks(
     current_user: User = Depends(get_current_user),
 ):
     """获取所有任务列表（供上传选择用）"""
-    tasks = db.query(EssayTask).order_by(EssayTask.created_at.desc()).all()
+    tasks = db.query(EssayTask).filter(EssayTask.deleted_at == None).order_by(EssayTask.created_at.desc()).all()
     return [TaskOut.model_validate(t) for t in tasks]
 
 
@@ -76,6 +107,7 @@ def get_active_tasks(
     now = datetime.now()
     tasks = db.query(EssayTask).filter(
         EssayTask.is_active == True,
+        EssayTask.deleted_at == None,
         (EssayTask.deadline == None) | (EssayTask.deadline >= now),
         (EssayTask.start_time == None) | (EssayTask.start_time <= now)
     ).all()
@@ -336,8 +368,8 @@ def student_names(
     if keyword:
         q = q.filter(Essay.student_name.like(f"%{keyword}%"))
     names = sorted({r[0] for r in q.all() if r[0]})
-    if limit and limit > 0:
-        names = names[:limit]
+    max_return = limit if limit and limit > 0 else 500
+    names = names[:max_return]
     return {"names": names}
 
 
@@ -446,9 +478,7 @@ async def upload_essay(
         if content_text:
             essay.content_text = content_text
         if essay.content_file and files:
-            old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-            if os.path.exists(old_dir) and get_upload_dir() in old_dir:
-                shutil.rmtree(old_dir, ignore_errors=True)
+            _delete_essay_disk_files(essay, db)
             db.query(EssayImage).filter(EssayImage.essay_id == essay.id).delete()
         try:
             db.commit()
@@ -655,7 +685,8 @@ async def upload_correction_docx(
             existing.corrected_at = datetime.now() if corrected_text else existing.corrected_at
             existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
             existing.teaching_mode = teaching_mode or existing.teaching_mode
-            existing.collected_by = collector_id
+            if collected_by:
+                existing.collected_by = collector_id
             existing.is_supplement = is_supplement
             if collector_note:
                 existing.collector_note = collector_note
@@ -744,8 +775,6 @@ def list_essays(
 
     if course_id:
         q = q.filter(Essay.course_id == course_id)
-    if status:
-        q = q.filter(Essay.status == status)
     if name:
         q = q.filter(Essay.student_name.like(f"%{name}%"))
     if grade:
@@ -806,19 +835,19 @@ def list_essays(
         order_col = allowed_sort.get(sort_by, Essay.created_at)
     
     if sort_order == "asc":
-        q = q.order_by(order_col.asc())
+        q = q.order_by(order_col.asc(), Essay.id.asc())
     else:
-        q = q.order_by(order_col.desc())
+        q = q.order_by(order_col.desc(), Essay.id.desc())
 
-    from sqlalchemy import func as sa_func
+    # 统计随当前筛选计算（不含状态筛选本身）
+    pending_total = q.filter(Essay.status.in_(["pending", "confirming", "rework"])).count()
+    corrected_total = q.filter(Essay.status == "corrected").count()
+    if status:
+        q = q.filter(Essay.status == status)
     total = q.count()
     q = q.offset((page - 1) * page_size).limit(page_size)
     essays = q.all()
-    result = [_essay_to_out(e, db) for e in essays]
-
-    pending_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming", "rework"])).scalar() or 0
-    correcting_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "confirming").scalar() or 0
-    corrected_total = db.query(sa_func.count(Essay.id)).filter(Essay.deleted_at == None, Essay.status == "corrected").scalar() or 0
+    result = _essay_to_out_bulk(essays, db)
 
     # 收集者列表（用于前端下拉筛选）
     collectors = db.query(User).filter(
@@ -879,7 +908,10 @@ def pending_essays(
     if teaching_mode:
         q = q.filter(Essay.teaching_mode == teaching_mode)
     if task_id is not None:
-        q = q.filter(Essay.task_id == task_id)
+        if task_id == 0:
+            q = q.filter((Essay.task_id.is_(None)) | (Essay.task_id == 0))
+        else:
+            q = q.filter(Essay.task_id == task_id)
     if task_name:
         q = q.join(EssayTask, Essay.task_id == EssayTask.id, isouter=True).filter(EssayTask.name.like(f"%{task_name}%"))
     if collected_by:
@@ -908,7 +940,7 @@ def pending_essays(
 
     total = q.count()
     essays = q.offset((page - 1) * page_size).limit(page_size).all()
-    result = [_essay_to_out(e, db) for e in essays]
+    result = _essay_to_out_bulk(essays, db)
     return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
@@ -926,7 +958,7 @@ def list_trash(
     total = q.count()
     essays = q.offset((page - 1) * page_size).limit(page_size).all()
     return {
-        "items": [_essay_to_out(e, db) for e in essays],
+        "items": _essay_to_out_bulk(essays, db),
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -1094,7 +1126,7 @@ def download_by_course(
     if not cls:
         raise HTTPException(status_code=404, detail="课程不存在")
 
-    q = db.query(Essay).filter(Essay.course_id == course_id)
+    q = db.query(Essay).filter(Essay.course_id == course_id, Essay.deleted_at == None)
     if essay_number:
         q = q.filter(Essay.essay_number == essay_number)
 
@@ -1122,7 +1154,18 @@ def download_by_course(
             if os.path.exists(d):
                 tar.add(d, arcname=os.path.relpath(d, get_upload_dir()))
 
-    return FileResponse(archive_path, filename=archive_name, media_type="application/gzip")
+    from starlette.background import BackgroundTask
+
+    def _cleanup_course_archive(tmp_dir, archive_path):
+        try:
+            if os.path.exists(archive_path):
+                os.remove(archive_path)
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+    return FileResponse(archive_path, filename=archive_name, media_type="application/gzip",
+                        background=BackgroundTask(_cleanup_course_archive, tmp_dir, archive_path))
 
 
 # ===== 以下所有 /{essay_id}/xxx 具名路由必须在 /{essay_id} 通用路由之前 =====
@@ -1173,9 +1216,7 @@ def delete_essay(
         if "admin" not in current_user.role:
             raise HTTPException(status_code=403, detail="仅管理员可删除本地文件")
         if essay.content_file:
-            dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-            if os.path.exists(dir_path):
-                shutil.rmtree(dir_path)
+            _delete_essay_disk_files(essay, db)
         essay.content_file = ""
 
     if permanent:
@@ -1220,9 +1261,7 @@ def batch_delete_essays(
                 errors.append({"id": essay_id, "detail": "仅管理员可删除本地文件"})
                 continue
             if essay.content_file:
-                dir_path = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
-                if os.path.exists(dir_path):
-                    shutil.rmtree(dir_path)
+                _delete_essay_disk_files(essay, db)
             essay.content_file = ""
         if permanent:
             if "admin" not in current_user.role:
@@ -1326,8 +1365,9 @@ def get_essay_file(
     essay_id: int,
     filename: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """获取作文目录下的单个文件（无需 JWT，图片显示用）"""
+    """获取作文目录下的单个文件（需登录，图片经前端转 blob 后展示）"""
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
@@ -1363,6 +1403,17 @@ def download_essay_file(
     current_user: User = Depends(get_current_user),
 ):
     """下载原文：有文字内容时从 DB 生成 docx，纯图片时打包 zip"""
+    from starlette.background import BackgroundTask
+
+    def _respond_with_cleanup(path, filename, media_type):
+        def _cleanup():
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        return FileResponse(path, filename=filename, media_type=media_type,
+                            background=BackgroundTask(_cleanup))
     if "guest" in current_user.role:
         raise HTTPException(status_code=403, detail="游客无下载权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
@@ -1392,15 +1443,15 @@ def download_essay_file(
                 zf.write(os.path.join(dir_path, img), img)
         zip_buffer.close()
         os.unlink(tmp_docx)
-        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
+        return _respond_with_cleanup(zip_buffer.name, f"{dl_name}.zip", "application/zip")
 
     # 只有文字 → 从 DB 生成 docx
     if has_text:
         tmp_path = _generate_docx(essay, show_corrected=False)
-        return FileResponse(
+        return _respond_with_cleanup(
             tmp_path,
-            filename=f"{dl_name}.docx",
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            f"{dl_name}.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
 
     # 纯图片 → 打包 zip
@@ -1410,7 +1461,7 @@ def download_essay_file(
             for img in sorted(img_files):
                 zf.write(os.path.join(dir_path, img), img)
         zip_buffer.close()
-        return FileResponse(zip_buffer.name, filename=f"{dl_name}.zip", media_type="application/zip")
+        return _respond_with_cleanup(zip_buffer.name, f"{dl_name}.zip", "application/zip")
 
     # 兜底：返回原始文件
     if essay.content_file:
@@ -1466,10 +1517,20 @@ def export_docx(
     tmp_path = _generate_docx(essay, show_corrected=True)
     dl_name = _build_download_filename(essay)
 
+    from starlette.background import BackgroundTask
+
+    def _cleanup_docx():
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+
     return FileResponse(
         tmp_path,
         filename=f"改_{dl_name}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_docx),
     )
 
 
@@ -1480,7 +1541,7 @@ def ocr_essay(
     current_user: User = Depends(get_current_user),
 ):
     """对作文图片进行 OCR 识别，提取文字保存到 content_text"""
-    if "collector" not in current_user.role and "admin" not in current_user.role:
+    if "collector" not in current_user.role and "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
@@ -1512,7 +1573,7 @@ def ocr_essay(
         db.refresh(essay)
         return {
             "content_text": text,
-            "word_count": len(text),
+            "word_count": _count_non_ws(text),
             "image_corrected": meta.get("image_corrected", 0),
             "max_rotation": meta.get("max_rotation"),
         }
@@ -1527,7 +1588,7 @@ def ai_correct_essay(
     current_user: User = Depends(get_current_user),
 ):
     """对作文内容进行 AI 错别字修正，保存到 corrected_text"""
-    if "collector" not in current_user.role and "admin" not in current_user.role:
+    if "collector" not in current_user.role and "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
@@ -1748,10 +1809,20 @@ def batch_export_docx(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         zip_filename = f"作文导出_{timestamp}.zip"
 
+        from starlette.background import BackgroundTask
+
+        def _cleanup_zip():
+            try:
+                if os.path.exists(tmp_zip_path):
+                    os.unlink(tmp_zip_path)
+            except OSError:
+                pass
+
         return FileResponse(
             tmp_zip_path,
             filename=zip_filename,
             media_type="application/zip",
+            background=BackgroundTask(_cleanup_zip),
         )
     except Exception as e:
         # 清理临时文件
@@ -1776,6 +1847,8 @@ def batch_export_docx_merged(
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
     if not essays:
         raise HTTPException(status_code=404, detail="未找到选中的作文")
+    if len(essays) > 200:
+        raise HTTPException(status_code=400, detail="一次最多合并 200 篇作文，请分批导出")
 
     # 统计各任务下的作文数，取多数任务名称
     task_ids = {e.task_id for e in essays if e.task_id}
@@ -1802,10 +1875,20 @@ def batch_export_docx_merged(
     tmp.close()
     doc.save(tmp_path)
 
+    from starlette.background import BackgroundTask
+
+    def _cleanup_merged_docx():
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+
     return FileResponse(
         tmp_path,
         filename=f"{safe_name}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_merged_docx),
     )
 
 
@@ -2001,8 +2084,8 @@ def start_batch_ocr(
     current_user: User = Depends(get_current_user),
 ):
     """启动异步批量 OCR 任务"""
-    if "admin" not in current_user.role:
-        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    if "admin" not in current_user.role and "reviewer" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员或批改者可执行")
     essay_ids = data.get("ids", [])
     if not essay_ids:
         raise HTTPException(status_code=400, detail="未选中任何作文")
@@ -2030,8 +2113,8 @@ def start_batch_ai_correct(
     current_user: User = Depends(get_current_user),
 ):
     """启动异步批量 AI 错别字修正"""
-    if "admin" not in current_user.role:
-        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    if "admin" not in current_user.role and "reviewer" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员或批改者可执行")
     essay_ids = data.get("ids", [])
     if not essay_ids:
         raise HTTPException(status_code=400, detail="未选中任何作文")
@@ -2059,8 +2142,8 @@ def start_batch_ai_rewrite(
     current_user: User = Depends(get_current_user),
 ):
     """启动异步批量 AI 一键修改"""
-    if "admin" not in current_user.role:
-        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    if "admin" not in current_user.role and "reviewer" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员或批改者可执行")
     essay_ids = data.get("ids", [])
     if not essay_ids:
         raise HTTPException(status_code=400, detail="未选中任何作文")
@@ -2088,8 +2171,8 @@ def start_batch_pipeline(
     current_user: User = Depends(get_current_user),
 ):
     """启动后台流水线：OCR → AI错别字修正 → AI一键修改（仅处理未修改的作文）"""
-    if "admin" not in current_user.role:
-        raise HTTPException(status_code=403, detail="仅管理员可执行")
+    if "admin" not in current_user.role and "reviewer" not in current_user.role:
+        raise HTTPException(status_code=403, detail="仅管理员或批改者可执行")
     essay_ids = data.get("ids", [])
     if not essay_ids:
         raise HTTPException(status_code=400, detail="未选中任何作文")
@@ -2136,7 +2219,11 @@ def start_batch_pipeline(
 
 
 @router.get("/batch-task/{task_id}")
-def get_batch_task_status(task_id: str):
+def get_batch_task_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """查询批量任务进度"""
     from ..services.task_manager import get_task
     task = get_task(task_id)
@@ -2215,8 +2302,8 @@ def undo_operation(
                 try:
                     data = json.loads(log.old_value)
                     for field, val in data.items():
-                        if hasattr(essay, field):
-                            setattr(essay, field, val)
+                        if hasattr(essay, field) and isinstance(val, dict) and "old" in val:
+                            setattr(essay, field, val["old"])
                 except Exception:
                     pass
             _log_operation(db, eid, current_user.id, "编辑",
@@ -2297,6 +2384,7 @@ async def batch_upload_essays(
         if student_name in existing_names or student_name in seen_in_batch:
             skipped_students.append(student_name)
             continue
+        savepoint = db.begin_nested()
         try:
             essay = Essay(
                 grade=grade,
@@ -2315,10 +2403,11 @@ async def batch_upload_essays(
             )
             db.add(essay)
             db.flush()
+            savepoint.commit()
             created_ids.append(essay.id)
             seen_in_batch.add(student_name)
         except IntegrityError:
-            db.rollback()
+            savepoint.rollback()
             skipped_students.append(student_name)
             continue
 
@@ -2515,7 +2604,7 @@ def update_essay(
             task_name=task_name, task_created_at=task_created_at,
         )
 
-        new_content_file = move_content_file(essay, old_dir, new_dir)
+        new_content_file = move_content_file(essay, old_dir, new_dir, filenames=_essay_owned_filenames(essay, db))
         if new_content_file:
             essay.content_file = new_content_file
 
@@ -2598,3 +2687,92 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         word_count=_count_non_ws(essay.content_text),
         corrected_word_count=_count_non_ws(essay.corrected_text),
     )
+
+
+def _essay_to_out_bulk(essays, db: Session) -> list:
+    """批量转换作文为输出结构，避免列表页 N+1 查询与逐行目录扫描。"""
+    if not essays:
+        return []
+    user_ids = set()
+    task_ids = set()
+    dirs = {}
+    for e in essays:
+        if e.collected_by:
+            user_ids.add(e.collected_by)
+        if e.reviewer_id:
+            user_ids.add(e.reviewer_id)
+        if e.task_id:
+            task_ids.add(e.task_id)
+        if e.content_file:
+            fp = os.path.join(get_upload_dir(), e.content_file)
+            dirs[e.id] = (os.path.dirname(fp), os.path.basename(fp))
+
+    users = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            users[u.id] = u
+    tasks = {}
+    if task_ids:
+        from sqlalchemy.orm import joinedload
+        for t in db.query(EssayTask).options(joinedload(EssayTask.course)).filter(EssayTask.id.in_(task_ids)).all():
+            tasks[t.id] = t
+
+    dir_cache = {}
+    def _corr_exists(d):
+        if d not in dir_cache:
+            dir_cache[d] = has_correction(d, "")
+        return dir_cache[d]
+
+    upgraded = False
+    result = []
+    for e in essays:
+        collector = users.get(e.collected_by)
+        reviewer = users.get(e.reviewer_id)
+        task = tasks.get(e.task_id)
+
+        corr_exists = False
+        file_path = ""
+        if e.content_file:
+            d, base = dirs[e.id]
+            file_path = os.path.join(get_upload_dir(), e.content_file)
+            corr_exists = _corr_exists(d)
+
+        if corr_exists and e.status in ("pending", "rework") and e.content_text and e.content_text.strip():
+            e.status = "confirming"
+            upgraded = True
+
+        result.append(EssayOut(
+            id=e.id,
+            task_id=e.task_id,
+            task_name=task.name if task else "",
+            course_id=e.course_id,
+            course_name=task.course_name if task else "",
+            grade=e.grade or "",
+            essay_number=e.essay_number or 0,
+            essay_title=e.essay_title or "",
+            student_name=e.student_name,
+            is_supplement=e.is_supplement or False,
+            teaching_mode=e.teaching_mode or "线下",
+            remark=e.remark or "",
+            collector_note=e.collector_note or "",
+            reviewer_note=e.reviewer_note or "",
+            content_text=e.content_text or "",
+            corrected_text=e.corrected_text or "",
+            content_file=e.content_file or "",
+            file_type=e.file_type or "text",
+            collected_by=e.collected_by,
+            collector_name=collector.nickname or collector.username if collector else "未知",
+            status=e.status or "pending",
+            reviewer_id=e.reviewer_id,
+            reviewer_name=reviewer.nickname or reviewer.username if reviewer else "",
+            corrected_at=e.corrected_at,
+            created_at=e.created_at,
+            file_path=file_path,
+            has_correction=corr_exists,
+            file_saved=e.file_saved if e.file_saved is not None else True,
+            word_count=_count_non_ws(e.content_text),
+            corrected_word_count=_count_non_ws(e.corrected_text),
+        ))
+    if upgraded:
+        db.commit()
+    return result

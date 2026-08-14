@@ -125,12 +125,7 @@ const sortedActiveTasks = computed(() => {
 
 function formatDeadline(deadline) {
   if (!deadline) return '无限制'
-  const d = new Date(deadline)
-  const month = d.getMonth() + 1
-  const day = d.getDate()
-  const hours = d.getHours()
-  const minutes = String(d.getMinutes()).padStart(2, '0')
-  return `${month}月${day}日 ${hours}:${minutes}`
+  return formatDateTime(deadline)
 }
 
 function getDeadlineDaysLeft(deadline) {

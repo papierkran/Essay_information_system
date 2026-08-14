@@ -44,6 +44,7 @@ def create_task(task_id: str, task_type: str, total: int, status: str = "running
     task = BatchTask(id=task_id, type=task_type, total=total, status=status)
     with _lock:
         _tasks[task_id] = task
+    cleanup_old_tasks()
     return task
 
 
@@ -81,6 +82,15 @@ def cleanup_old_tasks(max_age: float = 3600):
         expired = [k for k, v in _tasks.items() if v.status != "running" and (now - v.created_at) > max_age]
         for k in expired:
             del _tasks[k]
+
+
+def _cleanup_loop():
+    while True:
+        time.sleep(1800)
+        cleanup_old_tasks()
+
+
+threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
 def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):

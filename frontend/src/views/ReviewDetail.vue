@@ -4,7 +4,7 @@
 
     <template v-if="!loading && essay">
       <div v-if="isDesktop" class="breadcrumb">
-        <router-link to="/essay/list" class="breadcrumb-link">作文列表</router-link>
+        <router-link :to="fromPending ? '/review/pending' : '/essay/list'" class="breadcrumb-link">{{ fromPending ? '未改列表' : '作文列表' }}</router-link>
         <span class="breadcrumb-sep">/</span>
         <span class="breadcrumb-current">作文详情 - {{ essay.student_name }}《{{ essay.essay_title || '无标题' }}》</span>
       </div>
@@ -140,7 +140,7 @@
           <template v-else>
             <div class="card-header"><h3>✅ 已修改</h3></div>
             <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
-            <div class="form-group" style="margin-top:8px">
+            <div v-if="canReview" class="form-group" style="margin-top:8px">
               <label>批改者备注</label>
               <div v-if="!editingNote && essay.reviewer_note" class="note-readonly">{{ essay.reviewer_note }}</div>
               <template v-else>
@@ -277,14 +277,14 @@
             <div v-if="showReuploadCorrected" class="reupload-area">
               <div class="form-group">
                 <label>修改文字内容</label>
-              <textarea v-model="correctionText" rows="4" placeholder="输入修改文字..."></textarea>
+              <textarea v-model="reuploadCorrectedText" rows="4" placeholder="输入修改文字..."></textarea>
               </div>
               <div class="form-group">
                 <label>或上传修改文件</label>
                 <input type="file" accept=".docx,.doc" @change="onFileSelected" />
                 <p v-if="selectedFile" style="margin-top:8px;color:#52c41a">已选择: {{ selectedFile.name }}</p>
               </div>
-              <button class="btn btn-primary" @click="uploadCorrection" :disabled="!selectedFile && !correctionText.trim()">
+              <button class="btn btn-primary" @click="uploadCorrection(true)" :disabled="!selectedFile && !reuploadCorrectedText.trim()">
               {{ uploading ? '提交中...' : '提交修改' }}
               </button>
               <button v-if="essay.status === 'confirming'" class="btn btn-success" @click="confirmEssay" style="margin-top:8px;width:100%">
@@ -300,6 +300,10 @@
 
       <!-- ===== 手机端 ===== -->
       <template v-else>
+        <div class="mobile-topbar">
+          <button class="mobile-back-btn" @click="goBackFromDetail">← 返回</button>
+          <span class="mobile-topbar-title">{{ fromPending ? '未改列表' : '作文详情' }}</span>
+        </div>
         <div style="padding-top:10px">
           <div class="mobile-status">
             <span class="tag" :class="'tag-' + essay.status">{{ statusLabel(essay.status) }}</span>
@@ -470,20 +474,32 @@
     </div>
 
     <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" :closeable="true" close-icon-position="top-right" />
+
+    <van-dialog v-model:show="showTitleMismatch" title="提示" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true" @update:show="onTitleMismatchUpdateShow">
+      <div class="title-mismatch-body">{{ titleMismatchMessage }}</div>
+      <template #footer>
+        <div class="title-mismatch-actions">
+          <button class="btn" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('不保留')">不保留</button>
+          <button class="btn" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('取消')">取消</button>
+          <button class="btn btn-primary" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('保留修改后的标题')">保留修改后的标题</button>
+        </div>
+      </template>
+    </van-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { useRoute, onBeforeRouteLeave } from 'vue-router'
-import { showToast, showConfirmDialog, showDialog } from 'vant'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api, { useAuth, getBaseUrl } from '../api'
+import api, { useAuth } from '../api'
 import { formatDateTime, countWords } from '../utils/format'
 import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
 import { ensureContentHeader, firstLineTitle } from '../utils/essayHeader'
 
 const route = useRoute()
+const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
@@ -500,6 +516,12 @@ const isOwner = computed(() => {
   return essay.value?.collected_by === currentUser.value.id
 })
 const isReadonly = computed(() => isGuest.value || route.query.readonly === '1')
+const fromPending = computed(() => route.query.from === 'pending')
+
+function goBackFromDetail() {
+  if (window.history.length > 1) window.history.back()
+  else router.push(fromPending.value ? '/review/pending' : '/essay/list')
+}
 const canReview = computed(() => {
   if (isGuest.value) return false
   const role = currentUser.value.role || ''
@@ -509,6 +531,7 @@ const canEdit = computed(() => !isReadonly.value && isOwner.value)
 const essay = ref(null)
 const correctionFile = ref('')
 const correctionText = ref('')
+const reuploadCorrectedText = ref('')
 const correctionNote = ref('')
 const editCorrectionNote = ref('')
 const savingNote = ref(false)
@@ -914,6 +937,11 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', closeDetailTaskDropdown)
   window.removeEventListener('beforeunload', onBeforeUnload)
+  if (images.value.length) {
+    images.value.forEach(u => {
+      if (u.startsWith('blob:')) window.URL.revokeObjectURL(u)
+    })
+  }
 })
 
 async function loadEssay() {
@@ -944,10 +972,14 @@ async function loadEssay() {
     }
     if (essay.value.file_type === 'image') {
       const imgRes = await api.get(`/essays/${route.params.id}/images`)
-      const baseUrl = getBaseUrl().replace(/\/api\/?$/, '')
-      const origin = baseUrl.startsWith('http') ? baseUrl : window.location.origin
-      const t = Date.now()
-      images.value = imgRes.data.images.map(u => origin + u + '?t=' + t)
+      const urls = []
+      for (const u of imgRes.data.images) {
+        try {
+          const res = await api.get(u.replace(/^\/api/, ''), { responseType: 'blob', __toastError: false })
+          urls.push(window.URL.createObjectURL(res.data))
+        } catch {}
+      }
+      images.value = urls
     }
   } catch {
     showToast('加载失败')
@@ -1051,8 +1083,9 @@ async function exportDocx() {
   } catch { showToast('导出失败') }
 }
 
-async function uploadCorrection() {
-  if (!selectedFile.value && !correctionText.value.trim()) {
+async function uploadCorrection(fromReupload = false) {
+  const srcText = fromReupload ? reuploadCorrectedText.value : correctionText.value
+  if (!selectedFile.value && !srcText.trim()) {
     showToast('请选择文件或输入修改文字')
     return
   }
@@ -1071,8 +1104,8 @@ async function uploadCorrection() {
     }
 
     // 修改后内容：先取本次提交的文字，否则用已保存的 corrected_text
-    let finalCorrected = correctionText.value.trim()
-      ? correctionText.value
+    let finalCorrected = srcText.trim()
+      ? srcText
       : (essay.value.corrected_text || '')
     let finalTitle = baseTitle
     if (finalCorrected.trim()) {
@@ -1101,23 +1134,34 @@ async function uploadCorrection() {
     await loadEssay()
     selectedFile.value = null; correctionFile.value = ''
     correctionText.value = ''
+    reuploadCorrectedText.value = ''
     correctionNote.value = ''
     showReuploadCorrected.value = false
   } catch (err) { showToast(err.response?.data?.detail || '上传失败') }
   finally { uploading.value = false }
 }
 
-async function askTitleMismatch(corrTitle, baseTitle) {
-  return showDialog({
-    title: '提示',
-    message: `修改后的标题「${corrTitle}」与基本信息标题「${baseTitle}」不一致，是否保留修改后的标题？\n\n选择「保留」将更新基本信息中的作文标题为「${corrTitle}」；选择「不保留」则按基本信息标题补全；选择「取消」则放弃本次操作。`,
-    showConfirmButton: false,
-    buttons: [
-      { name: '不保留', color: '#969799' },
-      { name: '取消' },
-      { name: '保留修改后的标题', type: 'primary' },
-    ],
-  }).then(name => name || '取消').catch(() => '取消')
+const showTitleMismatch = ref(false)
+const titleMismatchMessage = ref('')
+let titleMismatchResolve = null
+
+function askTitleMismatch(corrTitle, baseTitle) {
+  titleMismatchMessage.value = `修改后的标题「${corrTitle}」与基本信息标题「${baseTitle}」不一致，是否保留修改后的标题？\n\n选择「保留」将更新基本信息中的作文标题为「${corrTitle}」；选择「不保留」则按基本信息标题补全；选择「取消」则放弃本次操作。`
+  showTitleMismatch.value = true
+  return new Promise(resolve => { titleMismatchResolve = resolve })
+}
+
+function titleMismatchChoose(action) {
+  showTitleMismatch.value = false
+  titleMismatchResolve && titleMismatchResolve(action)
+  titleMismatchResolve = null
+}
+
+function onTitleMismatchUpdateShow(val) {
+  if (!val && titleMismatchResolve) {
+    titleMismatchResolve('取消')
+    titleMismatchResolve = null
+  }
 }
 
 async function confirmEssay() {
@@ -1557,6 +1601,9 @@ async function doReupload() {
 
 .picker-list { max-height: 300px; overflow-y: auto; }
 
+.mobile-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fff; border-bottom: 1px solid #f0f0f0; }
+.mobile-back-btn { border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; padding: 4px 12px; font-size: 14px; color: #333; }
+.mobile-topbar-title { font-size: 15px; font-weight: 600; color: #333; }
 .mobile-status {
   display: flex;
   align-items: center;
@@ -1638,6 +1685,20 @@ async function doReupload() {
   background: #fff;
   overflow-y: auto;
   padding: 20px;
+}
+
+.title-mismatch-body {
+  padding: 20px 24px 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  color: #323233;
+}
+.title-mismatch-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 20px;
 }
 
 @media (max-width: 767px) {

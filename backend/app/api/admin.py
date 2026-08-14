@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 import os
 import json
 import shutil
@@ -494,7 +494,19 @@ def export_database(
         output = output[output.index("\n") + 1:]
     with open(tmp_path, "w") as f:
         f.write(output)
-    return FileResponse(tmp_path, filename=f"essay_system_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql", media_type="application/octet-stream")
+    from starlette.background import BackgroundTask
+
+    def _cleanup_backup():
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return FileResponse(tmp_path,
+                        filename=f"essay_system_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql",
+                        media_type="application/octet-stream",
+                        background=BackgroundTask(_cleanup_backup))
 
 
 @router.post("/database/import")
@@ -543,7 +555,7 @@ async def import_database(
                 f"root@{host}", "rm", "-f", remote_path], capture_output=True, timeout=10)
 
     os.unlink(tmp_path)
-    if result.returncode != 0 and "ERROR" in result.stderr:
+    if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
     return {"message": "导入成功"}
 
@@ -558,7 +570,7 @@ def test_server():
 def test_db(db: Session = Depends(get_db)):
     """测试数据库连接是否正常"""
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return {"status": "ok", "message": "数据库连接正常"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"数据库连接失败: {str(e)}")

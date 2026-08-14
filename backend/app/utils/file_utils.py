@@ -125,32 +125,10 @@ def count_corrections_in_dir(dir_path: str) -> int:
     return count
 
 
-def move_content_file(essay, old_dir: str, new_dir: str) -> str:
-    """把作文文件从旧目录移到新目录。
-    返回新的 content_file 值（新目录下第一个文件的相对路径），失败返回空字符串。
-    仅当新旧路径不同且旧路径存在时才操作。
-    """
-    if not old_dir or not new_dir:
-        return ""
-    if os.path.abspath(old_dir) == os.path.abspath(new_dir):
-        return essay.content_file
-    if not os.path.isdir(old_dir):
-        return ""
-
-    os.makedirs(new_dir, exist_ok=True)
-    first_file = ""
-    for fname in os.listdir(old_dir):
-        src = os.path.join(old_dir, fname)
-        dst = os.path.join(new_dir, fname)
-        if os.path.exists(dst):
-            continue
-        shutil.move(src, dst)
-        if not first_file:
-            first_file = fname
-
-    # 清理空目录（逐层向上删）
-    _dir = old_dir
-    while _dir != get_upload_dir():
+def _cleanup_empty_dirs(start_dir: str):
+    """从 start_dir 开始逐层向上删除空目录，直到 upload 根目录。"""
+    _dir = start_dir
+    while _dir and _dir != get_upload_dir():
         try:
             if not os.listdir(_dir):
                 os.rmdir(_dir)
@@ -160,8 +138,41 @@ def move_content_file(essay, old_dir: str, new_dir: str) -> str:
         except OSError:
             break
 
-    if first_file:
-        return os.path.relpath(os.path.join(new_dir, first_file), get_upload_dir())
+
+def move_content_file(essay, old_dir: str, new_dir: str, filenames=None) -> str:
+    """把作文自身的文件集合从旧目录移到新目录。
+    filenames：该作文拥有的文件名（content_file + 图片等），缺省时仅移动 content_file。
+    只移动指定文件，避免误搬同目录下其它作文的文件。
+    返回新的 content_file 值（第一个成功移动文件的相对路径），失败返回空字符串。
+    仅当新旧路径不同且旧路径存在时才操作。
+    """
+    if not old_dir or not new_dir:
+        return ""
+    if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+        return essay.content_file
+    if not os.path.isdir(old_dir):
+        return ""
+    if filenames is None:
+        filenames = [os.path.basename(essay.content_file)] if essay.content_file else []
+
+    os.makedirs(new_dir, exist_ok=True)
+    moved = []
+    for fname in filenames:
+        if not fname:
+            continue
+        src = os.path.join(old_dir, fname)
+        dst = os.path.join(new_dir, fname)
+        if os.path.exists(src) and not os.path.exists(dst):
+            try:
+                shutil.move(src, dst)
+                moved.append(fname)
+            except OSError:
+                pass
+
+    _cleanup_empty_dirs(old_dir)
+
+    if moved:
+        return os.path.relpath(os.path.join(new_dir, moved[0]), get_upload_dir())
     return ""
 
 
