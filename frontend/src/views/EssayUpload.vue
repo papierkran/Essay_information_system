@@ -150,6 +150,7 @@ import { showToast, showDialog, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
+import { ensureContentHeader } from '../utils/essayHeader'
 
 const route = useRoute()
 const router = useRouter()
@@ -427,7 +428,14 @@ async function onSubmit() {
     fd.append('is_supplement', form.value.is_supplement ? 'true' : 'false')
     fd.append('teaching_mode', form.value.teaching_mode)
     fd.append('collector_note', form.value.collector_note || '')
-    fd.append('content_text', form.value.content_text)
+    let uploadContent = form.value.content_text
+    if (uploadContent && uploadContent.trim()) {
+      const ensured = ensureContentHeader(uploadContent, form.value.essay_title, form.value.student_name)
+      if (ensured.changed.length) {
+        uploadContent = ensured.text
+      }
+    }
+    fd.append('content_text', uploadContent)
     if (fileList.value.length > 0) {
       fileList.value.forEach(item => fd.append('files', item.file))
     }

@@ -476,11 +476,12 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRoute, onBeforeRouteLeave } from 'vue-router'
-import { showToast, showConfirmDialog } from 'vant'
+import { showToast, showConfirmDialog, showDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth, getBaseUrl } from '../api'
 import { formatDateTime, countWords } from '../utils/format'
 import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
+import { ensureContentHeader, firstLineTitle } from '../utils/essayHeader'
 
 const route = useRoute()
 const { isDesktop } = useScreen()
@@ -744,7 +745,12 @@ async function doReuploadDesktop() {
     fd.append('collector_note', editForm.value.collector_note || essay.value.collector_note || '')
     desktopFileList.value.forEach(item => fd.append('files', item.file))
     if (reuploadText.value.trim()) {
-      fd.append('content_text', reuploadText.value)
+      let uploadText = reuploadText.value
+      const ensured = ensureContentHeader(uploadText, editForm.value.essay_title || essay.value.essay_title || '', editForm.value.student_name || essay.value.student_name || '')
+      if (ensured.changed.length) {
+        uploadText = ensured.text
+      }
+      fd.append('content_text', uploadText)
     }
     await api.post('/essays/upload', fd, { timeout: 120000 })
     showToast('重新上传成功')
@@ -806,7 +812,15 @@ async function saveOriginalEdit() {
   }
   savingOriginalEdit.value = true
   try {
-    const text = (originalContentRef.value?.innerText || '').replace(/\n+$/, '')
+    let text = (originalContentRef.value?.innerText || '').replace(/\n+$/, '')
+    if (text.trim()) {
+      const baseTitle = editForm.value.essay_title || essay.value.essay_title || ''
+      const baseName = editForm.value.student_name || essay.value.student_name || ''
+      const ensured = ensureContentHeader(text, baseTitle, baseName)
+      if (ensured.changed.length) {
+        text = ensured.text
+      }
+    }
     await api.put(`/essays/${route.params.id}`, null, { params: { content_text: text } })
     showToast('保存成功')
     editingOriginal.value = false
@@ -855,8 +869,28 @@ async function saveCorrectedEdit() {
   }
   savingCorrectedEdit.value = true
   try {
-    const text = (correctedContentRef.value?.innerText || '').replace(/\n+$/, '')
-    await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: text } })
+    let text = (correctedContentRef.value?.innerText || '').replace(/\n+$/, '')
+    let finalTitle = editForm.value.essay_title || essay.value.essay_title || ''
+    const baseName = editForm.value.student_name || essay.value.student_name || ''
+    if (text.trim()) {
+      const corrTitle = firstLineTitle(text)
+      if (corrTitle && finalTitle && corrTitle !== finalTitle) {
+        const action = await askTitleMismatch(corrTitle, finalTitle)
+        if (action === '取消') return
+        if (action === '保留修改后的标题') {
+          finalTitle = corrTitle
+        }
+      }
+      const ensured = ensureContentHeader(text, finalTitle, baseName)
+      if (ensured.changed.length) {
+        text = ensured.text
+      }
+    }
+    const params = { corrected_text: text }
+    if (finalTitle !== (editForm.value.essay_title || essay.value.essay_title || '')) {
+      params.essay_title = finalTitle
+    }
+    await api.put(`/essays/${route.params.id}`, null, { params })
     showToast('保存成功')
     editingCorrected.value = false
     await loadEssay()
@@ -1024,9 +1058,43 @@ async function uploadCorrection() {
   }
   uploading.value = true
   try {
+    // ===== 标题/姓名行检测 =====
+    const baseTitle = editForm.value.essay_title || essay.value.essay_title || ''
+    const baseName = editForm.value.student_name || essay.value.student_name || ''
+
+    // 修改前内容补全标题/姓名行
+    if (essay.value.content_text && essay.value.content_text.trim()) {
+      const orig = ensureContentHeader(essay.value.content_text, baseTitle, baseName)
+      if (orig.changed.length && orig.text !== essay.value.content_text) {
+        await api.put(`/essays/${route.params.id}`, null, { params: { content_text: orig.text } })
+      }
+    }
+
+    // 修改后内容：先取本次提交的文字，否则用已保存的 corrected_text
+    let finalCorrected = correctionText.value.trim()
+      ? correctionText.value
+      : (essay.value.corrected_text || '')
+    let finalTitle = baseTitle
+    if (finalCorrected.trim()) {
+      // 修改后标题与基本信息不一致 → 弹窗确认
+      const corrTitle = firstLineTitle(finalCorrected)
+      if (corrTitle && baseTitle && corrTitle !== baseTitle) {
+        const action = await askTitleMismatch(corrTitle, baseTitle)
+        if (action === '取消') return
+        if (action === '保留修改后的标题') {
+          await api.put(`/essays/${route.params.id}`, null, { params: { essay_title: corrTitle } })
+          finalTitle = corrTitle
+        }
+      }
+      const ensured = ensureContentHeader(finalCorrected, finalTitle, baseName)
+      if (ensured.changed.length) {
+        finalCorrected = ensured.text
+      }
+    }
+
     const fd = new FormData()
     if (selectedFile.value) fd.append('file', selectedFile.value)
-    fd.append('corrected_text', correctionText.value)
+    fd.append('corrected_text', finalCorrected)
     fd.append('reviewer_note', correctionNote.value || '')
     await api.post(`/essays/${route.params.id}/upload-correction`, fd)
     showToast('修改提交成功')
@@ -1039,8 +1107,54 @@ async function uploadCorrection() {
   finally { uploading.value = false }
 }
 
+async function askTitleMismatch(corrTitle, baseTitle) {
+  return showDialog({
+    title: '提示',
+    message: `修改后的标题「${corrTitle}」与基本信息标题「${baseTitle}」不一致，是否保留修改后的标题？\n\n选择「保留」将更新基本信息中的作文标题为「${corrTitle}」；选择「不保留」则按基本信息标题补全；选择「取消」则放弃本次操作。`,
+    showConfirmButton: false,
+    buttons: [
+      { name: '不保留', color: '#969799' },
+      { name: '取消' },
+      { name: '保留修改后的标题', type: 'primary' },
+    ],
+  }).then(name => name || '取消').catch(() => '取消')
+}
+
 async function confirmEssay() {
   try {
+    // ===== 标题/姓名行检测 =====
+    const baseTitle = editForm.value.essay_title || essay.value.essay_title || ''
+    const baseName = editForm.value.student_name || essay.value.student_name || ''
+
+    // 修改前内容补全标题/姓名行
+    if (essay.value.content_text && essay.value.content_text.trim()) {
+      const orig = ensureContentHeader(essay.value.content_text, baseTitle, baseName)
+      if (orig.changed.length && orig.text !== essay.value.content_text) {
+        await api.put(`/essays/${route.params.id}`, null, { params: { content_text: orig.text } })
+      }
+    }
+
+    // 修改后内容：检测标题不一致 → 弹窗；补全标题/姓名行
+    let finalTitle = baseTitle
+    let finalCorrected = essay.value.corrected_text || ''
+    if (finalCorrected.trim()) {
+      const corrTitle = firstLineTitle(finalCorrected)
+      if (corrTitle && baseTitle && corrTitle !== baseTitle) {
+        const action = await askTitleMismatch(corrTitle, baseTitle)
+        if (action === '取消') return
+        if (action === '保留修改后的标题') {
+          finalTitle = corrTitle
+        }
+      }
+      const ensured = ensureContentHeader(finalCorrected, finalTitle, baseName)
+      if (ensured.changed.length && ensured.text !== finalCorrected) {
+        await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: ensured.text } })
+      }
+      if (finalTitle !== baseTitle) {
+        await api.put(`/essays/${route.params.id}`, null, { params: { essay_title: finalTitle } })
+      }
+    }
+
     await api.post(`/essays/${route.params.id}/confirm`)
     showToast('已确认修改')
     mobileTab.value = 0
@@ -1138,7 +1252,12 @@ async function doReupload() {
       fd.append('files', f)
     }
     if (reuploadText.value.trim()) {
-      fd.append('content_text', reuploadText.value)
+      let uploadText = reuploadText.value
+      const ensured = ensureContentHeader(uploadText, editForm.value.essay_title || essay.value.essay_title || '', editForm.value.student_name || essay.value.student_name || '')
+      if (ensured.changed.length) {
+        uploadText = ensured.text
+      }
+      fd.append('content_text', uploadText)
     }
     await api.post('/essays/upload', fd, { timeout: 120000 })
     showToast('重新上传成功')

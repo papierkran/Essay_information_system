@@ -293,6 +293,24 @@ def update_my_password(
     return {"message": "密码修改成功"}
 
 
+@router.put("/profile")
+def update_my_profile(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """用户自己修改个人信息（昵称/手机号）"""
+    nickname = data.get("nickname")
+    phone = data.get("phone")
+    if nickname is not None and nickname.strip():
+        current_user.nickname = nickname.strip()
+    if phone is not None:
+        current_user.phone = phone
+    db.commit()
+    db.refresh(current_user)
+    return UserOut.model_validate(current_user)
+
+
 # ===== 系统设置 =====
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "settings.json")
 

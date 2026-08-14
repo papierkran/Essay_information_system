@@ -1,5 +1,14 @@
 <template>
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
+    <div class="breadcrumb">
+      <router-link to="/dashboard" class="breadcrumb-link">首页</router-link>
+      <span class="breadcrumb-sep">/</span>
+      <span class="breadcrumb-current">未改列表</span>
+      <template v-if="activeTaskName">
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">任务：{{ activeTaskName }}</span>
+      </template>
+    </div>
     <div v-if="isDesktop" class="page-title">未改列表</div>
 
     <!-- 筛选栏 -->
@@ -324,6 +333,15 @@ const mobileFilterActive = computed(() => {
   return !!(f.name || f.essayTitle || f.status || f.grade || f.essayNumber || f.teachingMode || f.collectedBy || f.dateFrom || f.dateTo || f.wordCountMin || f.wordCountMax || filterTaskSearch.value)
 })
 
+const activeTaskName = computed(() => {
+  if (filters.value.taskId) {
+    const t = taskList.value.find(x => x.id == filters.value.taskId)
+    return t ? t.name : `任务#${filters.value.taskId}`
+  }
+  if (filterTaskSearch.value) return filterTaskSearch.value
+  return ''
+})
+
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
 function closeTaskDropdown(e) {
@@ -556,6 +574,24 @@ onUnmounted(() => {
 <style scoped>
 .page { padding: 0; }
 @media (max-width: 767px) { .page { min-height: 100vh; } }
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 0;
+  font-size: 13px;
+  color: #666;
+}
+.breadcrumb-link {
+  color: #1677ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.breadcrumb-link:hover { text-decoration: underline; }
+.breadcrumb-sep { color: #d9d9d9; }
+.breadcrumb-current { color: #333; }
 
 .filter-bar {
   display: flex;

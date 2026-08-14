@@ -103,7 +103,7 @@
         <div ref="topScrollContent" class="scroll-sync-content"></div>
       </div>
       <div ref="tableWrap" class="table-wrap" @scroll="syncScroll('bottom')">
-        <table class="desktop-table" v-if="list.length">
+        <table class="desktop-table" :class="{ 'table-dragging': tableDragging }" v-if="list.length">
           <thead>
             <tr>
               <th v-if="!isGuest" style="width:36px"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /></th>
@@ -589,6 +589,7 @@ function toggleAll() {
 }
 
 const dragState = ref({ active: false, startId: null, moved: false, min: -1, max: -1 })
+const tableDragging = ref(false)
 let suppressClickUntil = 0
 function isRowSelected(id) {
   if (dragState.value.active) {
@@ -612,13 +613,18 @@ function dragStart(id, evt) {
   const startIdx = list.value.findIndex(e => e.id === id)
   dragState.value = { active: true, startId: id, moved: false, min: startIdx, max: startIdx }
   document.addEventListener('mouseup', dragEnd)
-  evt.preventDefault()
 }
 function dragMove(id) {
   if (!dragState.value.active) return
   const startIdx = list.value.findIndex(e => e.id === dragState.value.startId)
   const curIdx = list.value.findIndex(e => e.id === id)
   if (startIdx === -1 || curIdx === -1) return
+  if (startIdx === curIdx) return
+  // 已拖入其他行：进入行选择模式，清除已产生的文本选区并禁止继续选中
+  if (!dragState.value.moved) {
+    window.getSelection()?.removeAllRanges()
+    tableDragging.value = true
+  }
   const min = Math.min(startIdx, curIdx)
   const max = Math.max(startIdx, curIdx)
   if (min === dragState.value.min && max === dragState.value.max) return
@@ -629,18 +635,25 @@ function dragMove(id) {
 function dragEnd() {
   if (!dragState.value.active) return
   const { min, max, moved, startId } = dragState.value
-  const startSelected = selectedIds.value.includes(startId)
-  const rangeIds = list.value.slice(min, max + 1).map(e => e.id)
+  tableDragging.value = false
   if (moved) {
+    const startSelected = selectedIds.value.includes(startId)
+    const rangeIds = list.value.slice(min, max + 1).map(e => e.id)
     if (!startSelected) {
       selectedIds.value = Array.from(new Set([...selectedIds.value, ...rangeIds]))
     } else {
       const rangeSet = new Set(rangeIds)
       selectedIds.value = selectedIds.value.filter(id => !rangeSet.has(id))
     }
+    suppressClickUntil = Date.now() + 120
+  } else {
+    // 未跨行拖拽：若产生了文本选区则视为复制操作，抑制随后的行点击选择
+    const sel = window.getSelection()
+    if (sel && sel.toString().trim()) {
+      suppressClickUntil = Date.now() + 300
+    }
   }
   dragState.value = { active: false, startId: null, moved: false, min: -1, max: -1 }
-  if (moved) suppressClickUntil = Date.now() + 120
   document.removeEventListener('mouseup', dragEnd)
 }
 
@@ -1021,6 +1034,7 @@ onUnmounted(() => {
 
 .row-selected { background: #e6f4ff !important; }
 
+.desktop-table.table-dragging { user-select: none; }
 .sortable { cursor: pointer; user-select: none; }
 .sortable:hover { background: #f0f0f0; }
 .th-dragging { opacity: 0.5; background: #e6f4ff !important; }

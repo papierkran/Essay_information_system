@@ -98,19 +98,44 @@
 
     <!-- 手机端任务列表 -->
     <template v-else>
-      <van-cell-group inset v-if="filteredTasks.length" style="margin-top:12px">
-        <van-cell v-for="t in filteredTasks" :key="t.id"
-          :title="t.name"
-          :label="`${t.grade || '未定年级'} ${t.essay_number ? '第' + t.essay_number + '次' : '无第几次'} ${t.course_name ? '· ' + t.course_name : ''} ${t.essay_topic || ''} · 已交${t.submitted_count || 0} 未改${t.pending_count || 0} 已改${t.corrected_count || 0}`"
-          is-link @click="isAdmin ? openTaskDialog(t) : viewEssays(t)">
-          <template #right-icon>
-            <span style="font-size:12px;color:#1677ff;margin-right:8px">{{ t.submitted_count || 0 }}人已交</span>
-            <van-tag :type="getTaskStatus(t).active ? 'primary' : 'default'" style="margin-right:8px">
-              {{ getTaskStatus(t).label }}
-            </van-tag>
-          </template>
-        </van-cell>
-      </van-cell-group>
+      <div class="mobile-filter">
+        <van-field v-model="mobileSearch" placeholder="搜索任务名称/课程/主题" clearable />
+      </div>
+      <div class="mobile-tabs">
+        <span v-for="st in statusTabs" :key="st.value" class="mobile-tab" :class="{ active: filters.status === st.value }" @click="setStatusFilter(st.value)">{{ st.label }}</span>
+      </div>
+      <div v-if="filteredTasks.length" class="mobile-task-list">
+        <div v-for="t in filteredTasks" :key="t.id" class="task-card">
+          <div class="task-card-head" @click="onCardClick(t)">
+            <span class="task-card-name">{{ t.name }}</span>
+            <van-tag :type="statusTagType(t)" :plain="!getTaskStatus(t).active">{{ getTaskStatus(t).label }}</van-tag>
+          </div>
+          <div class="task-card-tags" @click="onCardClick(t)">
+            <span class="badge-mini tag-grade">{{ t.grade || '未定年级' }}</span>
+            <span class="badge-mini tag-number">{{ t.essay_number ? '第' + t.essay_number + '次' : '无第几次' }}</span>
+            <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+            <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+          </div>
+          <div v-if="t.essay_topic" class="task-card-topic" @click="onCardClick(t)">{{ t.essay_topic }}</div>
+          <div class="task-card-meta" @click="onCardClick(t)">
+            <span v-if="t.start_time">开始 {{ formatDate(t.start_time) }}</span>
+            <span :class="{ 'deadline-soon': isExpired(t) }">截止 {{ formatDeadline(t.deadline) }}</span>
+          </div>
+          <div class="task-card-stats" @click="onCardClick(t)">
+            <span class="stat stat-submitted">已交 <b>{{ t.submitted_count || 0 }}</b></span>
+            <span class="stat stat-pending">未改 <b>{{ t.pending_count || 0 }}</b></span>
+            <span class="stat stat-corrected">已改 <b>{{ t.corrected_count || 0 }}</b></span>
+          </div>
+          <div v-if="isAdmin" class="task-card-actions">
+            <button class="act-btn" @click="viewEssays(t)">作文</button>
+            <button class="act-btn" @click="goBatchUpload(t)">批量上传</button>
+            <button class="act-btn" @click="openTaskDialog(t)">编辑</button>
+            <button class="act-btn" @click="cloneTask(t)">复制</button>
+            <button class="act-btn" :class="{ 'act-btn-success': !getTaskStatus(t).active }" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
+            <button class="act-btn act-btn-danger" @click="confirmDelTask(t)">删除</button>
+          </div>
+        </div>
+      </div>
       <div v-else style="padding:32px;text-align:center;color:#999">
         暂无收集任务
       </div>
@@ -188,6 +213,14 @@ const tasks = ref([])
 const courses = ref([])
 const filters = ref({ name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' })
 const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束', not_started: '未开始' }
+const statusTabs = [
+  { value: '', label: '全部' },
+  { value: 'active', label: '收集中' },
+  { value: 'not_started', label: '未开始' },
+  { value: 'expired', label: '已过期' },
+  { value: 'ended', label: '已结束' },
+]
+const mobileSearch = ref('')
 
 const columnDefs = [
   { key: 'name', label: '任务名称', sortable: true },
@@ -272,6 +305,13 @@ const filteredTasks = computed(() => {
   const kw = filters.value.name.toLowerCase()
   return tasks.value.filter(t => {
     if (kw && !t.name.toLowerCase().includes(kw)) return false
+    if (mobileSearch.value) {
+      const mw = mobileSearch.value.toLowerCase()
+      const ok = (t.name || '').toLowerCase().includes(mw)
+        || (t.course_name || '').toLowerCase().includes(mw)
+        || (t.essay_topic || '').toLowerCase().includes(mw)
+      if (!ok) return false
+    }
     if (filters.value.grade && t.grade !== filters.value.grade) return false
     if (filters.value.number && String(t.essay_number) !== String(filters.value.number)) return false
     if (filters.value.teachingMode && t.teaching_mode !== filters.value.teachingMode) return false
@@ -311,6 +351,10 @@ function getSortValue(t, key) {
 }
 function clearFilter() {
   filters.value = { name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' }
+  mobileSearch.value = ''
+}
+function setStatusFilter(v) {
+  filters.value.status = v
 }
 const showTaskDialog = ref(false)
 const editingTask = ref({})
@@ -363,6 +407,19 @@ function getTaskStatus(tpl) {
   if (isExpired(tpl)) return { active: false, label: '已过期' }
   if (tpl.is_active) return { active: true, label: '收集中' }
   return { active: false, label: '已结束' }
+}
+
+function statusTagType(tpl) {
+  const s = getTaskStatus(tpl).label
+  if (s === '收集中') return 'primary'
+  if (s === '未开始') return 'warning'
+  if (s === '已过期') return 'danger'
+  return 'default'
+}
+
+function onCardClick(tpl) {
+  if (isAdmin.value) openTaskDialog(tpl)
+  else viewEssays(tpl)
 }
 
 function openTaskDialog(tpl) {
@@ -504,4 +561,114 @@ function goBatchUpload(tpl) {
   border-left: 2px solid #1677ff;
   border-right: 2px solid #1677ff;
 }
+
+/* ===== 手机端任务列表 ===== */
+.mobile-filter { padding: 8px 12px 0; }
+.mobile-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 10;
+}
+.mobile-tab {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: #666;
+  background: #f5f5f5;
+  border-radius: 16px;
+  white-space: nowrap;
+}
+.mobile-tab.active {
+  background: #1677ff;
+  color: #fff;
+  font-weight: 500;
+}
+.mobile-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 12px 16px;
+}
+.task-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.task-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.task-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.tag-course { background: #f0f5ff; color: #2f54eb; }
+.task-card-topic {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-card-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+.deadline-soon { color: #ff4d4f; }
+.task-card-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 10px;
+}
+.task-card-stats b { font-size: 14px; }
+.stat-submitted b { color: #1677ff; }
+.stat-pending b { color: #d46b08; }
+.stat-corrected b { color: #52c41a; }
+.task-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #f5f5f5;
+}
+.act-btn {
+  flex: 1;
+  min-width: 72px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #1677ff;
+  background: #e6f4ff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.act-btn-success { color: #52c41a; background: #f6ffed; }
+.act-btn-danger { color: #ff4d4f; background: #fff1f0; }
 </style>

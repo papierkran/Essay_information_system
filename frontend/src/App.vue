@@ -5,7 +5,7 @@
       <button class="menu-toggle" :title="isDesktop && sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="toggleSidebar">☰</button>
       <h1 class="app-title">📖 作文收集管理系统</h1>
       <div class="header-right">
-        <span class="user-badge" v-if="user.username">
+        <span class="user-badge" v-if="user.username" @click="goPersonalInfo">
           <span class="user-name">{{ user.nickname || user.username }}</span>
           <span class="role-tag">{{ roleLabel }}</span>
         </span>
@@ -28,6 +28,7 @@
         <router-link v-if="canViewTasks" to="/admin/tasks" class="sidebar-link" @click="sidebarOpen=false">📋 任务列表</router-link>
         <router-link v-if="isAdmin" to="/admin/course" class="sidebar-link" @click="sidebarOpen=false">📚 课程管理</router-link>
         <router-link v-if="user.username" to="/review/operations" class="sidebar-link" @click="sidebarOpen=false">🕐 操作历史</router-link>
+        <router-link v-if="user.username" to="/account/settings" class="sidebar-link" @click="sidebarOpen=false">👤 个人信息</router-link>
         <router-link v-if="isAdmin" to="/admin/users" class="sidebar-link" @click="sidebarOpen=false">👥 用户管理</router-link>
         <router-link v-if="isAdmin" to="/admin/settings" class="sidebar-link" @click="sidebarOpen=false">⚙️ 系统设置</router-link>
       </nav>
@@ -94,6 +95,10 @@ function onLogout() {
   showToast('已退出登录')
 }
 
+function goPersonalInfo() {
+  router.push('/account/settings')
+}
+
 function showGuestToast() {
   showToast('游客无上传权限，仅可查看')
 }
@@ -141,7 +146,8 @@ body {
   gap: 12px;
 }
 
-.user-badge { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.user-badge { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.user-badge:hover { opacity: 0.8; }
 .user-name { color: rgba(255,255,255,0.9); }
 .role-tag { font-size: 11px; color: rgba(255,255,255,0.5); }
 

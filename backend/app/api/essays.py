@@ -1055,6 +1055,31 @@ def essay_stats(
     }
 
 
+@router.get("/my-stats")
+def my_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """当前用户的个人统计（个人信息页用）"""
+    mine = db.query(Essay).filter(
+        Essay.collected_by == current_user.id,
+        Essay.deleted_at == None,
+    )
+    reviewed = db.query(Essay).filter(
+        Essay.reviewer_id == current_user.id,
+        Essay.deleted_at == None,
+    )
+    today_start = datetime.combine(datetime.now().date(), datetime.min.time())
+    return {
+        "collected_total": mine.count(),
+        "collected_pending": mine.filter(Essay.status.in_(["pending", "confirming", "rework"])).count(),
+        "collected_corrected": mine.filter(Essay.status == "corrected").count(),
+        "reviewed_total": reviewed.count(),
+        "reviewed_corrected": reviewed.filter(Essay.status == "corrected").count(),
+        "uploaded_today": mine.filter(Essay.created_at >= today_start).count(),
+    }
+
+
 @router.get("/download/by-course/{course_id}")
 def download_by_course(
     course_id: int,
