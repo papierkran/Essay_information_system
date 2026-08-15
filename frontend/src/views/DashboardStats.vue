@@ -48,7 +48,9 @@
         >{{ y }} 年</button>
       </div>
       <div class="heatmap-hint">💡 点击任意日期格子，可跳转到作文列表查看当天上传的作文</div>
-      <v-chart class="chart chart-heatmap" :option="activityOption" autoresize @click="onHeatmapClick" />
+      <div class="heatmap-scroll">
+        <v-chart class="chart chart-heatmap" :option="activityOption" autoresize @click="onHeatmapClick" />
+      </div>
     </div>
 
     <div class="chart-row">
@@ -183,7 +185,7 @@ const activityOption = computed(() => {
       orient: 'horizontal',
       left: 'center',
       bottom: 0,
-      inRange: { color: ['#ebedf0', '#a7e9a7', '#5ecf4e', '#ffd700', '#ff9f1a', '#ff4d4f', '#7a0000'] },
+      inRange: { color: ['#ebedf0', '#73d13d', '#52c41a', '#ffd700', '#ff9f1a', '#ff4d4f', '#7a0000'] },
       textStyle: { fontSize: 11 },
     },
     calendar: {
@@ -191,8 +193,8 @@ const activityOption = computed(() => {
       top: 20,
       left: 20,
       right: 20,
-      cellSize: ['auto', 14],
-      itemStyle: { borderWidth: 3, borderColor: '#fff', borderRadius: 2 },
+      cellSize: [16, 16],
+      itemStyle: { borderWidth: 0 },
       dayLabel: { firstDay: 1, nameMap: ['日', '一', '二', '三', '四', '五', '六'], fontSize: 10 },
       monthLabel: { nameMap: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], fontSize: 10 },
       yearLabel: { show: false },
@@ -201,6 +203,7 @@ const activityOption = computed(() => {
       type: 'heatmap',
       coordinateSystem: 'calendar',
       data,
+      itemStyle: { borderRadius: 2, borderWidth: 1, borderColor: '#fff' },
     }],
   }
 })
@@ -385,7 +388,8 @@ function onHeatmapClick(params) {
 }
 
 .chart { height: 300px; width: 100%; }
-.chart-heatmap { height: 260px; }
+.chart-heatmap { height: 260px; width: 100%; }
+.heatmap-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .chart-row {
   display: grid;
@@ -398,5 +402,10 @@ function onHeatmapClick(params) {
   .chart-row { grid-template-columns: 1fr; }
   .chart { height: 260px; }
   .chart-card { padding: 16px; }
+  .heatmap-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chart-heatmap { min-width: 1000px; width: 1000px; }
 }
 </style>

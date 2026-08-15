@@ -1132,6 +1132,7 @@ def essay_stats(
     class_rows = (
         base.with_entities(Course.name, func.count(Essay.id))
         .join(Course, Course.id == Essay.course_id)
+        .filter(~Course.name.like("%迁移%"))
         .group_by(Course.id, Course.name)
         .order_by(func.count(Essay.id).desc())
         .all()
