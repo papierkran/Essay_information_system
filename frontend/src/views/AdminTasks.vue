@@ -78,6 +78,7 @@
               <template v-else-if="col.key === 'actions'">
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="cloneTask(t)" title="复制为新任务">复制</button>
+                <button class="btn" style="font-size:12px;padding:2px 8px;color:#1677ff" @click="exportTask(t)">📦 一键导出</button>
                 <button class="btn btn-primary" style="font-size:12px;padding:2px 8px" @click="goBatchUpload(t)">批量上传</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px;color:#ff4d4f" @click="confirmDelTask(t)">删除</button>
@@ -129,6 +130,7 @@
           <div v-if="isAdmin" class="task-card-actions">
             <button class="act-btn" @click="viewEssays(t)">作文</button>
             <button class="act-btn" @click="goBatchUpload(t)">批量上传</button>
+            <button class="act-btn" @click="exportTask(t)">导出</button>
             <button class="act-btn" @click="openTaskDialog(t)">编辑</button>
             <button class="act-btn" @click="cloneTask(t)">复制</button>
             <button class="act-btn" :class="{ 'act-btn-success': !getTaskStatus(t).active }" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
@@ -193,16 +195,21 @@
           @click="selectCourse(c)" />
       </div>
     </van-action-sheet>
+
+    <!-- 一键导出方式选择 -->
+    <ExportModeSheet :show="showExportSheet" :title="exportSheetTitle" @update:show="showExportSheet = $event" @confirm="onExportModeChosen" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { showDialog, showToast } from 'vant'
+import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDate as formatShortDate, formatDateTime } from '../utils/format'
+import { downloadBlobResponse } from '../utils/download'
+import ExportModeSheet from '../components/ExportModeSheet.vue'
 
 const router = useRouter()
 const { isDesktop } = useScreen()
@@ -510,6 +517,61 @@ function viewEssays(tpl) {
 
 function goBatchUpload(tpl) {
   router.push({ path: '/essay/batch-upload', query: { task_id: tpl.id } })
+}
+
+async function fetchTaskEssayIds(taskId) {
+  const ids = []
+  let page = 1
+  let total = 0
+  for (let guard = 0; guard < 20; guard++) {
+    const res = await api.get('/essays', { params: { task_id: taskId, page_size: 1000, page } })
+    const items = res.data.items || []
+    ids.push(...items.map(e => e.id))
+    total = res.data.total || ids.length
+    if (ids.length >= total || items.length === 0) break
+    page++
+  }
+  return ids
+}
+
+const showExportSheet = ref(false)
+const exportSheetTitle = ref('选择导出方式')
+let exportIds = []
+
+async function exportTask(tpl) {
+  let ids
+  try {
+    ids = await fetchTaskEssayIds(tpl.id)
+  } catch (err) {
+    showToast(err.response?.data?.detail || '获取任务作文失败')
+    return
+  }
+  if (!ids.length) { showToast('该任务下暂无作文可导出'); return }
+  exportIds = ids
+  exportSheetTitle.value = `导出任务「${tpl.name}」（共 ${ids.length} 篇）`
+  showExportSheet.value = true
+}
+
+async function onExportModeChosen(action) {
+  if (!exportIds.length) return
+  if ((action === 'merged' || action === 'corrected' || action === 'original') && exportIds.length > 200) {
+    showToast('合并导出一次最多 200 篇，请到作文列表分批导出')
+    return
+  }
+  showLoadingToast({ message: `正在导出 ${exportIds.length} 篇...`, forbidClick: true, duration: 0 })
+  try {
+    let res
+    if (action === 'zip') res = await api.post('/essays/batch-export-docx', exportIds, { responseType: 'blob' })
+    else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', exportIds, { responseType: 'blob' })
+    else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', exportIds, { responseType: 'blob' })
+    else res = await api.post('/essays/batch-export-docx-original-merged', exportIds, { responseType: 'blob' })
+    downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
+    closeToast()
+    showSuccessToast('导出成功')
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '导出失败')
+  }
 }
 </script>
 

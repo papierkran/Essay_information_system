@@ -65,7 +65,8 @@
       <div class="filter-row"><span class="filter-label">收集者备注</span><input v-model="filters.remark" placeholder="搜索收集者备注" class="filter-input" @keyup.enter="applyFilter" /></div>
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
-      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportCSV" :title="`仅导出当前页 ${list.length} 条，如需全部请配合筛选分批导出`">导出CSV(当前页)</button>
+      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportXlsx" :title="`导出当前页 ${list.length} 条`">📥 导出Excel(当前页)</button>
+      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" :disabled="!selectedIds.length" @click="exportXlsxSelected">📤 导出已选{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}</button>
     </div>
 
     <!-- 统计行 -->
@@ -73,15 +74,14 @@
       <span>共 <strong>{{ total }}</strong> 条</span>
       <span class="stat-pending">未改 <strong>{{ pendingTotal }}</strong></span>
       <span class="stat-corrected">已修改 <strong>{{ correctedTotal }}</strong></span>
-      <template v-if="!isGuest && (isDesktop || selectedIds.length)">
+      <template v-if="!isGuest && isDesktop">
         <span style="color:#d9d9d9">|</span>
-        <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条</span>
+        <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条<span v-if="selectedIds.length > list.length" style="color:#999">（含其他页/筛选）</span></span>
         <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
-        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportMergedDocx">📄 合并docx</button>
         <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchDelete">批量删除</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchCollector = true">修改收集者</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
-        <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds=[]">取消选择</button>
+        <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="clearSelection">取消选择</button>
       </template>
       <span v-if="isDesktop" style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="showColumnSettings = true">⚙️ 列设置</button>
@@ -95,6 +95,17 @@
         </select>
         条
       </span>
+    </div>
+
+    <!-- 手机端批量工具栏 -->
+    <div v-if="!isGuest && !isDesktop" class="mobile-batch-bar">
+      <label class="m-sel-all"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /> 全选本页</label>
+      <span class="m-sel-count">已选 {{ selectedIds.length }} 条</span>
+      <button class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 导出docx</button>
+      <button class="btn" style="font-size:12px;padding:3px 8px;color:#ff4d4f" :disabled="!selectedIds.length" @click="batchDelete">删除</button>
+      <button v-if="isAdmin" class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="showBatchCollector = true">改收集者</button>
+      <button v-if="isAdmin" class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="showBatchTask = true">改任务</button>
+      <button class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="clearSelection">取消</button>
     </div>
 
     <div v-if="loading" style="padding:24px;text-align:center;color:#999">⏳ 加载中...</div>
@@ -221,6 +232,10 @@
       <div style="padding:16px;font-size:14px;line-height:1.8">
         <p v-if="deletingEssay">学生：<strong>{{ deletingEssay.student_name }}</strong></p>
         <p v-else>确定删除已选的 <strong>{{ selectedIds.length }}</strong> 条作文吗？</p>
+        <div v-if="!deletingEssay && selectedIds.length" class="batch-preview">
+          <div class="batch-preview-title">本次将删除：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
         <van-checkbox v-model="deleteFileChecked" :disabled="!isAdmin">
           <span :style="{ color: isAdmin ? '#ff4d4f' : '#ccc' }">彻底删除（同时删除本地文件，不可恢复）</span>
         </van-checkbox>
@@ -258,6 +273,10 @@
     <van-dialog v-model:show="showBatchCollector" title="修改收集者" :show-cancel-button="true" @confirm="doBatchCollector">
       <div style="padding:16px">
         <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的收集者修改为：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
         <select v-model.number="batchCollectorId" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
           <option value="">请选择</option>
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
@@ -269,6 +288,10 @@
     <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="taskSearch = ''; batchTaskId = ''">
       <div style="padding:16px">
         <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的任务修改为（必选）：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
         <input v-model="taskSearch" placeholder="搜索任务名称..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box" />
         <div style="max-height:200px;overflow-y:auto;margin-top:4px;border:1px solid #d9d9d9;border-radius:6px">
           <div v-if="batchTaskId === ''" style="padding:8px 12px;color:#fa8c16;font-size:12px;border-bottom:1px solid #f5f5f5">请先选择要修改为的任务，或选择「无任务」</div>
@@ -282,6 +305,9 @@
         </div>
       </div>
     </van-dialog>
+
+    <!-- 批量导出方式选择 -->
+    <ExportModeSheet :show="showExportSheet" title="选择导出方式" @update:show="showExportSheet = $event" @confirm="onExportModeChosen" />
   </div>
 </template>
 
@@ -292,6 +318,9 @@ import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, 
 import api, { useAuth } from '../api'
 import { useScreen } from '../composables/useScreen'
 import { formatDateTime } from '../utils/format'
+import { exportXlsxFile } from '../utils/xlsx'
+import { downloadBlobResponse } from '../utils/download'
+import ExportModeSheet from '../components/ExportModeSheet.vue'
 
 const { getAuth } = useAuth()
 const { isDesktop } = useScreen()
@@ -310,6 +339,7 @@ const showBatchCollector = ref(false)
 const batchCollectorId = ref('')
 const showBatchTask = ref(false)
 const batchTaskId = ref('')
+const showExportSheet = ref(false)
 const taskSearch = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
@@ -358,8 +388,28 @@ const jumpPage = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
 const selectedIds = ref([])
+const selectedMeta = ref(new Map())
 const grades = ['初一','初二','初三','高一','高二','高三']
 const collectorList = ref([])
+
+function syncSelectMeta(id, e) {
+  if (e) selectedMeta.value.set(id, e)
+}
+function clearSelection() {
+  selectedIds.value = []
+  selectedMeta.value = new Map()
+}
+function selectedPreviewList() {
+  return selectedIds.value.map(id => selectedMeta.value.get(id)).filter(Boolean)
+}
+function previewText(maxShow = 8) {
+  const items = selectedPreviewList()
+  if (!items.length) return ''
+  const lines = items.slice(0, maxShow).map(i => `· ${i.student_name}《${i.essay_title || '无标题'}》`)
+  const more = items.length - maxShow
+  if (more > 0) lines.push(`…等共 ${items.length} 条`)
+  return lines.join('\n')
+}
 
 // 初始化收集者筛选：管理员默认全部，其他角色默认自己
 const defaultCollectedBy = computed(() => {
@@ -499,7 +549,7 @@ function moveColumn() {
 const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
-const allSelected = computed(() => list.value.length > 0 && selectedIds.value.length === list.value.length)
+const allSelected = computed(() => list.value.length > 0 && list.value.every(e => selectedIds.value.includes(e.id)))
 
 function statusLabel(s) { return { pending:'未修改', confirming:'待确认', rework:'待重改', corrected:'已修改' }[s] || s }
 
@@ -555,7 +605,7 @@ function updateTopScrollWidth() {
 }
 
 async function applyFilter() {
-  page.value = 1; selectedIds.value = []
+  page.value = 1
   saveFilters()
   await loadData()
 }
@@ -593,13 +643,33 @@ function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', 
 function toggleSelect(id) {
   if (isGuest.value) return
   const idx = selectedIds.value.indexOf(id)
-  if (idx > -1) selectedIds.value.splice(idx, 1)
-  else selectedIds.value.push(id)
+  const e = list.value.find(x => x.id === id)
+  if (idx > -1) {
+    selectedIds.value.splice(idx, 1)
+    selectedMeta.value.delete(id)
+  } else {
+    selectedIds.value.push(id)
+    syncSelectMeta(id, e)
+  }
 }
 function toggleAll() {
   if (isGuest.value) return
-  if (allSelected.value) selectedIds.value = []
-  else selectedIds.value = list.value.map(e => e.id)
+  const pageIds = list.value.map(e => e.id)
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.value.includes(id))
+  if (allOnPageSelected) {
+    // 取消本页勾选（保留其他页/其他筛选下的勾选）
+    const removeSet = new Set(pageIds)
+    selectedIds.value = selectedIds.value.filter(id => !removeSet.has(id))
+    const m = new Map(selectedMeta.value)
+    pageIds.forEach(id => m.delete(id))
+    selectedMeta.value = m
+  } else {
+    // 勾选本页全部（追加到已有勾选，不清空其他页）
+    selectedIds.value = Array.from(new Set([...selectedIds.value, ...pageIds]))
+    const m = new Map(selectedMeta.value)
+    list.value.forEach(e => m.set(e.id, e))
+    selectedMeta.value = m
+  }
 }
 
 const dragState = ref({ active: false, startId: null, moved: false, min: -1, max: -1 })
@@ -654,10 +724,16 @@ function dragEnd() {
     const startSelected = selectedIds.value.includes(startId)
     const rangeIds = list.value.slice(min, max + 1).map(e => e.id)
     if (!startSelected) {
+      const m = new Map(selectedMeta.value)
+      list.value.slice(min, max + 1).forEach(e => m.set(e.id, e))
+      selectedMeta.value = m
       selectedIds.value = Array.from(new Set([...selectedIds.value, ...rangeIds]))
     } else {
       const rangeSet = new Set(rangeIds)
       selectedIds.value = selectedIds.value.filter(id => !rangeSet.has(id))
+      const m = new Map(selectedMeta.value)
+      rangeIds.forEach(id => m.delete(id))
+      selectedMeta.value = m
     }
     suppressClickUntil = Date.now() + 120
   } else {
@@ -714,36 +790,34 @@ async function batchDelete() {
 
 async function batchExportDocx() {
   if (!selectedIds.value.length) return
+  showExportSheet.value = true
+}
+
+async function onExportModeChosen(action) {
+  if ((action === 'merged' || action === 'corrected' || action === 'original') && selectedIds.value.length > 200) {
+    showToast('合并导出一次最多 200 篇，请分批选择导出')
+    return
+  }
+  const modeLabel = {
+    zip: '修改前后 · 单独docx（ZIP 打包）',
+    merged: '修改前后 · 合并为一个docx',
+    corrected: '仅修改后 · 合并为一个docx',
+    original: '仅修改前 · 合并为一个docx',
+  }[action]
+  const confirmed = await showDialog({
+    title: '确认导出',
+    message: `导出方式：${modeLabel}\n将导出已选的 ${selectedIds.value.length} 篇作文：\n\n${previewText()}`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
-    const res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob' })
-    
-    // 从响应头解析文件名
-    const disposition = res.headers['content-disposition']
-    let filename = '作文导出.zip'
-    if (disposition) {
-      const p = disposition.split(';')
-      for (const part of p) {
-        const trim = part.trim()
-        if (trim.startsWith('filename*=')) {
-          const val = trim.split("''").pop()
-          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
-          break
-        } else if (trim.startsWith('filename=')) {
-          const val = trim.split('=')[1]
-          if (val) filename = val.replace(/"/g, '')
-        }
-      }
-    }
-    
-    // 创建 Blob URL 并下载
-    const url = window.URL.createObjectURL(new Blob([res.data]))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    window.URL.revokeObjectURL(url)
-    
+    let res
+    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob' })
+    else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob' })
+    else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob' })
+    else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob' })
+    downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
     closeToast()
     showSuccessToast('导出成功')
   } catch (err) {
@@ -752,73 +826,12 @@ async function batchExportDocx() {
   }
 }
 
-async function batchExportMergedDocx() {
-  if (!selectedIds.value.length) return
-
-  // 统计选中作文的任务，若有多个任务则提示，按多数任务命名
-  const idSet = new Set(selectedIds.value)
-  const selectedEssays = list.value.filter(e => idSet.has(e.id))
-  const taskCount = {}
-  selectedEssays.forEach(e => {
-    const name = e.task_name || '未关联任务'
-    taskCount[name] = (taskCount[name] || 0) + 1
-  })
-  const taskNames = Object.keys(taskCount)
-  let majorityName = taskNames.length ? taskNames.reduce((a, b) => taskCount[a] >= taskCount[b] ? a : b) : '作文合并'
-
-  if (taskNames.length > 1) {
-    const confirmed = await showDialog({
-      title: '多任务提示',
-      message: `选中作文属于多个任务（${taskNames.join('、')}），将合并为一个docx，文件名按多数任务「${majorityName}」命名。是否继续？`,
-      showCancelButton: true,
-      confirmButtonText: '继续合并',
-      cancelButtonText: '取消',
-    }).catch(() => false)
-    if (!confirmed) return
-  }
-
-  try {
-    showLoadingToast({ message: '正在合并导出...', forbidClick: true, duration: 0 })
-    const res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob' })
-
-    const disposition = res.headers['content-disposition']
-    let filename = majorityName + '.docx'
-    if (disposition) {
-      const p = disposition.split(';')
-      for (const part of p) {
-        const trim = part.trim()
-        if (trim.startsWith('filename*=')) {
-          const val = trim.split("''").pop()
-          if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
-          break
-        } else if (trim.startsWith('filename=')) {
-          const val = trim.split('=')[1]
-          if (val) filename = val.replace(/"/g, '')
-        }
-      }
-    }
-
-    const url = window.URL.createObjectURL(new Blob([res.data]))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    window.URL.revokeObjectURL(url)
-
-    closeToast()
-    showSuccessToast('合并导出成功')
-  } catch (err) {
-    closeToast()
-    showFailToast(err.response?.data?.detail || '合并导出失败')
-  }
-}
-
 async function doBatchCollector() {
   if (!batchCollectorId.value) { showToast('请选择收集者'); return }
   try {
     await api.post('/essays/batch-update', { ids: selectedIds.value, collected_by: batchCollectorId.value })
     showSuccessToast('修改成功')
-    selectedIds.value = []
+    clearSelection()
     batchCollectorId.value = ''
     await loadData()
   } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
@@ -838,7 +851,7 @@ async function doBatchTask() {
   try {
     await api.post('/essays/batch-update', { ids: selectedIds.value, task_id: batchTaskId.value || null })
     showSuccessToast('修改成功')
-    selectedIds.value = []
+    clearSelection()
     batchTaskId.value = ''
     await loadData()
   } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
@@ -880,7 +893,7 @@ async function doDelete() {
     } catch (err) {
       showToast(err.response?.data?.detail || '批量删除失败')
     }
-    selectedIds.value = []
+    clearSelection()
     applyFilter()
     return
   }
@@ -896,19 +909,52 @@ async function doDelete() {
 
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
-function exportCSV() {
-  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
-  const rows = list.value.map(e => [
+function buildXlsxRows(items) {
+  return items.map(e => [
     e.student_name, e.grade, e.essay_title, e.essay_number ? `第${e.essay_number}次` : '',
     e.teaching_mode, statusLabel(e.status), e.collector_name,
     e.collector_note || '', e.reviewer_note || '',
     e.created_at ? formatDateTime(e.created_at) : '', e.corrected_at ? formatDateTime(e.corrected_at) : '',
   ])
-  const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a'); a.href = url; a.download = '作文列表.csv'; a.click()
-  URL.revokeObjectURL(url)
+}
+
+async function exportXlsx() {
+  if (!list.value.length) { showToast('当前页没有数据可导出'); return }
+  showLoadingToast({ message: '正在生成 Excel...', forbidClick: true, duration: 0 })
+  try {
+    const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
+    const rows = buildXlsxRows(list.value)
+    const ts = new Date().toISOString().slice(0, 10)
+    await exportXlsxFile(`作文列表_${ts}.xlsx`, '作文列表', headers, rows)
+    closeToast()
+    showSuccessToast(`已导出当前页 ${rows.length} 条`)
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '导出失败')
+  }
+}
+
+async function exportXlsxSelected() {
+  if (!selectedIds.value.length) return
+  const items = selectedPreviewList()
+  const confirmed = await showDialog({
+    title: '确认导出已选',
+    message: `将导出已选的 ${items.length} 篇作文为 Excel：\n\n${previewText()}`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
+  showLoadingToast({ message: '正在生成 Excel...', forbidClick: true, duration: 0 })
+  try {
+    const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
+    const rows = buildXlsxRows(items)
+    const ts = new Date().toISOString().slice(0, 10)
+    await exportXlsxFile(`作文已选_${ts}.xlsx`, '作文列表', headers, rows)
+    closeToast()
+    showSuccessToast(`已导出 ${rows.length} 条`)
+  } catch (err) {
+    closeToast()
+    showFailToast(err.response?.data?.detail || '导出失败')
+  }
 }
 
 onMounted(async () => {
@@ -1009,6 +1055,53 @@ onUnmounted(() => {
 .stats-bar strong { font-size: 15px; }
 .stat-pending { color: #d46b08; }
 .stat-corrected { color: #52c41a; }
+
+/* 批量预览 */
+.batch-preview {
+  background: #f8f9fb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.batch-preview-title {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+}
+.batch-preview-body {
+  font-size: 13px;
+  color: #333;
+  line-height: 1.8;
+  white-space: pre-line;
+}
+
+/* 手机端批量工具栏 */
+.mobile-batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  margin-bottom: 10px;
+}
+.m-sel-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  margin-right: auto;
+}
+.m-sel-count {
+  font-size: 12px;
+  color: #666;
+}
 
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .desktop-table {

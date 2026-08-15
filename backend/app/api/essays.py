@@ -251,8 +251,8 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
     return tmp_path
 
 
-def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_heading: bool = False) -> None:
-    """把一篇作文的修改前后内容写入已有的 docx 文档。add_heading=True 时先加学生+标题行。"""
+def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_heading: bool = False, corrected_only: bool = False, original_only: bool = False) -> None:
+    """把一篇作文的修改前后内容写入已有的 docx 文档。add_heading=True 时先加学生+标题行；corrected_only=True 时仅输出修改后内容；original_only=True 时仅输出修改前内容。"""
     from docx import Document
     from docx.shared import Pt, Cm
     from docx.enum.text import WD_LINE_SPACING
@@ -305,6 +305,14 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
         _set_run_font(hr)
         hr.bold = True
         _set_para_format(hp, is_title=True)
+
+    if corrected_only:
+        _add_block(corrected, "修改后：")
+        return
+
+    if original_only:
+        _add_block(content, "修改前：")
+        return
 
     # 修改前
     _add_block(content, "修改前：")
@@ -1921,6 +1929,126 @@ def batch_export_docx_merged(
     return FileResponse(
         tmp_path,
         filename=f"{safe_name}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_merged_docx),
+    )
+
+
+@router.post("/batch-export-docx-corrected-merged")
+def batch_export_docx_corrected_merged(
+    essay_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """一键合并仅修改后 docx：只输出选中作文的修改后内容为一个 docx。
+    文件名使用任务名称，存在多个任务时按多数任务名称命名。"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无导出权限")
+    from collections import Counter
+    from docx import Document
+
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    if not essays:
+        raise HTTPException(status_code=404, detail="未找到选中的作文")
+    if len(essays) > 200:
+        raise HTTPException(status_code=400, detail="一次最多合并 200 篇作文，请分批导出")
+
+    task_ids = {e.task_id for e in essays if e.task_id}
+    task_names = {}
+    if task_ids:
+        for t in db.query(EssayTask).filter(EssayTask.id.in_(task_ids)).all():
+            task_names[t.id] = t.name or "未命名任务"
+
+    counter = Counter()
+    for e in essays:
+        name = task_names.get(e.task_id) if e.task_id else ""
+        counter[name or "未关联任务"] += 1
+    majority_name = counter.most_common(1)[0][0] if counter else "作文合并"
+    safe_name = majority_name.replace("/", "_").replace("\\", "_").strip() or "作文合并"
+
+    doc = Document()
+    for idx, essay in enumerate(essays):
+        if idx > 0:
+            doc.add_page_break()
+        _append_essay_to_doc(doc, essay, show_corrected=True, add_heading=True, corrected_only=True)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+
+    from starlette.background import BackgroundTask
+
+    def _cleanup_merged_docx():
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return FileResponse(
+        tmp_path,
+        filename=f"{safe_name}_修改后.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_merged_docx),
+    )
+
+
+@router.post("/batch-export-docx-original-merged")
+def batch_export_docx_original_merged(
+    essay_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """一键合并仅修改前 docx：只输出选中作文的修改前（原文）内容为一个 docx。
+    文件名使用任务名称，存在多个任务时按多数任务名称命名。"""
+    if "guest" in current_user.role:
+        raise HTTPException(status_code=403, detail="游客无导出权限")
+    from collections import Counter
+    from docx import Document
+
+    essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    if not essays:
+        raise HTTPException(status_code=404, detail="未找到选中的作文")
+    if len(essays) > 200:
+        raise HTTPException(status_code=400, detail="一次最多合并 200 篇作文，请分批导出")
+
+    task_ids = {e.task_id for e in essays if e.task_id}
+    task_names = {}
+    if task_ids:
+        for t in db.query(EssayTask).filter(EssayTask.id.in_(task_ids)).all():
+            task_names[t.id] = t.name or "未命名任务"
+
+    counter = Counter()
+    for e in essays:
+        name = task_names.get(e.task_id) if e.task_id else ""
+        counter[name or "未关联任务"] += 1
+    majority_name = counter.most_common(1)[0][0] if counter else "作文合并"
+    safe_name = majority_name.replace("/", "_").replace("\\", "_").strip() or "作文合并"
+
+    doc = Document()
+    for idx, essay in enumerate(essays):
+        if idx > 0:
+            doc.add_page_break()
+        _append_essay_to_doc(doc, essay, add_heading=True, original_only=True)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = tmp.name
+    tmp.close()
+    doc.save(tmp_path)
+
+    from starlette.background import BackgroundTask
+
+    def _cleanup_merged_docx():
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return FileResponse(
+        tmp_path,
+        filename=f"{safe_name}_修改前.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         background=BackgroundTask(_cleanup_merged_docx),
     )
