@@ -28,6 +28,29 @@
       <v-chart class="chart" :option="trendOption" autoresize />
     </div>
 
+    <!-- GitHub 风格上传频率热力图 -->
+    <div class="card chart-card">
+      <div class="card-header heatmap-header">
+        <h3>🔥 上传频率（按年）</h3>
+        <div class="year-switch">
+          <button class="year-btn" :disabled="!canPrevYear" @click="changeYear(-1)">‹</button>
+          <button class="year-btn year-current" @click="showYearPicker = !showYearPicker">{{ activeYear }} 年 ▾</button>
+          <button class="year-btn" :disabled="!canNextYear" @click="changeYear(1)">›</button>
+        </div>
+      </div>
+      <div v-if="showYearPicker" class="year-picker">
+        <button
+          v-for="y in pickerYears"
+          :key="y"
+          class="year-opt"
+          :class="{ active: y === activeYear }"
+          @click="selectYear(y)"
+        >{{ y }} 年</button>
+      </div>
+      <div class="heatmap-hint">💡 点击任意日期格子，可跳转到作文列表查看当天上传的作文</div>
+      <v-chart class="chart chart-heatmap" :option="activityOption" autoresize @click="onHeatmapClick" />
+    </div>
+
     <div class="chart-row">
       <!-- 状态分布 -->
       <div class="card chart-card">
@@ -62,14 +85,17 @@
 import { ref, computed, onMounted } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, BarChart, PieChart } from 'echarts/charts'
+import { LineChart, BarChart, PieChart, HeatmapChart } from 'echarts/charts'
 import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  CalendarComponent,
+  VisualMapComponent,
 } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { useRouter } from 'vue-router'
 import api from '../api'
 import { useScreen } from '../composables/useScreen'
 
@@ -78,14 +104,37 @@ use([
   LineChart,
   BarChart,
   PieChart,
+  HeatmapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  CalendarComponent,
+  VisualMapComponent,
 ])
 
 const { isDesktop } = useScreen()
+const router = useRouter()
 const stats = ref({})
+const activeYear = ref(null)
+const showYearPicker = ref(false)
+
+const pickerYears = computed(() => {
+  const years = stats.value.available_years || []
+  const cur = new Date().getFullYear()
+  return [...new Set([...years, cur])].sort((a, b) => b - a)
+})
+
+const minYear = computed(() => {
+  const list = pickerYears.value
+  return list.length ? list[list.length - 1] : new Date().getFullYear()
+})
+
+const currentYear = computed(() => new Date().getFullYear())
+
+const canPrevYear = computed(() => activeYear.value > minYear.value)
+
+const canNextYear = computed(() => activeYear.value < currentYear.value)
 
 const STATUS_COLORS = { pending: '#fa8c16', confirming: '#1677ff', rework: '#eb2f96', corrected: '#52c41a' }
 const STATUS_LABELS = { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }
@@ -117,6 +166,42 @@ const trendOption = computed(() => {
     xAxis: { type: 'category', data: days, axisLabel: { fontSize: 10 } },
     yAxis: { type: 'value', minInterval: 1 },
     series,
+  }
+})
+
+const activityOption = computed(() => {
+  const data = (stats.value.daily_upload || []).map(d => [d.date, d.count])
+  const range = data.length ? [data[0][0], data[data.length - 1][0]] : []
+  return {
+    tooltip: {
+      formatter: p => `${p.data[0]}：上传 ${p.data[1]} 篇`,
+    },
+    visualMap: {
+      min: 0,
+      max: 50,
+      calculable: true,
+      orient: 'horizontal',
+      left: 'center',
+      bottom: 0,
+      inRange: { color: ['#ebedf0', '#a7e9a7', '#5ecf4e', '#ffd700', '#ff9f1a', '#ff4d4f', '#7a0000'] },
+      textStyle: { fontSize: 11 },
+    },
+    calendar: {
+      range,
+      top: 20,
+      left: 20,
+      right: 20,
+      cellSize: ['auto', 14],
+      itemStyle: { borderWidth: 3, borderColor: '#fff', borderRadius: 2 },
+      dayLabel: { firstDay: 1, nameMap: ['日', '一', '二', '三', '四', '五', '六'], fontSize: 10 },
+      monthLabel: { nameMap: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], fontSize: 10 },
+      yearLabel: { show: false },
+    },
+    series: [{
+      type: 'heatmap',
+      coordinateSystem: 'calendar',
+      data,
+    }],
   }
 })
 
@@ -185,8 +270,35 @@ onMounted(async () => {
   try {
     const res = await api.get('/essays/stats')
     stats.value = res.data || {}
+    activeYear.value = new Date().getFullYear()
   } catch {}
 })
+
+async function loadStats() {
+  try {
+    const params = {}
+    if (activeYear.value) params.year = activeYear.value
+    const res = await api.get('/essays/stats', { params })
+    stats.value = res.data || {}
+  } catch {}
+}
+
+function changeYear(delta) {
+  selectYear(activeYear.value + delta)
+}
+
+function selectYear(y) {
+  activeYear.value = y
+  showYearPicker.value = false
+  loadStats()
+}
+
+function onHeatmapClick(params) {
+  const date = params?.data?.[0]
+  if (date) {
+    router.push({ path: '/essay/list', query: { day: date } })
+  }
+}
 </script>
 
 <style scoped>
@@ -224,7 +336,56 @@ onMounted(async () => {
 .card-header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0; }
 .card-header h3 { font-size: 15px; font-weight: 600; margin: 0; }
 
+.heatmap-header { display: flex; align-items: center; justify-content: space-between; }
+
+.year-switch { display: flex; align-items: center; gap: 6px; }
+.year-btn {
+  min-width: 32px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.year-btn:hover:not(:disabled) { border-color: #4096ff; color: #1677ff; }
+.year-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.year-current { font-weight: 600; min-width: 72px; }
+
+.year-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+}
+.year-opt {
+  padding: 5px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.year-opt:hover { border-color: #4096ff; color: #1677ff; }
+.year-opt.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+
+.heatmap-hint {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 10px;
+}
+
 .chart { height: 300px; width: 100%; }
+.chart-heatmap { height: 260px; }
 
 .chart-row {
   display: grid;

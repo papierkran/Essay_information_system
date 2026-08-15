@@ -1104,10 +1104,11 @@ def restore_essay(
 
 @router.get("/stats")
 def essay_stats(
+    year: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Dashboard 统计数据"""
+    """Dashboard 统计数据（year 指定热力图年份，缺省为近365天）"""
     now = datetime.now()
     today = now.date()
     month_start = today.replace(day=1)
@@ -1191,6 +1192,47 @@ def essay_stats(
             "by_collector": by_collector,
         })
 
+    # GitHub 风格：按年每日上传数量（贡献热力图）
+    # 可切换年份；缺省展示近365天
+    if year:
+        year_start = datetime(year, 1, 1)
+        year_end = datetime(year, 12, 31, 23, 59, 59)
+        daily_rows = (
+            db.query(func.date(Essay.created_at).label("day"), func.count(Essay.id).label("cnt"))
+            .filter(Essay.deleted_at == None, Essay.created_at >= year_start, Essay.created_at <= year_end)
+            .group_by("day")
+            .all()
+        )
+        daily_map = {str(day): cnt for day, cnt in daily_rows}
+        daily_upload = []
+        is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+        total_days = 366 if is_leap else 365
+        for i in range(total_days):
+            d = (year_start + timedelta(days=i)).date()
+            daily_upload.append({"date": d.strftime("%Y-%m-%d"), "count": daily_map.get(d.strftime("%Y-%m-%d"), 0)})
+    else:
+        year_start = datetime.combine(today - timedelta(days=364), datetime.min.time())
+        daily_rows = (
+            db.query(func.date(Essay.created_at).label("day"), func.count(Essay.id).label("cnt"))
+            .filter(Essay.deleted_at == None, Essay.created_at >= year_start)
+            .group_by("day")
+            .all()
+        )
+        daily_map = {str(day): cnt for day, cnt in daily_rows}
+        daily_upload = []
+        for i in range(364, -1, -1):
+            d = today - timedelta(days=i)
+            daily_upload.append({"date": d.strftime("%Y-%m-%d"), "count": daily_map.get(d.strftime("%Y-%m-%d"), 0)})
+
+    # 可用的年份列表（有上传记录的年份，用于热力图年份切换）
+    year_rows = (
+        db.query(func.extract("year", Essay.created_at).label("yr"))
+        .filter(Essay.deleted_at == None)
+        .distinct()
+        .all()
+    )
+    available_years = sorted([int(yr) for yr, in year_rows if yr is not None], reverse=True)
+
     return {
         "total": total,
         "pending": pending,
@@ -1203,6 +1245,8 @@ def essay_stats(
         "collector_rank": collector_rank,
         "trend": trend,
         "trend_collectors": trend_collectors,
+        "daily_upload": daily_upload,
+        "available_years": available_years,
     }
 
 

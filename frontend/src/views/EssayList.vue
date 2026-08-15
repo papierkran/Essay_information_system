@@ -966,6 +966,7 @@ onMounted(async () => {
   document.addEventListener('click', closeTaskDropdown)
   // 从URL参数读取task_id（优先：重置筛选后再按任务筛选）
   const taskIdFromQuery = Number(route.query.task_id)
+  const dayFromQuery = route.query.day
   if (taskIdFromQuery) {
     // 重置所有筛选
     Object.keys(filters.value).forEach(k => { filters.value[k] = '' })
@@ -973,6 +974,12 @@ onMounted(async () => {
     filters.value.taskId = taskIdFromQuery
     const t = taskList.value.find(x => x.id === taskIdFromQuery)
     if (t) filterTaskSearch.value = t.name
+  } else if (dayFromQuery) {
+    // 重置筛选后按指定日期筛选（数据统计热力图跳转）
+    Object.keys(filters.value).forEach(k => { filters.value[k] = '' })
+    filters.value.collectedBy = defaultCollectedBy.value
+    filters.value.dateFrom = dayFromQuery
+    filters.value.dateTo = dayFromQuery
   } else {
     // 恢复之前保存的筛选，如果没有则设置默认值
     const hasSaved = loadFilters()
