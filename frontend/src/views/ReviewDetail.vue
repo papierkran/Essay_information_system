@@ -252,20 +252,20 @@
                 </button>
               </div>
               <div style="display:flex;gap:4px">
-                <button class="btn-mini" @click="toggleEditCorrected" v-if="essay.corrected_text && canReview">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
+                <button class="btn-mini" @click="toggleEditCorrected" v-if="canReview">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
                 <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
               </div>
             </div>
             <div class="pane-body">
               <div class="edit-wrapper">
-                <div v-if="essay.corrected_text" class="content-text corrected-content"
+                <div v-if="editingCorrected || essay.corrected_text" class="content-text corrected-content"
                   ref="correctedContentRef"
                   :key="'corr-' + (editingCorrected ? 1 : 0)"
                   :contenteditable="editingCorrected"
                   :class="{ 'content-editing': editingCorrected }">
                   <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
                 </div>
-                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+                <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容，点击右上角「✏️ 编辑」录入</p></div>
                 <div v-if="editingCorrected" class="edit-actions inline-actions">
                   <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" @click="saveCorrectedEdit" :disabled="savingCorrectedEdit">💾 保存</button>
                   <button class="btn" style="font-size:12px;padding:4px 12px" @click="cancelCorrectedEdit">取消</button>
@@ -389,18 +389,18 @@
           <van-cell-group style="margin-top:12px">
             <van-cell title="✅ 修改后">
               <template #right-icon>
-                <van-button v-if="essay.corrected_text && canReview" size="mini" @click="toggleEditCorrected" style="margin-right:6px">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</van-button>
+                <van-button v-if="canReview" size="mini" @click="toggleEditCorrected" style="margin-right:6px">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</van-button>
                 <van-button v-if="essay.content_text && canReview" size="mini" :loading="aiRewriteLoading" @click="doAiRewrite">🤖 一键修改</van-button>
               </template>
             </van-cell>
-            <div v-if="essay.corrected_text" class="content-text corrected-content"
+            <div v-if="editingCorrected || essay.corrected_text" class="content-text corrected-content"
               ref="correctedContentRef"
               :key="'corr-' + (editingCorrected ? 1 : 0)"
               :contenteditable="editingCorrected"
               :class="{ 'content-editing': editingCorrected }">
               <p v-for="(para, i) in correctedParagraphs" :key="i" :class="{ 'para-center-bold': i < 2 }">{{ para }}</p>
             </div>
-            <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容</p></div>
+            <div v-else class="empty-state" style="padding:20px"><p>暂无修改内容，点击「✏️ 编辑」录入</p></div>
             <div v-if="editingCorrected" class="mobile-edit-actions">
               <van-button size="small" type="primary" @click="saveCorrectedEdit" :loading="savingCorrectedEdit">💾 保存</van-button>
               <van-button size="small" @click="cancelCorrectedEdit">取消</van-button>
