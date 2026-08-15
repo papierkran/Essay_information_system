@@ -1098,7 +1098,7 @@ def my_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """当前用户的个人统计（个人信息页用）"""
+    """当前用户的个人统计（个人信息页用，按角色区分收集/批改/总览视角）"""
     mine = db.query(Essay).filter(
         Essay.collected_by == current_user.id,
         Essay.deleted_at == None,
@@ -1107,14 +1107,30 @@ def my_stats(
         Essay.reviewer_id == current_user.id,
         Essay.deleted_at == None,
     )
+    base = db.query(Essay).filter(Essay.deleted_at == None)
     today_start = datetime.combine(datetime.now().date(), datetime.min.time())
     return {
+        # 收集视角
         "collected_total": mine.count(),
-        "collected_pending": mine.filter(Essay.status.in_(["pending", "confirming", "rework"])).count(),
+        "collected_pending": mine.filter(Essay.status == "pending").count(),
+        "collected_confirming": mine.filter(Essay.status == "confirming").count(),
+        "collected_rework": mine.filter(Essay.status == "rework").count(),
         "collected_corrected": mine.filter(Essay.status == "corrected").count(),
-        "reviewed_total": reviewed.count(),
-        "reviewed_corrected": reviewed.filter(Essay.status == "corrected").count(),
         "uploaded_today": mine.filter(Essay.created_at >= today_start).count(),
+        # 批改视角
+        "reviewed_total": reviewed.count(),
+        "reviewed_confirming": reviewed.filter(Essay.status == "confirming").count(),
+        "reviewed_rework": reviewed.filter(Essay.status == "rework").count(),
+        "reviewed_corrected": reviewed.filter(Essay.status == "corrected").count(),
+        "reviewed_today": reviewed.filter(Essay.corrected_at >= today_start).count(),
+        # 系统总览
+        "sys_total": base.count(),
+        "sys_pending": base.filter(Essay.status == "pending").count(),
+        "sys_confirming": base.filter(Essay.status == "confirming").count(),
+        "sys_rework": base.filter(Essay.status == "rework").count(),
+        "sys_corrected": base.filter(Essay.status == "corrected").count(),
+        # 当前待处理总数（批改待办）
+        "todo_total": base.filter(Essay.status.in_(["pending", "confirming", "rework"])).count(),
     }
 
 
