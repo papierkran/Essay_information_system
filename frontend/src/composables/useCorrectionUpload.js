@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import api from '../api'
-import { readDocxText, extractTitleFromText, extractNameFromText, splitBeforeAfterText } from '../utils/docxParse'
+import { readDocxText, extractTitleFromText, extractNameFromText, splitBeforeAfterText, extractDateFromFilename } from '../utils/docxParse'
 
 const CONCURRENCY = 3
 
@@ -85,12 +85,13 @@ export function useCorrectionUpload(contextRef, { onResult, onFolderSelected } =
 
     for (const file of docxFiles) {
       const fnameName = studentNameFromFilename(file)
+      const collectTime = extractDateFromFilename(file.name)
       try {
         const { title, studentName: docName, before, after } = await parseDocxContent(file)
         if (!before && !after) {
           parsed.push({ file, studentName: fnameName || docName || '', ok: false, error: '未识别到「修改前：/修改后：」内容' })
         } else {
-          parsed.push({ file, studentName: fnameName || docName || '', title, before, after, ok: true })
+          parsed.push({ file, studentName: fnameName || docName || '', title, before, after, ok: true, collectTime })
         }
       } catch (err) {
         parsed.push({ file, studentName: fnameName || '', ok: false, error: '文件解析失败（不支持 .doc 旧格式或文件损坏）' })
@@ -135,8 +136,9 @@ export function useCorrectionUpload(contextRef, { onResult, onFolderSelected } =
     fd.append('corrected_text', item.after || '')
     fd.append('is_supplement', ctx.form.is_supplement ? 'true' : 'false')
     fd.append('collector_note', ctx.form.collector_note || '')
-    if (ctx.form.collect_time) {
-      fd.append('collect_time', ctx.form.collect_time)
+    const collectTime = item.collectTime || ctx.form.collect_time
+    if (collectTime) {
+      fd.append('collect_time', collectTime)
     }
     if (ctx.markCorrected) {
       fd.append('mark_corrected', 'true')

@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import api from '../api'
 import { compressImageFile, isImageFile, IMAGE_UPLOAD_MAX_BYTES } from '../utils/imageCompress'
-import { extractTitleFromText, readDocxText, splitBeforeAfterText } from '../utils/docxParse'
+import { extractTitleFromText, readDocxText, splitBeforeAfterText, extractDateFromFilename } from '../utils/docxParse'
 
 const CONCURRENCY = 3
 const SUPPORTED_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.txt']
@@ -150,6 +150,7 @@ export function useEssayFolderUpload(contextRef, { onResult, onFolderSelected } 
           title: marked.title,
           before: marked.before,
           after: marked.after,
+          collectTime: extractDateFromFilename(marked.file.name),
           files: itemFiles,
         })
         first = false
@@ -187,8 +188,9 @@ export function useEssayFolderUpload(contextRef, { onResult, onFolderSelected } 
     fd.append('teaching_mode', ctx.form.teaching_mode)
     fd.append('collector_note', ctx.form.collector_note || '')
     fd.append('content_text', '')
-    if (ctx.form.collect_time) {
-      fd.append('collect_time', ctx.form.collect_time)
+    const collectTime = item.collectTime || ctx.form.collect_time
+    if (collectTime) {
+      fd.append('collect_time', collectTime)
     }
     if (ctx.markCorrected) {
       fd.append('mark_corrected', 'true')

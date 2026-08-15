@@ -8,10 +8,14 @@ export async function readDocxText(file) {
   const paragraphs = xmlDoc.getElementsByTagName('w:p')
   let fullText = ''
   for (const p of paragraphs) {
-    const texts = p.getElementsByTagName('w:t')
+    const runs = p.getElementsByTagName('w:r')
     let line = ''
-    for (const t of texts) {
-      line += t.textContent
+    for (const r of runs) {
+      const texts = r.getElementsByTagName('w:t')
+      for (const t of texts) {
+        line += t.textContent
+      }
+      line += '\n'.repeat(r.getElementsByTagName('w:br').length)
     }
     fullText += line + '\n'
   }
@@ -76,4 +80,13 @@ export function splitBeforeAfterText(text) {
     before = text.slice(start, end).trim()
   }
   return { before, after }
+}
+
+export function extractDateFromFilename(name) {
+  const m = String(name || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)
+  if (!m) return ''
+  const mo = Number(m[2])
+  const day = Number(m[3])
+  if (mo < 1 || mo > 12 || day < 1 || day > 31) return ''
+  return `${m[1]}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }

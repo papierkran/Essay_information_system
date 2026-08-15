@@ -690,6 +690,8 @@ async def upload_essay(
     parsed_ts = _parse_collect_time(collect_time)
     if parsed_ts:
         essay.created_at = parsed_ts
+        if mark_corrected:
+            essay.corrected_at = parsed_ts
 
     if not essay.essay_title and essay.content_text:
         derived = _derive_title(essay.content_text)
@@ -832,6 +834,8 @@ async def upload_correction_docx(
         parsed_ts = _parse_collect_time(collect_time)
         if parsed_ts:
             essay.created_at = parsed_ts
+            if mark_corrected:
+                essay.corrected_at = parsed_ts
         if not essay.essay_title:
             essay.essay_title = _derive_title(essay.content_text) or _derive_title(essay.corrected_text)
         _log_operation(db, essay.id, current_user.id, "修改", student_name)

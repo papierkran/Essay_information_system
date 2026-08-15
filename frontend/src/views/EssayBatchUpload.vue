@@ -42,10 +42,11 @@
         <div class="mode-tip">
           <div class="tip-label">文件名（推荐）：</div>
           <div class="tip-content">
-            改_原文件名——学生姓名.docx<br>
+            2026-08-14_改_原文件名——学生姓名.docx<br>
             改_作文——张三.docx<br>
             改_作文——李四.docx
           </div>
+          <div class="tip-note">* 文件名开头含「年-月-日」时自动作为该篇收集时间（如 2026-08-14_改_作文——张三.docx）</div>
           <div class="tip-note">* 不要求必须按此命名：文件名无「——学生名」时，自动读取文档内「——姓名」行</div>
           <div class="tip-note">* 仍无法识别姓名时，可在下方预览中手动填写</div>
           <div class="tip-note">* 内容需含「修改前：/修改后：」关键字，自动拆分修改前/修改后文章</div>
@@ -113,6 +114,7 @@
                 <th style="width:76px">修改前字数</th>
                 <th style="width:76px">修改后字数</th>
                 <th style="width:70px">文件</th>
+                <th style="width:96px">收集时间</th>
                 <th style="width:80px">状态</th>
                 <th style="width:44px"></th>
               </tr>
@@ -127,6 +129,7 @@
                 <td class="cell-num">{{ item.before ? item.before.length : '-' }}</td>
                 <td class="cell-num">{{ item.after ? item.after.length : '-' }}</td>
                 <td class="cell-meta">{{ item.files.length }} 个</td>
+                <td class="cell-meta">{{ item.collectTime || '-' }}</td>
                 <td>
                   <span v-if="existingNames.includes(item.studentName)" class="chip chip-warn">已存在</span>
                   <span v-else class="chip chip-ok">正常</span>
@@ -164,6 +167,7 @@
                   <th>标题</th>
                   <th style="width:76px">修改前字数</th>
                   <th style="width:76px">修改后字数</th>
+                  <th style="width:96px">收集时间</th>
                   <th style="width:90px">状态</th>
                   <th style="width:44px"></th>
                 </tr>
@@ -178,6 +182,7 @@
                   <td class="cell-title" :title="item.title">{{ item.title || '无标题' }}</td>
                   <td class="cell-num">{{ (item.before || '').length }}</td>
                   <td class="cell-num">{{ (item.after || '').length }}</td>
+                  <td class="cell-meta">{{ item.collectTime || '-' }}</td>
                   <td>
                     <span v-if="!item.ok" class="chip chip-danger">解析失败</span>
                     <span v-else-if="existingNames.includes(item.studentName)" class="chip chip-warn">已存在</span>
