@@ -71,21 +71,73 @@ def _char_count_sql(col):
 
 def _parse_uploaded_text(text: str):
     """解析上传的 docx/txt 文本：
-    - 含「修改前/修改后」关键字 → 分别存入修改前/修改后
+    - 含「修改前/修改后」关键字 → 分别存入修改前/修改后（标题冒号可选，行首识别）
     - 不含 → 全部作为修改前
     返回 (content_text, corrected_text)
     """
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
     if "修改后" not in text:
+        m = re.search(r"(?m)^[ \t]*修改前(?:[：:][ \t]*|[ \t]+|[ \t]*(?=$))", text)
+        if m:
+            return text[m.end():].strip(), ""
         return text.strip(), ""
-    m_after = re.search(r"修改后[：:]\s*([\s\S]*?)$", text)
-    after = m_after.group(1).strip() if m_after else ""
-    m_before = re.search(r"修改前[：:]\s*([\s\S]*?)(?=修改后[：:]|$)", text)
-    if m_before:
-        before = m_before.group(1).strip()
+
+    def _heading_span(text_, keyword):
+        m = re.search(r"(?m)^[ \t]*%s(?:[：:][ \t]*|[ \t]+|[ \t]*(?=$))" % keyword, text_)
+        if m:
+            return m.start(), m.end()
+        m = re.search(r"%s[：:]\s*" % keyword, text_)
+        return (m.start(), m.end()) if m else None
+
+    after_span = _heading_span(text, "修改后")
+    after = text[after_span[1]:].strip() if after_span else ""
+
+    before_span = _heading_span(text, "修改前")
+    if before_span:
+        rest = text[before_span[1]:]
+        after_in_rest = _heading_span(rest, "修改后")
+        before = rest if after_in_rest is None else rest[:after_in_rest[0]]
+        before = before.strip()
     else:
         before = text.split("修改后", 1)[0].strip()
     return before, after
+
+
+def _parse_collect_time(s: str):
+    """解析前端传入的收集时间（即作文列表「收集时间」列，覆盖 created_at；空/非法返回 None 保持默认）"""
+    if not s:
+        return None
+    s = str(s).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(s)
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(s, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed
+
+
+def _derive_title(text: str) -> str:
+    """从作文文本自动分析标题：跳过「修改前/修改后」标题行与「——姓名」行，取首个有效行"""
+    for line in (text or "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if re.match(r"^修改[前后]\s*[：:]?", line):
+            continue
+        if line.startswith("——"):
+            continue
+        return line[:200]
+    return ""
 
 
 @router.get("/tasks", response_model=list[TaskOut])
@@ -453,6 +505,8 @@ async def upload_essay(
     remark: str = Form(""),
     collector_note: str = Form(""),
     content_text: str = Form(""),
+    collect_time: str = Form(None),
+    mark_corrected: bool = Form(False),
     collected_by: int = Form(None),
     files: list[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -503,6 +557,10 @@ async def upload_essay(
         essay.collector_note = collector_note
         if content_text:
             essay.content_text = content_text
+        if mark_corrected:
+            essay.status = "corrected"
+            essay.corrected_at = datetime.now()
+            essay.reviewer_id = current_user.id
         if essay.content_file and files:
             _delete_essay_disk_files(essay, db)
             db.query(EssayImage).filter(EssayImage.essay_id == essay.id).delete()
@@ -531,7 +589,9 @@ async def upload_essay(
                 content_text=content_text,
                 file_type=file_type,
                 collected_by=collector_id,
-                status="pending",
+                status="corrected" if mark_corrected else "pending",
+                corrected_at=datetime.now() if mark_corrected else None,
+                reviewer_id=current_user.id if mark_corrected else None,
             )
             db.add(essay)
             db.flush()
@@ -607,8 +667,16 @@ async def upload_essay(
                     pass
 
         if text_buffer:
-            combined = "\n".join(text_buffer)
-            before_text, after_text = _parse_uploaded_text(combined)
+            # 多个 docx/txt 逐个拆分后合并：含「修改后」的文件作为修改版（修改前/修改后分别合并），
+            # 全部无修改标记时才把所有文本合并为修改前
+            parsed_parts = [_parse_uploaded_text(t) for t in text_buffer]
+            marked_parts = [(b, a) for b, a in parsed_parts if a]
+            if marked_parts:
+                before_text = "\n".join(b for b, a in marked_parts if b)
+                after_text = "\n".join(a for b, a in marked_parts if a)
+            else:
+                before_text = "\n".join(b for b, a in parsed_parts if b)
+                after_text = ""
             if before_text:
                 essay.content_text = before_text
             if after_text:
@@ -618,6 +686,15 @@ async def upload_essay(
             essay.content_file = os.path.relpath(
                 os.path.join(dir_path, uploaded_files[0]), get_upload_dir()
             )
+
+    parsed_ts = _parse_collect_time(collect_time)
+    if parsed_ts:
+        essay.created_at = parsed_ts
+
+    if not essay.essay_title and essay.content_text:
+        derived = _derive_title(essay.content_text)
+        if derived:
+            essay.essay_title = derived
 
     db.commit()
     db.refresh(essay)
@@ -633,6 +710,8 @@ async def upload_correction_docx(
     essay_title: str = Form(""),
     content_text: str = Form(""),
     corrected_text: str = Form(""),
+    collect_time: str = Form(None),
+    mark_corrected: bool = Form(False),
     is_supplement: bool = Form(False),
     task_id: int = Form(None),
     course_id: int = Form(None),
@@ -707,9 +786,14 @@ async def upload_correction_docx(
             existing.essay_title = essay_title or existing.essay_title
             existing.content_text = content_text or existing.content_text
             existing.corrected_text = corrected_text if corrected_text else existing.corrected_text
-            existing.status = "confirming" if corrected_text and existing.status == "pending" and existing.content_text and existing.content_text.strip() else existing.status
-            existing.corrected_at = datetime.now() if corrected_text else existing.corrected_at
-            existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
+            if mark_corrected:
+                existing.status = "corrected"
+                existing.corrected_at = datetime.now()
+                existing.reviewer_id = current_user.id
+            else:
+                existing.status = "confirming" if corrected_text and existing.status == "pending" and existing.content_text and existing.content_text.strip() else existing.status
+                existing.corrected_at = datetime.now() if corrected_text else existing.corrected_at
+                existing.reviewer_id = current_user.id if corrected_text else existing.reviewer_id
             existing.teaching_mode = teaching_mode or existing.teaching_mode
             if collected_by:
                 existing.collected_by = collector_id
@@ -738,13 +822,18 @@ async def upload_correction_docx(
                 file_type="docx",
                 collected_by=collector_id,
                 task_id=task_id,
-                status="confirming" if corrected_text and content_text and content_text.strip() else "pending",
-                corrected_at=datetime.now() if corrected_text else None,
-                reviewer_id=current_user.id if corrected_text else None,
+                status="corrected" if mark_corrected else ("confirming" if corrected_text and content_text and content_text.strip() else "pending"),
+                corrected_at=datetime.now() if (mark_corrected or corrected_text) else None,
+                reviewer_id=current_user.id if (mark_corrected or corrected_text) else None,
             )
             db.add(essay)
 
         db.flush()
+        parsed_ts = _parse_collect_time(collect_time)
+        if parsed_ts:
+            essay.created_at = parsed_ts
+        if not essay.essay_title:
+            essay.essay_title = _derive_title(essay.content_text) or _derive_title(essay.corrected_text)
         _log_operation(db, essay.id, current_user.id, "修改", student_name)
         db.commit()
         db.refresh(essay)

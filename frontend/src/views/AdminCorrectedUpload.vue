@@ -1,15 +1,41 @@
 <template>
   <div class="page">
-    <div v-if="isDesktop" class="page-title">批量上传</div>
+    <div v-if="isDesktop" class="page-title">已改作文上传</div>
+    <div class="page-hint">✅ 本页上传的作文将直接标记为「已修改」，无需再走批改确认流程</div>
 
-    <!-- 模板选择区域 -->
+    <!-- ① 课程 / 收集任务 -->
     <van-cell-group inset style="margin-bottom:12px">
-      <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
-        placeholder="选择收集任务（自动填充年级等信息）" @click="showTaskPicker = true" />
+      <van-field :model-value="selectedCourseName || '未选择'" is-link readonly label="课程"
+        placeholder="选择课程（可不选，也可直接新建）" @click="showCoursePicker = true" />
+      <van-field :model-value="selectedTaskName || '未选择'" is-link readonly label="收集任务"
+        placeholder="选择或新建收集任务" @click="showTaskPicker = true" />
       <van-cell v-if="selectedTaskTopic" title="文章主题" :label="selectedTaskTopic" />
     </van-cell-group>
 
-    <!-- 模式选择（含各自上传说明） -->
+    <!-- 所选任务概览 -->
+    <div v-if="selectedTask" class="task-summary">
+      <div class="task-summary-head">
+        <span class="task-summary-name">{{ selectedTask.name }}</span>
+        <span :class="['tag', taskStatus(selectedTask).active ? 'tag-pending' : 'tag-corrected']">{{ taskStatus(selectedTask).label }}</span>
+      </div>
+      <div class="task-summary-tags">
+        <span class="badge-mini tag-grade">{{ selectedTask.grade || '未定年级' }}</span>
+        <span class="badge-mini tag-number">{{ selectedTask.essay_number ? '第' + selectedTask.essay_number + '次' : '无第几次' }}</span>
+        <span class="badge-mini" :class="selectedTask.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ selectedTask.teaching_mode || '线下' }}</span>
+        <span v-if="selectedTask.course_name" class="badge-mini tag-course">{{ selectedTask.course_name }}</span>
+      </div>
+      <div class="task-summary-stats">
+        <span>已交 <b class="c-blue">{{ selectedTask.submitted_count || 0 }}</b></span>
+        <span>待重改 <b class="c-pink">{{ selectedTask.rework_count || 0 }}</b></span>
+        <span>已改 <b class="c-green">{{ selectedTask.corrected_count || 0 }}</b></span>
+      </div>
+      <div class="task-summary-actions">
+        <button class="btn" style="font-size:12px;padding:3px 10px" @click="cloneSelectedTask">复制任务</button>
+        <button class="btn" style="font-size:12px;padding:3px 10px;color:#1677ff" @click="viewTaskEssays">查看作文</button>
+      </div>
+    </div>
+
+    <!-- ② 模式选择 -->
     <div class="mode-boxes">
       <div class="mode-box" :class="{ active: mode === 'essay' }" @click="switchMode('essay')">
         <div class="mode-icon">📁</div>
@@ -43,8 +69,7 @@
           <div class="tip-label">文件名（推荐）：</div>
           <div class="tip-content">
             改_原文件名——学生姓名.docx<br>
-            改_作文——张三.docx<br>
-            改_作文——李四.docx
+            改_作文——张三.docx
           </div>
           <div class="tip-note">* 不要求必须按此命名：文件名无「——学生名」时，自动读取文档内「——姓名」行</div>
           <div class="tip-note">* 仍无法识别姓名时，可在下方预览中手动填写</div>
@@ -54,25 +79,30 @@
       </div>
     </div>
 
-    <!-- 共用表单 -->
+    <!-- ③ 共用表单 -->
     <van-form @submit="onSubmit">
       <van-cell-group inset>
         <van-field :model-value="selectedGrade" is-link readonly label="年级" placeholder="请选择（可不选）"
           @click="showGradePicker = true" />
-        <van-field v-model="activeForm.essay_number" label="第几次" placeholder="数字（可不填）" type="digit" />
+        <van-field v-model="form.essay_number" label="第几次" placeholder="数字（可不填）" type="digit" />
         <van-field name="teaching_mode" label="提交方式">
           <template #input>
-            <van-radio-group v-model="activeForm.teaching_mode" direction="horizontal">
+            <van-radio-group v-model="form.teaching_mode" direction="horizontal">
               <van-radio name="线下" style="margin-right:16px">线下</van-radio>
               <van-radio name="线上">线上</van-radio>
             </van-radio-group>
           </template>
         </van-field>
         <van-field name="is_supplement" label="是否补交">
-          <template #input><van-switch v-model="activeForm.is_supplement" size="24" /></template>
+          <template #input><van-switch v-model="form.is_supplement" size="24" /></template>
         </van-field>
-        <van-field v-model="activeForm.collector_note" label="统一收集者备注" placeholder="应用到本批所有作文（可选）" />
-        <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
+        <van-field v-model="form.collector_note" label="统一收集者备注" placeholder="应用到本批所有作文（可选）" />
+        <van-field v-model="form.collect_time" label="收集时间" type="datetime-local" placeholder="留空 = 当前时间">
+          <template #button>
+            <button v-if="form.collect_time" class="btn" style="font-size:12px;padding:2px 8px" @click="form.collect_time = ''">清除</button>
+          </template>
+        </van-field>
+        <van-field :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
           @click="showCollectorPicker = true" />
         <van-field name="pre_check_existing" label="跳过已存在的学生">
           <template #input><van-switch v-model="preCheckExisting" size="24" @change="onPreCheckChange" /></template>
@@ -240,53 +270,90 @@
       </div>
     </van-dialog>
 
+    <!-- 课程选择器（含快速新建） -->
+    <van-action-sheet v-model:show="showCoursePicker" title="选择课程">
+      <div class="picker-list">
+        <div style="padding:8px 16px;display:flex;gap:8px">
+          <input v-model="newCourseName" placeholder="输入新课程名称" class="quick-input"
+            @keyup.enter="createCourse" />
+          <button class="btn btn-primary" style="flex:none" @click="createCourse">新建课程</button>
+        </div>
+        <van-cell title="不使用课程" @click="selectCourse(null)" style="color:#999" />
+        <van-cell v-for="c in courses" :key="c.id" :title="c.name"
+          :label="`任务 ${c.task_count || 0} · 作文 ${c.essay_count || 0}`"
+          @click="selectCourse(c)" />
+      </div>
+    </van-action-sheet>
+
+    <!-- 任务选择器（含快速新建） -->
+    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
+      <div class="picker-list">
+        <div style="padding:8px 16px;display:flex;gap:8px">
+          <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." class="quick-input" />
+          <button class="btn btn-success" style="flex:none" @click="openTaskDialog()">新建任务</button>
+        </div>
+        <label v-if="selectedCourseId" class="course-filter">
+          <input type="checkbox" v-model="taskFilterByCourse" style="width:auto" /> 仅看本课程任务
+        </label>
+        <van-cell title="不使用任务" @click="selectTask(null)" style="color:#999" />
+        <van-cell v-for="t in filteredTasks" :key="t.id" @click="selectTask(t)">
+          <template #title>
+            <span style="font-weight:500">{{ t.name }}</span>
+            <van-tag v-if="taskStatus(t).active" type="primary" style="margin-left:6px">收集中</van-tag>
+          </template>
+          <template #label>
+            <span class="badge-mini tag-grade">{{ t.grade || '未定年级' }}</span>
+            <span class="badge-mini tag-number">{{ t.essay_number ? '第' + t.essay_number + '次' : '' }}</span>
+            <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+            <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+            <span style="color:#999">已交 {{ t.submitted_count || 0 }} · 已改 {{ t.corrected_count || 0 }} · 待重改 {{ t.rework_count || 0 }}</span>
+          </template>
+        </van-cell>
+        <div v-if="!filteredTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无匹配任务，可点击上方「新建任务」</div>
+      </div>
+    </van-action-sheet>
+
+    <!-- 新建任务弹窗 -->
+    <van-dialog v-model:show="showTaskDialog" title="新建收集任务" :close-on-click-overlay="true">
+      <van-form @submit="saveTask">
+        <van-cell-group inset>
+          <van-field v-model="taskForm.name" label="任务名称" placeholder="如：高二第三次作文" :rules="[{required:true}]" />
+          <van-field :model-value="taskForm.grade || '暂不选择'" is-link readonly label="年级" placeholder="请选择年级（可暂不选择）" @click="showTaskGradePicker=true" />
+          <van-field v-model="taskForm.essay_number" label="第几次作文" type="digit" placeholder="不填或0表示无第几次" />
+          <van-field v-model="taskForm.essay_topic" label="文章主题" placeholder="如：议论文写作" />
+          <van-cell title="关联课程" :value="selectedCourseName || '未选择'" />
+          <van-field name="teaching_mode" label="提交方式">
+            <template #input>
+              <van-radio-group v-model="taskForm.teaching_mode" direction="horizontal">
+                <van-radio name="线下" style="margin-right:16px">线下</van-radio>
+                <van-radio name="线上">线上</van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
+          <van-field v-model="taskForm.deadlineStr" label="截止时间" type="date" placeholder="可选" />
+          <van-field name="is_active" label="立即开始收集">
+            <template #input>
+              <van-switch v-model="taskForm.is_active" size="24" />
+            </template>
+          </van-field>
+        </van-cell-group>
+        <div style="margin:16px;display:flex;gap:8px">
+          <van-button block @click="showTaskDialog=false">取消</van-button>
+          <van-button block type="primary" native-type="submit">保存</van-button>
+        </div>
+      </van-form>
+    </van-dialog>
+
+    <!-- 年级选择器 -->
     <van-action-sheet v-model:show="showGradePicker" title="选择年级">
       <div class="picker-list">
         <van-cell v-for="g in grades" :key="g" :title="g" @click="selectGrade(g)" />
       </div>
     </van-action-sheet>
-
-    <!-- 模板选择器 -->
-    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
+    <van-action-sheet v-model:show="showTaskGradePicker" title="选择年级">
       <div class="picker-list">
-        <div style="padding:8px 16px">
-          <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
-        </div>
-        <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
-        <div class="task-split">
-          <div class="task-col">
-            <div class="task-col-title">线上</div>
-            <van-cell v-for="t in filteredOnlineTasks" :key="t.id" @click="selectTask(t)">
-              <template #title>
-                <span style="font-weight:500">{{ t.name }}</span>
-                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
-              </template>
-              <template #label>
-                <span class="badge-mini tag-grade">{{ t.grade }}</span>
-                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
-                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
-                <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
-              </template>
-            </van-cell>
-            <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
-          </div>
-          <div class="task-col">
-            <div class="task-col-title">线下</div>
-            <van-cell v-for="t in filteredOfflineTasks" :key="t.id" @click="selectTask(t)">
-              <template #title>
-                <span style="font-weight:500">{{ t.name }}</span>
-                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
-              </template>
-              <template #label>
-                <span class="badge-mini tag-grade">{{ t.grade }}</span>
-                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
-                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
-                <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
-              </template>
-            </van-cell>
-            <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
-          </div>
-        </div>
+        <van-cell title="暂不选择年级" @click="selectTaskGrade('')" style="color:#999" />
+        <van-cell v-for="g in grades" :key="g" :title="g" @click="selectTaskGrade(g)" />
       </div>
     </van-action-sheet>
 
@@ -305,70 +372,81 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
-import api, { useAuth } from '../api'
+import api from '../api'
 import { useEssayFolderUpload } from '../composables/useEssayFolderUpload'
 import { useCorrectionUpload } from '../composables/useCorrectionUpload'
 
 const route = useRoute()
 const router = useRouter()
 const { isDesktop } = useScreen()
-const { getAuth } = useAuth()
-const currentUser = computed(() => getAuth()?.user || {})
-const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
-const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
 
-const mode = ref('essay')
+const mode = ref('correction')
+const grades = ['初一', '初二', '初三', '高一', '高二', '高三']
 
-// 共用表单
-const form = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '' })
-const corForm = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '' })
-const activeForm = computed(() => mode.value === 'essay' ? form.value : corForm.value)
-const selectedGrade = ref('')
+// ===== 课程 / 任务 / 收集者 =====
+const courses = ref([])
+const tasks = ref([])
+const collectorList = ref([])
+const selectedCourse = ref(null)
+const selectedCourseId = ref(null)
+const selectedCourseName = ref('')
+const selectedTask = ref(null)
+const selectedTaskId = ref(null)
 const selectedTaskName = ref('')
 const selectedTaskTopic = ref('')
-const selectedTaskId = ref(null)
-const selectedCourseId = ref(null)
 const selectedCollector = ref(null)
 const selectedCollectorName = ref('')
-const collectorList = ref([])
-const grades = ['初一', '初二', '初三', '高一', '高二', '高三']
-const folderInput = ref(null)
-const corFolderInput = ref(null)
-const tasks = ref([])
-const showGradePicker = ref(false)
+const newCourseName = ref('')
+const taskSearch = ref('')
+const taskFilterByCourse = ref(true)
+const showCoursePicker = ref(false)
 const showTaskPicker = ref(false)
 const showCollectorPicker = ref(false)
+const showGradePicker = ref(false)
+const showTaskGradePicker = ref(false)
+const showTaskDialog = ref(false)
+const taskForm = ref({
+  name: '', grade: '', essay_number: '', essay_topic: '', teaching_mode: '线下',
+  deadlineStr: '', is_active: false,
+})
 
-// 预检
+// ===== 共用表单 =====
+const form = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '', collect_time: '' })
+const selectedGrade = ref('')
+const folderInput = ref(null)
+const corFolderInput = ref(null)
+
+// ===== 预检 =====
 const preCheckExisting = ref(false)
 const existingNames = ref([])
 const checkingExisting = ref(false)
 const checkedExisting = ref(false)
 
-// 上传上下文（供组合式函数读取）
-const ctx = ref({ taskId: null, courseId: null, collectorId: null, form: form.value, existingNames: [], preCheckExisting: false })
+// ===== 上传上下文（供组合式函数读取） =====
+const ctx = ref({ taskId: null, courseId: null, collectorId: null, form: form.value, existingNames: [], preCheckExisting: false, markCorrected: true })
 
 function syncCtx() {
   ctx.value = {
     taskId: selectedTaskId.value,
     courseId: selectedCourseId.value,
     collectorId: selectedCollector.value,
-    form: activeForm.value,
+    form: form.value,
     existingNames: existingNames.value,
     preCheckExisting: preCheckExisting.value,
+    markCorrected: true,
   }
 }
 
-watch([selectedTaskId, selectedCourseId, selectedCollector, mode, form, corForm, existingNames, preCheckExisting], syncCtx, { deep: true })
+watch([selectedTaskId, selectedCourseId, selectedCollector, form, existingNames, preCheckExisting], syncCtx, { deep: true })
 
-// 结果弹窗
+// ===== 结果弹窗 =====
 const resultDialog = ref({ show: false, title: '', body: '', canRetry: false, retryCount: 0, retryMode: '', retryNames: [] })
 
 function onModeResult(res) {
   resultDialog.value = { show: true, title: res.title, body: res.body, canRetry: res.canRetry, retryCount: res.retryCount, retryMode: res.mode, retryNames: res.retryNames || [] }
 }
 
-// 组合式函数（两个上传模式）
+// ===== 组合式函数 =====
 const {
   essayGroups, folderSelected, skipStats, loading, uploadedCount, currentStudent,
   essaysSuccess, essaysFail, essaysSkip, failedStudents, uploadFinished: essayUploadFinished,
@@ -387,7 +465,7 @@ const {
 
 const uploadFinished = computed(() => mode.value === 'essay' ? essayUploadFinished.value : corUploadFinished.value)
 
-// 文件夹辅助
+// ===== 文件夹辅助 =====
 function chineseToNumber(str) {
   const map = { '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 }
   if (map[str] !== undefined) return map[str]
@@ -409,9 +487,7 @@ function chineseToNumber(str) {
 function parseFolderName(folderName) {
   const result = { grade: '', essay_number: '' }
   const gradeMatch = folderName.match(/(初一|初二|初三|高一|高二|高三)/)
-  if (gradeMatch) {
-    result.grade = gradeMatch[1]
-  }
+  if (gradeMatch) result.grade = gradeMatch[1]
   const numberMatch = folderName.match(/第([一二三四五六七八九十百零\d]+)次/)
   if (numberMatch) {
     const numStr = numberMatch[1]
@@ -428,24 +504,21 @@ function parseFolderName(folderName) {
 function getFolderPath(files) {
   for (const file of files) {
     const relativePath = file.webkitRelativePath
-    if (relativePath) {
-      return relativePath.split('/')[0]
-    }
+    if (relativePath) return relativePath.split('/')[0]
   }
   return ''
 }
 
 function handleFolderSelected(files) {
   const folderName = getFolderPath(files)
-  const targetForm = mode.value === 'essay' ? form.value : corForm.value
   if (folderName) {
     const parsed = parseFolderName(folderName)
-    if (parsed.grade && !targetForm.grade) {
-      targetForm.grade = parsed.grade
+    if (parsed.grade && !form.value.grade) {
+      form.value.grade = parsed.grade
       selectedGrade.value = parsed.grade
     }
-    if (parsed.essay_number && !targetForm.essay_number) {
-      targetForm.essay_number = parsed.essay_number
+    if (parsed.essay_number && !form.value.essay_number) {
+      form.value.essay_number = parsed.essay_number
     }
   }
   if (preCheckExisting.value && selectedTaskId.value) {
@@ -473,7 +546,7 @@ function essayOrdinal(idx) {
   return n
 }
 
-// 选择器
+// ===== 选择器 =====
 function switchMode(m) {
   if (m === mode.value) return
   mode.value = m
@@ -490,7 +563,6 @@ function openFolderPicker() {
 
 function selectGrade(g) {
   form.value.grade = g
-  corForm.value.grade = g
   selectedGrade.value = g
   showGradePicker.value = false
 }
@@ -506,96 +578,142 @@ function selectCollector(c) {
   showCollectorPicker.value = false
 }
 
-function selectTask(tpl) {
-  if (tpl) {
-    form.value.grade = tpl.grade
-    corForm.value.grade = tpl.grade
-    selectedGrade.value = tpl.grade
-    form.value.essay_number = tpl.essay_number ? String(tpl.essay_number) : ''
-    corForm.value.essay_number = tpl.essay_number ? String(tpl.essay_number) : ''
-    if (tpl.teaching_mode) {
-      form.value.teaching_mode = tpl.teaching_mode
-      corForm.value.teaching_mode = tpl.teaching_mode
-    }
-    selectedTaskName.value = tpl.name
-    selectedTaskTopic.value = tpl.essay_topic || ''
-    selectedTaskId.value = tpl.id
-    selectedCourseId.value = tpl.course_id || null
-    if (preCheckExisting.value && (folderSelected.value || corFolderSelected.value)) checkExisting()
-    showToast(`已选择：${tpl.name}`)
+function selectCourse(c) {
+  if (c) {
+    selectedCourse.value = c
+    selectedCourseId.value = c.id
+    selectedCourseName.value = c.name
   } else {
+    selectedCourse.value = null
+    selectedCourseId.value = null
+    selectedCourseName.value = ''
+  }
+  showCoursePicker.value = false
+}
+
+async function createCourse() {
+  const name = newCourseName.value.trim()
+  if (!name) { showToast('请输入课程名称'); return }
+  try {
+    const res = await api.post('/admin/courses', { name })
+    courses.value.unshift(res.data)
+    selectCourse(res.data)
+    newCourseName.value = ''
+    showToast('课程已创建')
+  } catch (err) {
+    showToast(err.response?.data?.detail || '创建失败')
+  }
+}
+
+const filteredTasks = computed(() => {
+  const kw = taskSearch.value.trim().toLowerCase()
+  return tasks.value.filter(t => {
+    if (taskFilterByCourse.value && selectedCourseId.value && t.course_id !== selectedCourseId.value) return false
+    if (!kw) return true
+    return (t.name || '').toLowerCase().includes(kw)
+      || (t.essay_topic || '').toLowerCase().includes(kw)
+      || (t.grade || '').includes(kw)
+      || (t.course_name || '').toLowerCase().includes(kw)
+  })
+})
+
+function taskStatus(t) {
+  if (t.deadline && new Date(t.deadline) < new Date()) return { active: false, label: '已过期' }
+  if (t.start_time && new Date(t.start_time) > new Date()) return { active: false, label: '未开始' }
+  if (t.is_active) return { active: true, label: '收集中' }
+  return { active: false, label: '已结束' }
+}
+
+function selectTask(t) {
+  if (t) {
+    form.value.grade = t.grade || form.value.grade
+    selectedGrade.value = t.grade || selectedGrade.value
+    form.value.essay_number = t.essay_number ? String(t.essay_number) : ''
+    if (t.teaching_mode) form.value.teaching_mode = t.teaching_mode
+    selectedTask.value = t
+    selectedTaskId.value = t.id
+    selectedTaskName.value = t.name
+    selectedTaskTopic.value = t.essay_topic || ''
+    if (t.course_id && !selectedCourseId.value) {
+      selectedCourseId.value = t.course_id
+      selectedCourseName.value = t.course_name || ''
+    }
+    if (preCheckExisting.value && (folderSelected.value || corFolderSelected.value)) checkExisting()
+    showToast(`已选择：${t.name}`)
+  } else {
+    selectedTask.value = null
+    selectedTaskId.value = null
     selectedTaskName.value = ''
     selectedTaskTopic.value = ''
-    selectedTaskId.value = null
-    selectedCourseId.value = null
     existingNames.value = []
     checkedExisting.value = false
-    showToast('已取消模板选择')
+    showToast('已取消任务选择')
   }
   showTaskPicker.value = false
 }
 
-const taskSearch = ref('')
-const sortedTasks = computed(() => {
-  return [...tasks.value].sort((a, b) => {
-    const aActive = taskIsActive(a)
-    const bActive = taskIsActive(b)
-    if (aActive !== bActive) return aActive ? -1 : 1
-    return 0
-  })
-})
-const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode === '线上'))
-const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
-const filteredOnlineTasks = computed(() => {
-  const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return onlineTasks.value
-  return onlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
-})
-const filteredOfflineTasks = computed(() => {
-  const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return offlineTasks.value
-  return offlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
-})
-
-function taskIsActive(t) {
-  const now = new Date()
-  return t.is_active
-    && (!t.deadline || new Date(t.deadline) >= now)
-    && (!t.start_time || new Date(t.start_time) <= now)
+function selectTaskGrade(g) {
+  taskForm.value.grade = g
+  showTaskGradePicker.value = false
 }
 
-onMounted(async () => {
-  if (isGuest.value) {
-    router.replace('/dashboard')
-    showToast('游客无上传权限')
-    return
-  }
+async function saveTask() {
   try {
-    const res = await api.get('/essays/tasks')
-    tasks.value = res.data
-    const taskIdFromQuery = Number(route.query.task_id)
-    if (taskIdFromQuery) {
-      const target = tasks.value.find(t => t.id === taskIdFromQuery)
-      if (target) selectTask(target)
+    const payload = {
+      name: taskForm.value.name,
+      grade: taskForm.value.grade,
+      essay_number: parseInt(taskForm.value.essay_number) || 0,
+      essay_topic: taskForm.value.essay_topic,
+      course_id: selectedCourseId.value,
+      teaching_mode: taskForm.value.teaching_mode,
+      deadline: taskForm.value.deadlineStr ? new Date(taskForm.value.deadlineStr).toISOString() : null,
+      is_active: taskForm.value.is_active,
     }
-  } catch {}
-  if (isAdmin.value) {
-    try {
-      const res = await api.get('/essays/collectors')
-      collectorList.value = res.data || []
-    } catch {}
+    const res = await api.post('/admin/tasks', payload)
+    showTaskDialog.value = false
+    await loadTasks()
+    const created = tasks.value.find(t => t.id === res.data.id)
+    selectTask(created || res.data)
+    showToast('任务已创建')
+  } catch (err) {
+    showToast(err.response?.data?.detail || '创建失败')
   }
-  syncCtx()
-})
+}
 
-// 预检
+function openTaskDialog() {
+  taskForm.value = {
+    name: '', grade: '', essay_number: '', essay_topic: '', teaching_mode: '线下',
+    deadlineStr: '', is_active: false,
+  }
+  showTaskDialog.value = true
+}
+
+async function cloneSelectedTask() {
+  if (!selectedTaskId.value) return
+  try {
+    const res = await api.post(`/admin/tasks/${selectedTaskId.value}/clone`)
+    await loadTasks()
+    const created = tasks.value.find(t => t.id === res.data.id)
+    selectTask(created || res.data)
+    showToast('已复制为新任务（默认停用，可编辑后开始收集）')
+  } catch (err) {
+    showToast(err.response?.data?.detail || '复制失败')
+  }
+}
+
+function viewTaskEssays() {
+  localStorage.removeItem('essay_list_filters')
+  router.push({ path: '/essay/list', query: { task_id: selectedTaskId.value } })
+}
+
+// ===== 预检 =====
 async function checkExisting() {
   if (!selectedTaskId.value) { showToast('请先选择收集任务'); return }
   checkingExisting.value = true
   try {
     const params = { task_id: selectedTaskId.value }
-    if (activeForm.value.essay_number) params.essay_number = parseInt(activeForm.value.essay_number)
-    if (activeForm.value.is_supplement) params.is_supplement = activeForm.value.is_supplement
+    if (form.value.essay_number) params.essay_number = parseInt(form.value.essay_number)
+    if (form.value.is_supplement) params.is_supplement = form.value.is_supplement
     const res = await api.get('/essays/existing-students', { params })
     existingNames.value = res.data.students || []
     checkedExisting.value = true
@@ -618,7 +736,34 @@ function onPreCheckChange(val) {
   }
 }
 
-// 上传提交
+// ===== 数据加载 =====
+async function loadTasks() {
+  try {
+    const res = await api.get('/admin/tasks')
+    tasks.value = res.data
+  } catch {}
+}
+
+onMounted(async () => {
+  try {
+    const [courseRes, taskRes, collectorRes] = await Promise.all([
+      api.get('/admin/courses'),
+      api.get('/admin/tasks'),
+      api.get('/essays/collectors'),
+    ])
+    courses.value = courseRes.data || []
+    tasks.value = taskRes.data || []
+    collectorList.value = collectorRes.data || []
+  } catch {}
+  const taskIdFromQuery = Number(route.query.task_id)
+  if (taskIdFromQuery) {
+    const target = tasks.value.find(t => t.id === taskIdFromQuery)
+    if (target) selectTask(target)
+  }
+  syncCtx()
+})
+
+// ===== 上传提交 =====
 const folderLabel = computed(() => {
   if (mode.value === 'essay') {
     return folderSelected.value ? `${studentCount.value} 位学生，${totalFiles.value} 个文件` : '点击选择（学生文件夹）'
@@ -640,7 +785,7 @@ const submitLabel = computed(() => {
 })
 
 async function onSubmit() {
-  if (!activeForm.value.grade) {
+  if (!form.value.grade) {
     const ok = await showConfirmDialog({
       title: '提示',
       message: '未选择年级，将按「未定年级」归档。确定继续上传吗？',
@@ -649,7 +794,7 @@ async function onSubmit() {
     }).then(() => true).catch(() => false)
     if (!ok) return
   }
-  if (!activeForm.value.essay_number) {
+  if (!form.value.essay_number) {
     const ok = await showConfirmDialog({
       title: '提示',
       message: '未填写第几次，将按「无第几次」归档。确定继续上传吗？',
@@ -704,7 +849,58 @@ function copyResult() {
 <style scoped>
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
-@media (max-width: 767px) { .page { padding: 0; } }
+.page-hint {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #52c41a;
+  background: #f6ffed;
+  border: 1px solid #d9f7be;
+  border-radius: 8px;
+}
+@media (max-width: 767px) { .page { padding: 0; } .page-hint { margin: 0 12px 12px; } }
+
+.task-summary {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 16px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.task-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.task-summary-name { font-size: 15px; font-weight: 600; color: #333; }
+.task-summary-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.task-summary-stats { display: flex; gap: 16px; font-size: 12px; color: #666; margin-bottom: 10px; }
+.task-summary-stats b { font-size: 14px; }
+.c-blue { color: #1677ff; }
+.c-pink { color: #eb2f96; }
+.c-green { color: #52c41a; }
+.task-summary-actions { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #f5f5f5; }
+
+.quick-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  min-width: 0;
+}
+.quick-input:focus { border-color: #4096ff; }
+.course-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 16px 8px;
+  font-size: 13px;
+  color: #666;
+}
 
 .mode-boxes {
   display: grid;
@@ -739,35 +935,7 @@ function copyResult() {
 }
 .mode-box.active .mode-tip { background: #fff; }
 
-.task-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border-top: 1px solid #f0f0f0;
-}
-
-.task-col {
-  max-height: 65vh;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.task-col + .task-col {
-  border-left: 1px solid #f0f0f0;
-}
-
-.task-col-title {
-  padding: 8px 16px;
-  font-size: 13px;
-  color: #888;
-  font-weight: 500;
-}
-
-.tip-label {
-  font-weight: 500;
-  margin-bottom: 8px;
-  color: #333;
-}
-
+.tip-label { font-weight: 500; margin-bottom: 8px; color: #333; }
 .tip-content {
   background: #fff;
   padding: 10px 12px;
@@ -778,12 +946,7 @@ function copyResult() {
   color: #555;
   border: 1px solid #e8e8e8;
 }
-
-.tip-note {
-  margin-top: 8px;
-  color: #888;
-  font-size: 12px;
-}
+.tip-note { margin-top: 8px; color: #888; font-size: 12px; }
 
 .preview-toolbar {
   display: flex;
@@ -914,31 +1077,11 @@ function copyResult() {
   background: #f6f8fa;
   border-radius: 6px;
 }
-
-.progress-text {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #555;
-}
-
-.progress-stats {
-  margin-top: 6px;
-  font-size: 12px;
-  display: flex;
-  gap: 16px;
-}
-
-.stat-success {
-  color: #52c41a;
-}
-
-.stat-skip {
-  color: #fa8c16;
-}
-
-.stat-fail {
-  color: #ff4d4f;
-}
+.progress-text { margin-top: 8px; font-size: 13px; color: #555; }
+.progress-stats { margin-top: 6px; font-size: 12px; display: flex; gap: 16px; }
+.stat-success { color: #52c41a; }
+.stat-skip { color: #fa8c16; }
+.stat-fail { color: #ff4d4f; }
 
 .result-body {
   max-height: 40vh;

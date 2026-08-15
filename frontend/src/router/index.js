@@ -70,6 +70,12 @@ const routes = [
     meta: { requiresAuth: true, roles: ['admin'] },
   },
   {
+    path: '/admin/corrected-upload',
+    name: 'AdminCorrectedUpload',
+    component: () => import('../views/AdminCorrectedUpload.vue'),
+    meta: { requiresAuth: true, roles: ['admin'] },
+  },
+  {
     path: '/admin/tasks',
     name: 'AdminTasks',
     component: () => import('../views/AdminTasks.vue'),
@@ -105,6 +111,7 @@ const PAGE_TITLES = {
   '/review/operations': '操作历史',
   '/admin/users': '用户管理',
   '/admin/course': '课程管理',
+  '/admin/corrected-upload': '已改作文上传',
   '/admin/tasks': '任务列表',
   '/admin/settings': '系统设置',
   '/login': '登录',
