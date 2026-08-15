@@ -54,10 +54,11 @@
 
     <!-- 快捷按钮 -->
     <div class="quick-grid">
-      <div class="quick-card upload-card" :class="{ 'quick-disabled': isGuest }" @click="!isGuest && goUpload()">
+      <div class="quick-card upload-card" :class="{ 'quick-disabled': !canCollect }" @click="onUploadClick">
         <div class="quick-icon">📤</div>
         <div class="quick-text">开始上传</div>
         <div v-if="isGuest" class="quick-sub">游客无上传权限</div>
+        <div v-else-if="!canCollect" class="quick-sub">无上传权限</div>
       </div>
       <div class="quick-card list-card" @click="goList">
         <div class="quick-icon">📋</div>
@@ -97,6 +98,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api, { useAuth } from '../api'
 import { formatDateTime } from '../utils/format'
@@ -104,7 +106,12 @@ import { formatDateTime } from '../utils/format'
 const router = useRouter()
 const { isDesktop } = useScreen()
 const { getAuth } = useAuth()
-const isGuest = computed(() => ((getAuth()?.user?.role) || '').includes('guest'))
+const currentUser = computed(() => getAuth()?.user || {})
+const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
+const canCollect = computed(() => {
+  const role = currentUser.value.role || ''
+  return role.includes('collector') || role.includes('admin')
+})
 
 const recentList = ref([])
 const activeTasks = ref([])
@@ -138,6 +145,13 @@ function getDeadlineDaysLeft(deadline) {
 
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
+function onUploadClick() {
+  if (!canCollect.value) {
+    showToast(isGuest.value ? '游客无上传权限，仅可查看' : '当前账号无上传权限')
+    return
+  }
+  goUpload()
+}
 function goUpload() { router.push('/essay/upload') }
 function goList() { router.push('/essay/list') }
 

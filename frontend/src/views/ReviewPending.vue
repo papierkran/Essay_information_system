@@ -62,7 +62,7 @@
       <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchOcr">🔍 批量OCR识别</button>
       <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiCorrect">🤖 批量AI错别字修正</button>
       <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchAiRewrite">🤖 批量一键修改</button>
-      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#52c41a;border-color:#52c41a" :disabled="!selectedIds.length" @click="batchConfirm">✅ 批量确认修改</button>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#52c41a;border-color:#52c41a" :disabled="!selectedIds.length || batchConfirming" @click="batchConfirm">✅ 批量确认修改</button>
       <button v-if="isAdmin || isReviewer" class="btn btn-primary" style="font-size:12px;padding:4px 12px;background:#fa8c16;border-color:#fa8c16" @click="batchPipeline">⏩ 一键批量流程修改</button>
       <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="selectedIds = []">取消选择</button>
     </div>
@@ -279,6 +279,8 @@ const grades = ['初一','初二','初三','高一','高二','高三']
 const opLogs = ref([])
 const loadingLogs = ref(false)
 let logTimer = null
+let logRefreshTimer = null
+let logVisibilityHandler = null
 const LOG_KEYWORDS = ['OCR', 'AI 错别字修正', 'AI 改写', 'AI 修改', '流水线']
 
 function logTaskPercent(t) {
@@ -306,8 +308,20 @@ async function refreshLogs() {
 }
 
 function scheduleLogRefresh() {
-  clearTimeout(logTimer)
-  logTimer = setTimeout(refreshLogs, 2000)
+  clearTimeout(logRefreshTimer)
+  logRefreshTimer = setTimeout(refreshLogs, 2000)
+}
+
+function startLogPolling() {
+  stopLogPolling()
+  logTimer = setInterval(() => {
+    if (!document.hidden) refreshLogs()
+  }, 8000)
+}
+
+function stopLogPolling() {
+  clearInterval(logTimer)
+  logTimer = null
 }
 
 const filters = ref({
@@ -526,18 +540,29 @@ async function batchPipeline() {
   }
 }
 
+const batchConfirming = ref(false)
+
 async function batchConfirm() {
   if (!selectedIds.value.length) return
+  if (batchConfirming.value) return
   const confirmingIds = list.value.filter(e => selectedIds.value.includes(e.id) && e.status === 'confirming').map(e => e.id)
   if (!confirmingIds.length) { showToast('选中的条目中没有待确认的作文'); return }
+  const confirmed = await showConfirmDialog({
+    title: '确认批量确认修改',
+    message: `将把选中的 ${confirmingIds.length} 篇「待确认」作文标记为「已修改」，是否继续？`,
+  }).catch(() => false)
+  if (!confirmed) return
+  batchConfirming.value = true
   try {
     const res = await api.post('/essays/batch-confirm', { ids: confirmingIds })
     const d = res.data
-    showSuccessToast(`确认完成：成功 ${d.success} 条`)
+    showSuccessToast(`确认完成：成功 ${d.success} 条` + (d.errors?.length ? `，失败 ${d.errors.length} 条` : ''))
     selectedIds.value = []
     await load()
   } catch (err) {
     showFailToast(err.response?.data?.detail || '批量确认失败')
+  } finally {
+    batchConfirming.value = false
   }
 }
 
@@ -573,12 +598,23 @@ onMounted(() => {
   fetchCollectorsAndTasks()
   document.addEventListener('click', closeTaskDropdown)
   refreshLogs()
-  logTimer = setInterval(refreshLogs, 8000)
+  if (isDesktop.value) {
+    startLogPolling()
+    logVisibilityHandler = () => {
+      if (document.hidden) stopLogPolling()
+      else startLogPolling()
+    }
+    document.addEventListener('visibilitychange', logVisibilityHandler)
+  }
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeTaskDropdown)
-  clearTimeout(logTimer)
-  clearInterval(logTimer)
+  stopLogPolling()
+  clearTimeout(logRefreshTimer)
+  if (logVisibilityHandler) {
+    document.removeEventListener('visibilitychange', logVisibilityHandler)
+    logVisibilityHandler = null
+  }
 })
 </script>
 

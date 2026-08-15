@@ -12,20 +12,20 @@
     <!-- 筛选栏 -->
     <div v-if="isDesktop" class="filter-bar">
       <input v-model="filters.name" placeholder="任务名称" class="filter-input" />
-      <select v-model="filters.grade" class="filter-input" @change="applyFilter">
+      <select v-model="filters.grade" class="filter-input">
         <option value="">全部年级</option>
         <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
       </select>
-      <select v-model="filters.number" class="filter-input" @change="applyFilter">
+      <select v-model="filters.number" class="filter-input">
         <option value="">全部第几次</option>
         <option v-for="n in 10" :key="n" :value="n">第{{ n }}次</option>
       </select>
-      <select v-model="filters.teachingMode" class="filter-input" @change="applyFilter">
+      <select v-model="filters.teachingMode" class="filter-input">
         <option value="">全部提交方式</option>
         <option value="线下">线下</option>
         <option value="线上">线上</option>
       </select>
-      <select v-model="filters.status" class="filter-input" @change="applyFilter">
+      <select v-model="filters.status" class="filter-input">
         <option value="">全部状态</option>
         <option value="not_started">未开始</option>
         <option value="active">收集中</option>

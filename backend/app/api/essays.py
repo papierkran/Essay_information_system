@@ -442,6 +442,12 @@ async def upload_essay(
     if "collector" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
 
+    # 校验文件类型：.doc 旧版格式不支持（前端已拦截，后端兜底防止空作文落库）
+    if files:
+        for f in files:
+            if f.filename and os.path.splitext(f.filename)[1].lower() == ".doc":
+                raise HTTPException(status_code=400, detail="不支持 .doc 旧版格式，请另存为 .docx 后重新上传")
+
     # 确定收集者：管理员可指定，否则用当前用户
     collector_id = current_user.id
     if collected_by and "admin" in current_user.role:

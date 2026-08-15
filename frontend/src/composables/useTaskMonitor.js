@@ -80,7 +80,12 @@ export function useTaskMonitor() {
     tasks.value = []
   }
 
-  return { tasks, addTask, addTasks, dismissTask, dismissAll }
+  function resetAll() {
+    tasks.value = []
+    stopPolling()
+  }
+
+  return { tasks, addTask, addTasks, dismissTask, dismissAll, resetAll }
 }
 
 export function typeLabel(type) {

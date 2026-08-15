@@ -116,7 +116,7 @@
             <div class="card-header"><h3>📤 上传修改结果</h3></div>
             <div class="form-group">
               <label>选择修改后的 docx 文件</label>
-              <input type="file" ref="fileInput" accept=".docx,.doc" @change="onFileSelected" />
+              <input type="file" ref="fileInput" accept=".docx" @change="onFileSelected" />
               <p v-if="selectedFile" style="margin-top:8px;color:#52c41a">已选择: {{ selectedFile.name }}</p>
             </div>
             <div class="form-group">
@@ -138,8 +138,8 @@
             </button>
           </template>
           <template v-else>
-            <div class="card-header"><h3>✅ 已修改</h3></div>
-            <p style="color:#52c41a">修改完成于 {{ essay.corrected_at?.substring(0,16) }}</p>
+            <div class="card-header"><h3>{{ statusCardInfo.title }}</h3></div>
+            <p :style="{ color: statusCardInfo.color }">{{ statusCardInfo.text }}</p>
             <div v-if="canReview" class="form-group" style="margin-top:8px">
               <label>批改者备注</label>
               <div v-if="!editingNote && essay.reviewer_note" class="note-readonly">{{ essay.reviewer_note }}</div>
@@ -608,6 +608,14 @@ const statusHint = computed(() => {
   return { pending: '未修改，等待批改者处理', confirming: '已批改，等待确认', rework: '批改不达标，需重新批改', corrected: '已修改完成' }[essay.value?.status] || ''
 })
 
+const statusCardInfo = computed(() => {
+  const s = essay.value?.status
+  if (s === 'pending') return { title: '⏳ 未修改', text: '等待批改者处理', color: '#fa8c16' }
+  if (s === 'confirming') return { title: '📝 待确认', text: `已批改，等待确认${essay.value?.corrected_at ? '（' + formatDateTime(essay.value.corrected_at) + '）' : ''}`, color: '#1677ff' }
+  if (s === 'rework') return { title: '🔄 待重改', text: '批改不达标，需重新批改', color: '#eb2f96' }
+  return { title: '✅ 已修改', text: essay.value?.corrected_at ? `修改完成于 ${formatDateTime(essay.value.corrected_at)}` : '修改完成', color: '#52c41a' }
+})
+
 const flowState = computed(() => {
   const s = essay.value?.status
   if (s === 'confirming') return { done: 2, active: 2 }
@@ -749,6 +757,7 @@ async function doReuploadDesktop() {
     showToast('请选择文件或输入文字')
     return
   }
+  if (!(await confirmOverwriteOperation('重新上传原文'))) return
   reuploading.value = true
   try {
     const fd = new FormData()
@@ -789,7 +798,19 @@ async function doReuploadDesktop() {
   }
 }
 
+async function confirmOverwriteOperation(actionLabel) {
+  const extra = isDirty.value ? '\n\n注意：有未保存的修改，执行后将一并丢弃。' : ''
+  const ok = await showConfirmDialog({
+    title: '确认执行',
+    message: `「${actionLabel}」将覆盖当前内容且不可撤销${extra}。是否继续？`,
+    confirmButtonText: '继续',
+    cancelButtonText: '取消',
+  }).then(() => true).catch(() => false)
+  return ok
+}
+
 async function doOcr() {
+  if (!(await confirmOverwriteOperation('OCR 识别'))) return
   ocrLoading.value = true
   try {
     const res = await api.post(`/essays/${route.params.id}/ocr`)
@@ -803,6 +824,7 @@ async function doOcr() {
 }
 
 async function doAiCorrect() {
+  if (!(await confirmOverwriteOperation('AI 错别字修正'))) return
   aiLoading.value = true
   try {
     const res = await api.post(`/essays/${route.params.id}/ai-correct`, null, { timeout: 120000 })
@@ -869,6 +891,7 @@ function cancelCorrectedEdit() {
 }
 
 async function doAiRewrite() {
+  if (!(await confirmOverwriteOperation('AI 一键修改'))) return
   aiRewriteLoading.value = true
   try {
     const res = await api.post(`/essays/${route.params.id}/ai-rewrite`, null, { timeout: 180000 })
@@ -1275,6 +1298,7 @@ async function doReupload() {
     showToast('请选择文件或输入文字')
     return
   }
+  if (!(await confirmOverwriteOperation('重新上传原文'))) return
   reuploading.value = true
   try {
     const fd = new FormData()

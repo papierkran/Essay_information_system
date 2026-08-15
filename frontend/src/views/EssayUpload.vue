@@ -45,7 +45,7 @@
         <van-field name="uploader" label="上传文件（docx/txt/图片，可多选）">
           <template #input>
             <div class="drop-zone" @dragover.prevent @dragenter.prevent @drop.prevent="onUploadDrop">
-              <van-uploader v-model="fileList" :max-count="10" accept="image/*,.docx,.doc,.txt" multiple :before-read="beforeRead" :after-read="afterRead" :preview-full-image="false" @click-preview="onPreviewClick" />
+              <van-uploader v-model="fileList" :max-count="10" accept="image/*,.docx,.txt" multiple :before-read="beforeRead" :after-read="afterRead" :preview-full-image="false" @click-preview="onPreviewClick" />
               <div style="font-size:12px;color:#999;margin-top:8px">支持拖拽文件到此处 · docx/txt 自动读取内容 · 图片大小不超过 4MB</div>
             </div>
           </template>
@@ -334,7 +334,7 @@ async function beforeRead(file) {
   return Array.isArray(file) ? compressed : compressed[0]
 }
 
-const ACCEPT_EXTS = ['.docx', '.doc', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
+const ACCEPT_EXTS = ['.docx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
 
 function buildPreviewImages() {
   previewImages.value = fileList.value
@@ -351,9 +351,11 @@ async function onUploadDrop(e) {
   if (!files.length) return
   let added = 0
   let rejected = 0
+  let docRejected = 0
   for (const file of files) {
     if (fileList.value.length >= 10) break
     const ext = '.' + file.name.split('.').pop().toLowerCase()
+    if (ext === '.doc') { docRejected++; continue }
     if (!ACCEPT_EXTS.includes(ext)) continue
     if (isImageFile(file) && file.size > IMAGE_UPLOAD_MAX_BYTES) {
       rejected++
@@ -363,13 +365,17 @@ async function onUploadDrop(e) {
     fileList.value.push({ file: out, status: 'done', message: '' })
     added++
   }
+  if (docRejected) {
+    showToast(`${docRejected} 个 .doc 旧版文件不支持，请另存为 .docx 后再传`)
+    return
+  }
   if (rejected) {
     showToast(`${rejected} 张图片超过 8MB，未添加`)
   }
   if (added) {
     buildPreviewImages()
   } else {
-    showToast('没有可添加的文件（支持 docx/doc/txt/图片）')
+    showToast('没有可添加的文件（支持 docx/txt/图片）')
   }
 }
 

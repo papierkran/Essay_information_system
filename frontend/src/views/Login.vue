@@ -9,9 +9,10 @@
       <!-- 已有账号列表 -->
       <div v-if="savedAccounts.length > 0" style="margin-bottom:16px">
         <div class="saved-accounts-title">已保存的账号</div>
-        <div v-for="acct in savedAccounts" :key="acct.key" class="saved-account-item" @click="switchTo(acct)">
+        <div v-for="acct in savedAccounts" :key="acct.key" class="saved-account-item" :class="{ 'account-expired-item': acct.expired }" @click="switchTo(acct)">
           <span class="account-info">{{ acct.user?.nickname || acct.user?.username || '未知' }}</span>
           <span class="account-role">{{ roleLabel(acct.user?.role) }}</span>
+          <span v-if="acct.expired" class="account-expired-tag">已过期</span>
           <span class="account-remove" title="删除该账号记录" @click.stop="removeAccount(acct.key)">✕</span>
         </div>
       </div>
@@ -92,7 +93,7 @@ const savedAccounts = computed(() => {
     if (key?.startsWith('auth_')) {
       try {
         const data = JSON.parse(localStorage.getItem(key))
-        accounts.push({ key: key.replace('auth_', ''), ...data })
+        accounts.push({ key: key.replace('auth_', ''), ...data, expired: accountExpired(data) })
       } catch {}
     }
   }
@@ -101,7 +102,29 @@ const savedAccounts = computed(() => {
 
 function roleLabel(r) { const m = { admin:'管理员', collector:'收集者', reviewer:'修改者' }; return (r||'').split(',').map(x=>m[x]||x).join(' + ') }
 
+function jwtExpiryMs(token) {
+  if (!token || typeof token !== 'string') return null
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+    let b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    while (b64.length % 4) b64 += '='
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+    const data = JSON.parse(new TextDecoder().decode(bytes))
+    return typeof data.exp === 'number' ? data.exp * 1000 : null
+  } catch { return null }
+}
+
+function accountExpired(acct) {
+  const exp = jwtExpiryMs(acct?.token)
+  return exp ? Date.now() > exp : false
+}
+
 function switchTo(acct) {
+  if (acct.expired) {
+    showToast('该账号登录已过期，请重新登录')
+    return
+  }
   setActiveAuth(acct.key)
   showToast(`切换到 ${acct.user?.nickname || acct.user?.username}`)
   router.push('/dashboard')
@@ -182,6 +205,16 @@ async function onLogin() {
   transition: all 0.15s;
 }
 .account-remove:hover { background: #ff4d4f; color: #fff; }
+
+.account-expired-tag {
+  font-size: 11px;
+  color: #fff;
+  background: #ff4d4f;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 4px;
+}
+.account-expired-item { opacity: 0.6; }
 
 .login-desktop .login-card { max-width: 420px; padding: 40px 32px; }
 

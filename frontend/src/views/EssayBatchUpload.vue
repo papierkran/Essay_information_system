@@ -85,9 +85,15 @@
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="checkExisting" :disabled="checkingExisting">
           {{ checkingExisting ? '检查中...' : '🔍 检查已存在' }}
         </button>
-        <span v-if="!selectedTaskId" style="font-size:12px;color:#999">未选择任务，无法预检（仍会按 409 兜底跳过）</span>
+        <span v-if="!selectedTaskId" style="font-size:12px;color:#999">未选择任务，无法预检（重复学生将自动跳过）</span>
         <span v-else-if="existingNames.length" style="font-size:12px;color:#d46b08">已有 {{ existingNames.length }} 位学生，将自动跳过</span>
         <span v-else-if="checkedExisting" style="font-size:12px;color:#52c41a">无已存在学生</span>
+      </div>
+
+      <!-- 图片压缩进度 -->
+      <div v-if="compressing" class="progress-box" style="margin:12px 16px 0">
+        <van-progress :percentage="compressPercent" stroke-width="8" />
+        <div class="progress-text">正在压缩图片 {{ compressDone }}/{{ compressTotal }}</div>
       </div>
 
       <!-- 预览：作文模式 -->
@@ -99,7 +105,7 @@
           <button class="preview-remove" title="移除该学生" @click="removeStudent(name)">✕</button>
         </div>
         <div v-if="skipStats.total > 0" class="skip-note">
-          已跳过 {{ skipStats.total }} 个文件（修改后目录 {{ skipStats.modifiedFolder }} / 不支持格式 {{ skipStats.unsupported }} / 非学生目录 {{ skipStats.noStudent }} / 图片超8MB {{ skipStats.oversize }}）
+          已跳过 {{ skipStats.total }} 个文件（修改后目录 {{ skipStats.modifiedFolder }} / 不支持格式 {{ skipStats.unsupported }} / 非学生目录 {{ skipStats.noStudent }} / 图片超8MB {{ skipStats.oversize }} / 旧版doc {{ skipStats.docOld }}）
         </div>
       </div>
 
@@ -164,6 +170,8 @@
         <div class="result-body">{{ resultDialog.body }}</div>
         <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap">
           <button class="btn" @click="copyResult">📋 复制明细</button>
+          <button class="btn" @click="goUploadList">📋 去列表查看</button>
+          <button class="btn" @click="resetAfterUpload">📁 上传下一批</button>
           <button class="btn" @click="resultDialog.show = false">关闭</button>
           <button v-if="resultDialog.canRetry" class="btn btn-primary" @click="retryFailed">仅重试失败 {{ resultDialog.retryCount }}</button>
         </div>
@@ -276,6 +284,13 @@ const existingNames = ref([])
 const checkingExisting = ref(false)
 const checkedExisting = ref(false)
 
+// 压缩进度与上传终态
+const compressing = ref(false)
+const compressTotal = ref(0)
+const compressDone = ref(0)
+const compressPercent = computed(() => compressTotal.value ? Math.round(compressDone.value / compressTotal.value * 100) : 0)
+const uploadFinished = ref(false)
+
 // 作文模式状态
 const studentMap = ref({})
 const folderSelected = ref(false)
@@ -320,11 +335,13 @@ const folderLabel = computed(() => {
 })
 
 const submitDisabled = computed(() => {
+  if (uploadFinished.value) return true
   if (mode.value === 'essay') return !folderSelected.value
   return !corFolderSelected.value || corParsing.value || corValidCount.value === 0
 })
 
 const submitLabel = computed(() => {
+  if (uploadFinished.value) return '✅ 已上传完成，选择下一批'
   if (loading.value) return `上传中 ${uploadedCount.value}/${studentCount.value}`
   if (corLoading.value) return `上传中 ${corUploadedCount.value}/${corValidCount.value}`
   return mode.value === 'essay' ? '开始上传文件夹作文' : '开始上传修改后docx'
@@ -394,6 +411,7 @@ function switchMode(m) {
   corParsing.value = false
   existingNames.value = []
   checkedExisting.value = false
+  uploadFinished.value = false
 }
 
 function openFolderPicker() {
@@ -507,14 +525,16 @@ function getFolderPath(files) {
 async function onFolderChange(e) {
   const files = Array.from(e.target.files)
   if (files.length === 0) return
+  uploadFinished.value = false
 
   const map = {}
-  const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.doc', '.txt']
+  const supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.docx', '.txt']
   const skipFolders = ['修改后']
-  skipStats.value = { total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0, oversize: 0 }
+  skipStats.value = { total: 0, modifiedFolder: 0, unsupported: 0, noStudent: 0, oversize: 0, docOld: 0 }
 
   const folderName = getFolderPath(files)
 
+  const pendingCompress = []
   for (const file of files) {
     const relativePath = file.webkitRelativePath
     if (!relativePath) { skipStats.value.noStudent++; continue }
@@ -526,15 +546,26 @@ async function onFolderChange(e) {
     if (skipFolders.includes(studentName)) { skipStats.value.modifiedFolder++; continue }
 
     const ext = '.' + file.name.split('.').pop().toLowerCase()
+    if (ext === '.doc') { skipStats.value.docOld++; continue }
     if (!supportedExts.includes(ext)) { skipStats.value.unsupported++; continue }
 
     if (isImageFile(file) && file.size > IMAGE_UPLOAD_MAX_BYTES) { skipStats.value.oversize++; continue }
 
+    pendingCompress.push({ file, studentName })
+  }
+
+  // 压缩阶段：并发处理 + 进度反馈（避免大文件夹逐张串行导致"假死"）
+  compressing.value = true
+  compressTotal.value = pendingCompress.length
+  compressDone.value = 0
+  await runConcurrent(pendingCompress, async ({ file, studentName }) => {
     const out = await compressImageFile(file)
     if (!map[studentName]) map[studentName] = []
     map[studentName].push(out)
-  }
-  skipStats.value.total = skipStats.value.modifiedFolder + skipStats.value.unsupported + skipStats.value.noStudent + skipStats.value.oversize
+    compressDone.value++
+  })
+  compressing.value = false
+  skipStats.value.total = skipStats.value.modifiedFolder + skipStats.value.unsupported + skipStats.value.noStudent + skipStats.value.oversize + skipStats.value.docOld
 
   if (Object.keys(map).length === 0) {
     showToast('未找到有效的学生文件')
@@ -620,14 +651,17 @@ async function parseDocxContent(file) {
 async function onCorFolderChange(e) {
   const files = Array.from(e.target.files)
   if (files.length === 0) return
+  uploadFinished.value = false
 
   const parsed = []
+  let docRejected = 0
   const docxFiles = files.filter(f => {
     const ext = '.' + f.name.split('.').pop().toLowerCase()
-    return ext === '.docx' || ext === '.doc'
+    if (ext === '.doc') { docRejected++; return false }
+    return ext === '.docx'
   })
   if (docxFiles.length === 0) {
-    showToast('未找到 docx/doc 文件')
+    showToast(docRejected ? `${docRejected} 个 .doc 旧版文件不支持，请另存为 .docx` : '未找到 docx 文件')
     return
   }
 
@@ -766,6 +800,8 @@ async function uploadEssays() {
   const names = Object.keys(studentMap.value)
   if (!names.length) { showToast('请先选择文件夹'); return }
 
+  uploadFinished.value = false
+
   const skipNames = names.filter(n => existingNames.value.includes(n))
   const toUpload = names.filter(n => !existingNames.value.includes(n))
   if (toUpload.length === 0) {
@@ -796,7 +832,7 @@ async function uploadEssays() {
       essaysSuccess.value++
     } catch (err) {
       const status = err.response?.status
-      if (status === 409 && preCheckExisting.value) {
+      if (status === 409) {
         essaysSkip.value++
       } else {
         essaysFail.value++
@@ -808,6 +844,7 @@ async function uploadEssays() {
   })
 
   loading.value = false
+  uploadFinished.value = failedStudents.value.length === 0
 
   const failed = failedStudents.value
   let body = `成功：${essaysSuccess.value} 位\n跳过已存在：${essaysSkip.value}`
@@ -834,6 +871,7 @@ async function uploadCorrections(items, skipCount = 0) {
   corSkipExisting.value = skipCount
   corCurrentStudent.value = ''
   corFailed.value = []
+  uploadFinished.value = false
 
   await runConcurrent(items, async (item) => {
     corCurrentStudent.value = item.studentName
@@ -870,6 +908,7 @@ async function uploadCorrections(items, skipCount = 0) {
   })
 
   corLoading.value = false
+  uploadFinished.value = corFailed.value.length === 0
 
   const failed = corFailed.value
   let body = `成功：${corSuccess.value} 个\n跳过已存在：${corSkipExisting.value} 个` + (corParseFailCount.value ? `\n解析失败跳过：${corParseFailCount.value} 个` : '')
@@ -900,6 +939,27 @@ function retryFailed() {
     const names = new Set(d.retryNames)
     uploadCorrections(corFiles.value.filter(i => names.has(i.studentName)))
   }
+}
+
+function goUploadList() {
+  resultDialog.value.show = false
+  router.push('/essay/list')
+}
+
+function resetAfterUpload() {
+  studentMap.value = {}
+  folderSelected.value = false
+  corFiles.value = []
+  corFolderSelected.value = false
+  corParsing.value = false
+  existingNames.value = []
+  checkedExisting.value = false
+  essaysSuccess.value = 0
+  essaysFail.value = 0
+  essaysSkip.value = 0
+  failedStudents.value = []
+  uploadFinished.value = false
+  resultDialog.value.show = false
 }
 
 function copyResult() {

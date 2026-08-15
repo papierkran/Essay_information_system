@@ -50,11 +50,13 @@ import TaskStatusBar from './components/TaskStatusBar.vue'
 import { showToast } from 'vant'
 import { useAuth } from './api'
 import { useScreen } from './composables/useScreen'
+import { useTaskMonitor } from './composables/useTaskMonitor'
 
 const route = useRoute()
 const router = useRouter()
 const { getAuth, clearAuth } = useAuth()
 const { isDesktop } = useScreen()
+const { resetAll } = useTaskMonitor()
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem('appSidebarCollapsed') === '1')
 
@@ -75,6 +77,7 @@ const user = computed(() => auth.value?.user || {})
 watch(() => route.path, () => {
   auth.value = getAuth()
   sidebarOpen.value = false
+  if (route.path === '/login') resetAll()
 }, { immediate: true })
 
 const userRole = computed(() => user.value.role || '')

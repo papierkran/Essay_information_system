@@ -308,13 +308,22 @@ function saveApiUrl() {
   setTimeout(() => apiSaved.value = false, 3000)
 }
 
+function normalizeTestUrl(u) {
+  let url = (u || '').trim()
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'http://' + url
+  }
+  return url.replace(/\/+$/, '')
+}
+
 async function testServer() {
   serverTesting.value = true
   serverTestResult.value = ''
+  const baseUrl = normalizeTestUrl(apiBaseUrl.value)
   try {
-    const saved = localStorage.getItem('apiBaseUrl')
-    const baseUrl = saved ? saved.replace(/\/+$/, '') : ''
-    const res = await fetch(baseUrl + '/api/admin/test-server')
+    const res = await fetch(baseUrl + '/api/admin/test-server', {
+      headers: { 'Authorization': 'Bearer ' + (getAuth()?.token || '') }
+    })
     const data = await res.json()
     if (res.ok) {
       serverTestResult.value = '✅ ' + data.message
@@ -331,10 +340,15 @@ async function testServer() {
 async function testDb() {
   dbTesting.value = true
   dbTestResult.value = ''
+  const baseUrl = normalizeTestUrl(apiBaseUrl.value)
   try {
-    const saved = localStorage.getItem('apiBaseUrl')
-    const baseUrl = saved ? saved.replace(/\/+$/, '') : ''
-    const res = await fetch(baseUrl + '/api/admin/test-db', {
+    const params = new URLSearchParams()
+    if (dbHost.value) params.set('host', dbHost.value)
+    if (dbPort.value) params.set('port', dbPort.value)
+    if (dbUser.value) params.set('user', dbUser.value)
+    if (dbPass.value) params.set('password', dbPass.value)
+    if (dbName.value) params.set('database', dbName.value)
+    const res = await fetch(baseUrl + '/api/admin/test-db?' + params.toString(), {
       headers: { 'Authorization': 'Bearer ' + (getAuth()?.token || '') }
     })
     const data = await res.json()

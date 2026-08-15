@@ -222,8 +222,9 @@
         <p v-if="deletingEssay">学生：<strong>{{ deletingEssay.student_name }}</strong></p>
         <p v-else>确定删除已选的 <strong>{{ selectedIds.length }}</strong> 条作文吗？</p>
         <van-checkbox v-model="deleteFileChecked" :disabled="!isAdmin">
-          <span :style="{ color: isAdmin ? '#333' : '#ccc' }">同时删除本地文件</span>
+          <span :style="{ color: isAdmin ? '#ff4d4f' : '#ccc' }">彻底删除（同时删除本地文件，不可恢复）</span>
         </van-checkbox>
+        <p v-if="isAdmin && deleteFileChecked" style="color:#ff4d4f;font-size:12px;margin-top:8px">⚠️ 勾选后将彻底删除记录（不进回收站）且无法恢复！</p>
         <p v-if="!isAdmin" style="color:#999;font-size:12px;margin-top:8px">非管理员无法删除本地文件</p>
       </div>
     </van-dialog>
@@ -265,11 +266,12 @@
     </van-dialog>
 
     <!-- 批量修改任务 -->
-    <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="taskSearch = ''">
+    <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="taskSearch = ''; batchTaskId = ''">
       <div style="padding:16px">
-        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的任务修改为：</p>
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的任务修改为（必选）：</p>
         <input v-model="taskSearch" placeholder="搜索任务名称..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box" />
         <div style="max-height:200px;overflow-y:auto;margin-top:4px;border:1px solid #d9d9d9;border-radius:6px">
+          <div v-if="batchTaskId === ''" style="padding:8px 12px;color:#fa8c16;font-size:12px;border-bottom:1px solid #f5f5f5">请先选择要修改为的任务，或选择「无任务」</div>
           <div @click="batchTaskId = 0; taskSearch = ''" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5" :style="{ background: batchTaskId === 0 ? '#e6f4ff' : '#fff' }">
             <span style="color:#999">无任务</span>
           </div>
@@ -307,7 +309,7 @@ const deleteFileChecked = ref(false)
 const showBatchCollector = ref(false)
 const batchCollectorId = ref('')
 const showBatchTask = ref(false)
-const batchTaskId = ref(0)
+const batchTaskId = ref('')
 const taskSearch = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
@@ -823,11 +825,21 @@ async function doBatchCollector() {
 }
 
 async function doBatchTask() {
+  if (batchTaskId.value === '') { showToast('请先选择要修改为的任务'); return }
+  const targetName = batchTaskId.value === 0
+    ? '无任务'
+    : (taskList.value.find(t => t.id === batchTaskId.value)?.name || '')
+  const confirmed = await showDialog({
+    title: '确认修改任务',
+    message: `确定将 ${selectedIds.value.length} 条作文的任务修改为「${targetName}」吗？`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
   try {
     await api.post('/essays/batch-update', { ids: selectedIds.value, task_id: batchTaskId.value || null })
     showSuccessToast('修改成功')
     selectedIds.value = []
-    batchTaskId.value = 0
+    batchTaskId.value = ''
     await loadData()
   } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
 }

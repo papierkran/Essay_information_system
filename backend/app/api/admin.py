@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, create_engine
+from urllib.parse import quote_plus
 import os
 import json
 import shutil
@@ -567,10 +568,26 @@ def test_server():
 
 
 @router.get("/test-db")
-def test_db(db: Session = Depends(get_db)):
-    """测试数据库连接是否正常"""
+def test_db(
+    host: str = "",
+    port: str = "",
+    user: str = "",
+    password: str = "",
+    database: str = "",
+    db: Session = Depends(get_db),
+):
+    """测试数据库连接；传入 host 等参数时按表单当前值测试，否则测试当前已保存配置"""
     try:
-        db.execute(text("SELECT 1"))
+        if host:
+            url = f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port or '5432'}/{database}"
+            engine = create_engine(url, pool_pre_ping=True)
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            finally:
+                engine.dispose()
+        else:
+            db.execute(text("SELECT 1"))
         return {"status": "ok", "message": "数据库连接正常"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"数据库连接失败: {str(e)}")
