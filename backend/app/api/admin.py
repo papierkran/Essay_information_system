@@ -635,23 +635,27 @@ def list_tasks(
         .group_by(Essay.task_id)
         .all()
     )
-    # 按状态统计（未改= pending/confirming/rework，已改= corrected）
+    # 按状态统计（未改= pending/confirming/rework，已改= corrected，待重改= rework）
     status_counts = db.query(Essay.task_id, Essay.status, func.count(Essay.id)).filter(
         Essay.task_id.isnot(None), Essay.deleted_at == None
     ).group_by(Essay.task_id, Essay.status).all()
     pending_map = {}
     corrected_map = {}
+    rework_map = {}
     for task_id, status, cnt in status_counts:
         if status == "corrected":
             corrected_map[task_id] = corrected_map.get(task_id, 0) + cnt
         else:
             pending_map[task_id] = pending_map.get(task_id, 0) + cnt
+        if status == "rework":
+            rework_map[task_id] = rework_map.get(task_id, 0) + cnt
     result = []
     for t in tasks:
         out = TaskOut.model_validate(t)
         out.submitted_count = counts.get(t.id, 0)
         out.pending_count = pending_map.get(t.id, 0)
         out.corrected_count = corrected_map.get(t.id, 0)
+        out.rework_count = rework_map.get(t.id, 0)
         result.append(out)
     return result
 

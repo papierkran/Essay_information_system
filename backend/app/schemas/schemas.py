@@ -31,6 +31,7 @@ class TaskOut(BaseModel):
     submitted_count: int = 0
     pending_count: int = 0
     corrected_count: int = 0
+    rework_count: int = 0
     created_at: datetime
 
     class Config:

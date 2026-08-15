@@ -32,8 +32,12 @@
               <div class="stat-label">已收集</div>
             </div>
             <div class="stat-item">
-              <div class="stat-value">{{ tpl._stats?.pending || 0 }}</div>
-              <div class="stat-label">未改</div>
+              <div class="stat-value stat-green">{{ tpl._stats?.corrected || 0 }}</div>
+              <div class="stat-label">已修改</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value stat-pink">{{ tpl._stats?.rework || 0 }}</div>
+              <div class="stat-label">待重改</div>
             </div>
           </div>
         </div>
@@ -174,7 +178,7 @@ onMounted(async () => {
       const statsMap = {}
       ;(statsRes.data || []).forEach(s => { statsMap[s.task_id] = s })
       templates.forEach(t => {
-        t._stats = statsMap[t.id] || { total: 0, pending: 0, corrected: 0 }
+        t._stats = statsMap[t.id] || { total: 0, pending: 0, confirming: 0, corrected: 0, rework: 0 }
       })
     }
     activeTasks.value = templates
@@ -291,6 +295,8 @@ onMounted(async () => {
   font-weight: 700;
   color: #1677ff;
 }
+.stat-value.stat-green { color: #52c41a; }
+.stat-value.stat-pink { color: #eb2f96; }
 
 .stat-label {
   font-size: 12px;

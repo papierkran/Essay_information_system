@@ -144,13 +144,19 @@ def get_task_stats(
         Essay.deleted_at == None,
         Essay.status == "corrected"
     ).scalar() or 0
-    
+    rework = db.query(func.count(Essay.id)).filter(
+        Essay.task_id == task_id,
+        Essay.deleted_at == None,
+        Essay.status == "rework"
+    ).scalar() or 0
+
     return {
         "task_id": task_id,
         "total": total,
         "pending": pending,
         "confirming": confirming,
-        "corrected": corrected
+        "corrected": corrected,
+        "rework": rework
     }
 
 
@@ -182,12 +188,18 @@ def batch_task_stats(
             Essay.deleted_at == None,
             Essay.status == "corrected"
         ).scalar() or 0
+        rework = db.query(func.count(Essay.id)).filter(
+            Essay.task_id == task_id,
+            Essay.deleted_at == None,
+            Essay.status == "rework"
+        ).scalar() or 0
         result.append({
             "task_id": task_id,
             "total": total,
             "pending": pending,
             "confirming": confirming,
             "corrected": corrected,
+            "rework": rework,
         })
     return result
 

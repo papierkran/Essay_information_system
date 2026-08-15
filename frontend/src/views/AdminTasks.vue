@@ -84,7 +84,7 @@
               </template>
               <template v-else-if="col.key === 'teaching_mode'"><span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span></template>
               <template v-else-if="col.key === 'submitted'"><span style="font-weight:600;color:#1677ff">{{ t.submitted_count || 0 }}</span></template>
-              <template v-else-if="col.key === 'pending_count'"><span style="font-weight:600;color:#d46b08">{{ t.pending_count || 0 }}</span></template>
+              <template v-else-if="col.key === 'rework_count'"><span style="font-weight:600;color:#eb2f96">{{ t.rework_count || 0 }}</span></template>
               <template v-else-if="col.key === 'corrected_count'"><span style="font-weight:600;color:#52c41a">{{ t.corrected_count || 0 }}</span></template>
               <template v-else>{{ t[col.key] }}</template>
             </td>
@@ -123,7 +123,7 @@
           </div>
           <div class="task-card-stats" @click="onCardClick(t)">
             <span class="stat stat-submitted">已交 <b>{{ t.submitted_count || 0 }}</b></span>
-            <span class="stat stat-pending">未改 <b>{{ t.pending_count || 0 }}</b></span>
+            <span class="stat stat-rework">待重改 <b>{{ t.rework_count || 0 }}</b></span>
             <span class="stat stat-corrected">已改 <b>{{ t.corrected_count || 0 }}</b></span>
           </div>
           <div v-if="isAdmin" class="task-card-actions">
@@ -231,7 +231,7 @@ const columnDefs = [
   { key: 'course', label: '课程名称', sortable: true },
   { key: 'teaching_mode', label: '提交方式', sortable: true },
   { key: 'submitted', label: '已交学生数', sortable: true },
-  { key: 'pending_count', label: '未改', sortable: true },
+  { key: 'rework_count', label: '待重改', sortable: true },
   { key: 'corrected_count', label: '已改', sortable: true },
   { key: 'start_time', label: '开始时间', sortable: true },
   { key: 'deadline', label: '截止时间', sortable: true },
@@ -348,7 +348,7 @@ function getSortValue(t, key) {
   if (key === 'teaching_mode') return t.teaching_mode || ''
   if (key === 'topic') return t.essay_topic || ''
   if (key === 'submitted') return t.submitted_count || 0
-  if (key === 'pending_count') return t.pending_count || 0
+  if (key === 'rework_count') return t.rework_count || 0
   if (key === 'corrected_count') return t.corrected_count || 0
   return t[key] || ''
 }
@@ -648,7 +648,7 @@ function goBatchUpload(tpl) {
 }
 .task-card-stats b { font-size: 14px; }
 .stat-submitted b { color: #1677ff; }
-.stat-pending b { color: #d46b08; }
+.stat-rework b { color: #eb2f96; }
 .stat-corrected b { color: #52c41a; }
 .task-card-actions {
   display: flex;
