@@ -343,9 +343,13 @@ function toggleSort(key) {
   }
 }
 
+function isMigratedTask(t) {
+  return (t.course_name || '').includes('迁移')
+}
+
 const filteredTasks = computed(() => {
   const kw = filters.value.name.toLowerCase()
-  return tasks.value.filter(t => {
+  const list = tasks.value.filter(t => {
     if (kw && !t.name.toLowerCase().includes(kw)) return false
     if (mobileSearch.value) {
       const mw = mobileSearch.value.toLowerCase()
@@ -363,6 +367,8 @@ const filteredTasks = computed(() => {
     if (filters.value.status && taskStatus !== statusFilterLabel[filters.value.status]) return false
     return true
   })
+  // 默认顺序：课程名称含「迁移」的任务排到末尾，其余保持原顺序
+  return [...list].sort((a, b) => Number(isMigratedTask(a)) - Number(isMigratedTask(b)))
 })
 
 const sortedTasks = computed(() => {
