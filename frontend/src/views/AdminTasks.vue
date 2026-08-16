@@ -14,11 +14,13 @@
       <input v-model="filters.name" placeholder="任务名称" class="filter-input" />
       <select v-model="filters.grade" class="filter-input">
         <option value="">全部年级</option>
+        <option value="__none__">无年级</option>
         <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
       </select>
       <select v-model="filters.number" class="filter-input">
         <option value="">全部第几次</option>
-        <option v-for="n in 10" :key="n" :value="n">第{{ n }}次</option>
+        <option value="__none__">无第几次</option>
+        <option v-for="n in numberOptions" :key="n" :value="n">第{{ n }}次</option>
       </select>
       <select v-model="filters.teachingMode" class="filter-input">
         <option value="">全部提交方式</option>
@@ -29,7 +31,6 @@
         <option value="">全部状态</option>
         <option value="not_started">未开始</option>
         <option value="active">收集中</option>
-        <option value="expired">已过期</option>
         <option value="ended">已结束</option>
       </select>
       <input v-model="filters.topic" placeholder="文章主题" class="filter-input" />
@@ -72,7 +73,6 @@
               </template>
               <template v-else-if="col.key === 'actions'">
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="openTaskDialog(t)">编辑</button>
-                <button class="btn" style="font-size:12px;padding:2px 8px" @click="cloneTask(t)" title="复制为新任务">复制</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px;color:#1677ff" @click="exportTask(t)">📦 一键导出</button>
                 <button class="btn btn-primary" style="font-size:12px;padding:2px 8px" @click="goBatchUpload(t)">批量上传</button>
                 <button class="btn" style="font-size:12px;padding:2px 8px" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
@@ -105,11 +105,13 @@
           <div class="m-filter-row">
             <select v-model="filters.grade" class="m-filter-input">
               <option value="">全部年级</option>
+              <option value="__none__">无年级</option>
               <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
             </select>
             <select v-model="filters.number" class="m-filter-input">
               <option value="">全部第几次</option>
-              <option v-for="n in 10" :key="n" :value="n">第{{ n }}次</option>
+              <option value="__none__">无第几次</option>
+              <option v-for="n in numberOptions" :key="n" :value="n">第{{ n }}次</option>
             </select>
           </div>
           <div class="m-filter-row">
@@ -152,7 +154,6 @@
             <button class="act-btn" @click="goBatchUpload(t)">批量上传</button>
             <button class="act-btn" @click="exportTask(t)">导出</button>
             <button class="act-btn" @click="openTaskDialog(t)">编辑</button>
-            <button class="act-btn" @click="cloneTask(t)">复制</button>
             <button class="act-btn" :class="{ 'act-btn-success': !getTaskStatus(t).active }" @click="toggleTaskActive(t)">{{ getTaskStatus(t).active ? '结束收集' : '开始收集' }}</button>
             <button class="act-btn act-btn-danger" @click="confirmDelTask(t)">删除</button>
           </div>
@@ -240,12 +241,11 @@ const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 const tasks = ref([])
 const courses = ref([])
 const filters = ref({ name: '', grade: '', status: '', course: '', number: '', teachingMode: '', topic: '' })
-const statusFilterLabel = { active: '收集中', expired: '已过期', ended: '已结束', not_started: '未开始' }
+const statusFilterLabel = { active: '收集中', ended: '已结束', not_started: '未开始' }
 const statusTabs = [
   { value: '', label: '全部' },
   { value: 'active', label: '收集中' },
   { value: 'not_started', label: '未开始' },
-  { value: 'expired', label: '已过期' },
   { value: 'ended', label: '已结束' },
 ]
 const mobileSearch = ref('')
@@ -358,8 +358,12 @@ const filteredTasks = computed(() => {
         || (t.essay_topic || '').toLowerCase().includes(mw)
       if (!ok) return false
     }
-    if (filters.value.grade && t.grade !== filters.value.grade) return false
-    if (filters.value.number && String(t.essay_number) !== String(filters.value.number)) return false
+    if (filters.value.grade === '__none__') {
+      if (t.grade) return false
+    } else if (filters.value.grade && t.grade !== filters.value.grade) return false
+    if (filters.value.number === '__none__') {
+      if (t.essay_number) return false
+    } else if (filters.value.number && String(t.essay_number) !== String(filters.value.number)) return false
     if (filters.value.teachingMode && t.teaching_mode !== filters.value.teachingMode) return false
     if (filters.value.topic && !(t.essay_topic || '').toLowerCase().includes(filters.value.topic.toLowerCase())) return false
     if (filters.value.course && !(t.course_name || '').toLowerCase().includes(filters.value.course.toLowerCase())) return false
@@ -409,9 +413,17 @@ const editingTask = ref({})
 const showTaskGradePicker = ref(false)
 const showCoursePicker = ref(false)
 const grades = ['初一','初二','初三','高一','高二','高三']
+const numberOptions = computed(() => {
+  const set = new Set()
+  for (const t of tasks.value) {
+    const n = Number(t.essay_number)
+    if (n > 0) set.add(n)
+  }
+  return [...set].sort((a, b) => a - b)
+})
 const taskForm = ref({
   name: '', grade: '', essay_number: 1, essay_topic: '', course_id: '', course_name: '',
-  teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: false
+  teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: true
 })
 
 onMounted(() => { initColumns(); loadData() })
@@ -448,7 +460,7 @@ function notStarted(tpl) {
 
 function getTaskStatus(tpl) {
   if (notStarted(tpl)) return { active: false, label: '未开始' }
-  if (isExpired(tpl)) return { active: false, label: '已过期' }
+  if (isExpired(tpl)) return { active: false, label: '已结束' }
   if (tpl.is_active) return { active: true, label: '收集中' }
   return { active: false, label: '已结束' }
 }
@@ -457,7 +469,6 @@ function statusTagType(tpl) {
   const s = getTaskStatus(tpl).label
   if (s === '收集中') return 'primary'
   if (s === '未开始') return 'warning'
-  if (s === '已过期') return 'danger'
   return 'default'
 }
 
@@ -480,7 +491,7 @@ function openTaskDialog(tpl) {
     editingTask.value = {}
     taskForm.value = {
       name: '', grade: '', essay_number: '', essay_topic: '', course_id: '', course_name: '',
-      teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: false
+      teaching_mode: '线下', startTimeStr: '', deadlineStr: '', is_active: true
     }
   }
   showTaskDialog.value = true
@@ -530,16 +541,12 @@ async function toggleTaskActive(tpl) {
   } catch(err) { showToast(err.response?.data?.detail || '操作失败') }
 }
 
-async function cloneTask(tpl) {
-  try {
-    await api.post(`/admin/tasks/${tpl.id}/clone`)
-    showToast('已复制为新任务（默认停用，请编辑后开始收集）')
-    loadData()
-  } catch(err) { showToast(err.response?.data?.detail || '复制失败') }
-}
-
 function confirmDelTask(tpl) {
-  showDialog({ title: '确认删除', message: `删除收集任务「${tpl.name}」？`, showCancelButton: true })
+  showDialog({
+    title: '确认删除',
+    message: `删除收集任务「${tpl.name}」？\n\n该任务下的作文不受影响，仍可在作文列表查看（任务显示为「无任务」）。\n删除后不可恢复，但可创建同名任务。`,
+    showCancelButton: true,
+  })
     .then(async () => {
       await api.delete(`/admin/tasks/${tpl.id}`)
       tasks.value = tasks.value.filter(x => x.id !== tpl.id)

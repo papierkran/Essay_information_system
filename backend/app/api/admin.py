@@ -35,6 +35,9 @@ def create_course(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
+    existing = db.query(Course).filter(Course.name == data.name, Course.deleted_at == None).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="课程名称已存在")
     cls = Course(name=data.name)
     db.add(cls)
     db.commit()
@@ -82,6 +85,9 @@ def update_course(
     cls = db.query(Course).filter(Course.id == course_id).first()
     if not cls:
         raise HTTPException(status_code=404, detail="课程不存在")
+    existing = db.query(Course).filter(Course.name == data.name, Course.deleted_at == None, Course.id != course_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="课程名称已存在")
     cls.name = data.name
     db.commit()
     db.refresh(cls)
@@ -99,6 +105,8 @@ def delete_course(
     if not cls:
         raise HTTPException(status_code=404, detail="课程不存在")
     cls.deleted_at = datetime.now()
+    db.query(EssayTask).filter(EssayTask.course_id == course_id).update({"course_id": None})
+    db.query(Essay).filter(Essay.course_id == course_id).update({"course_id": None})
     db.commit()
     return {"message": "删除成功"}
 
@@ -128,14 +136,15 @@ async def preview_courses_csv(
         if not line or 'ClassIn' in line or '学校名称' in line or '时间:' in line or '班级ID' in line:
             continue
         cols = line.split(',')
-        if len(cols) < 3:
-            continue
-        name = cols[1].strip().strip('"')
-        if not name or name in ('--', '-') or name in seen:
+        if len(cols) >= 3:
+            name = cols[1].strip().strip('"')
+        else:
+            name = line.strip().strip('"')
+        if not name or name in ('--', '-') or name in ('课程名称', '名称', 'name', 'Name') or name in seen:
             continue
         seen.add(name)
         # 检查是否已存在
-        existing = db.query(Course).filter(Course.name == name).first()
+        existing = db.query(Course).filter(Course.name == name, Course.deleted_at == None).first()
         courses_list.append({"name": name, "exists": existing is not None})
 
     return {"courses": courses_list}
@@ -165,6 +174,7 @@ async def confirm_import_courses(
     for name in selected_names:
         existing = db.query(Course).filter(
             Course.name == name,
+            Course.deleted_at == None,
         ).first()
         if existing:
             skipped += 1
@@ -601,7 +611,7 @@ def create_task(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    existing = db.query(EssayTask).filter(EssayTask.name == data.name).first()
+    existing = db.query(EssayTask).filter(EssayTask.name == data.name, EssayTask.deleted_at == None).first()
     if existing:
         raise HTTPException(status_code=400, detail="任务名称已存在")
     task = EssayTask(
@@ -660,40 +670,6 @@ def list_tasks(
     return result
 
 
-@router.post("/tasks/{task_id}/clone", response_model=TaskOut)
-def clone_task(
-    task_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """复制一个收集任务为新任务（方便周/月重复收集，不复制作文数据）"""
-    require_admin(current_user)
-    src = db.query(EssayTask).filter(EssayTask.id == task_id).first()
-    if not src:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    base = src.name
-    new_name = base
-    idx = 2
-    while db.query(EssayTask).filter(EssayTask.name == new_name).first():
-        new_name = f"{base} (副本{idx})"
-        idx += 1
-    new_task = EssayTask(
-        name=new_name,
-        grade=src.grade,
-        essay_number=src.essay_number,
-        essay_topic=src.essay_topic,
-        course_id=src.course_id,
-        teaching_mode=src.teaching_mode,
-        start_time=src.start_time,
-        deadline=src.deadline,
-        is_active=False,
-    )
-    db.add(new_task)
-    db.commit()
-    db.refresh(new_task)
-    return TaskOut.model_validate(new_task)
-
-
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 def update_task(
     task_id: int,
@@ -736,6 +712,7 @@ def delete_task(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     task.deleted_at = datetime.now()
+    db.query(Essay).filter(Essay.task_id == task_id).update({"task_id": None})
     db.commit()
     return {"message": "删除成功"}
 

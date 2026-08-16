@@ -2941,6 +2941,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
     collector = db.query(User).filter(User.id == essay.collected_by).first()
     reviewer = db.query(User).filter(User.id == essay.reviewer_id).first() if essay.reviewer_id else None
     task = db.query(EssayTask).filter(EssayTask.id == essay.task_id).first() if essay.task_id else None
+    course = db.query(Course).filter(Course.id == essay.course_id).first() if essay.course_id else None
 
     corr_exists = False
     file_path = ""
@@ -2960,7 +2961,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         task_id=essay.task_id,
         task_name=task.name if task else "",
         course_id=essay.course_id,
-        course_name=task.course_name if task else "",
+        course_name=course.name if course else (task.course_name if task else ""),
         grade=essay.grade or "",
         essay_number=essay.essay_number or 0,
         essay_title=essay.essay_title or "",
@@ -2995,6 +2996,7 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
         return []
     user_ids = set()
     task_ids = set()
+    course_ids = set()
     dirs = {}
     for e in essays:
         if e.collected_by:
@@ -3003,6 +3005,8 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
             user_ids.add(e.reviewer_id)
         if e.task_id:
             task_ids.add(e.task_id)
+        if e.course_id:
+            course_ids.add(e.course_id)
         if e.content_file:
             fp = os.path.join(get_upload_dir(), e.content_file)
             dirs[e.id] = (os.path.dirname(fp), os.path.basename(fp))
@@ -3016,6 +3020,10 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
         from sqlalchemy.orm import joinedload
         for t in db.query(EssayTask).options(joinedload(EssayTask.course)).filter(EssayTask.id.in_(task_ids)).all():
             tasks[t.id] = t
+    courses = {}
+    if course_ids:
+        for c in db.query(Course).filter(Course.id.in_(course_ids)).all():
+            courses[c.id] = c
 
     dir_cache = {}
     def _corr_exists(d):
@@ -3029,6 +3037,7 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
         collector = users.get(e.collected_by)
         reviewer = users.get(e.reviewer_id)
         task = tasks.get(e.task_id)
+        course = courses.get(e.course_id)
 
         corr_exists = False
         file_path = ""
@@ -3046,7 +3055,7 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
             task_id=e.task_id,
             task_name=task.name if task else "",
             course_id=e.course_id,
-            course_name=task.course_name if task else "",
+            course_name=course.name if course else (task.course_name if task else ""),
             grade=e.grade or "",
             essay_number=e.essay_number or 0,
             essay_title=e.essay_title or "",

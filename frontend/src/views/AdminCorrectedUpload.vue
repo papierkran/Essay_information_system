@@ -30,7 +30,6 @@
         <span>已改 <b class="c-green">{{ selectedTask.corrected_count || 0 }}</b></span>
       </div>
       <div class="task-summary-actions">
-        <button class="btn" style="font-size:12px;padding:3px 10px" @click="cloneSelectedTask">复制任务</button>
         <button class="btn" style="font-size:12px;padding:3px 10px;color:#1677ff" @click="viewTaskEssays">查看作文</button>
       </div>
     </div>
@@ -412,7 +411,7 @@ const showTaskGradePicker = ref(false)
 const showTaskDialog = ref(false)
 const taskForm = ref({
   name: '', grade: '', essay_number: '', essay_topic: '', teaching_mode: '线下',
-  deadlineStr: '', is_active: false,
+  deadlineStr: '', is_active: true,
 })
 
 // ===== 共用表单 =====
@@ -623,7 +622,7 @@ const filteredTasks = computed(() => {
 })
 
 function taskStatus(t) {
-  if (t.deadline && new Date(t.deadline) < new Date()) return { active: false, label: '已过期' }
+  if (t.deadline && new Date(t.deadline) < new Date()) return { active: false, label: '已结束' }
   if (t.start_time && new Date(t.start_time) > new Date()) return { active: false, label: '未开始' }
   if (t.is_active) return { active: true, label: '收集中' }
   return { active: false, label: '已结束' }
@@ -688,22 +687,9 @@ async function saveTask() {
 function openTaskDialog() {
   taskForm.value = {
     name: '', grade: '', essay_number: '', essay_topic: '', teaching_mode: '线下',
-    deadlineStr: '', is_active: false,
+    deadlineStr: '', is_active: true,
   }
   showTaskDialog.value = true
-}
-
-async function cloneSelectedTask() {
-  if (!selectedTaskId.value) return
-  try {
-    const res = await api.post(`/admin/tasks/${selectedTaskId.value}/clone`)
-    await loadTasks()
-    const created = tasks.value.find(t => t.id === res.data.id)
-    selectTask(created || res.data)
-    showToast('已复制为新任务（默认停用，可编辑后开始收集）')
-  } catch (err) {
-    showToast(err.response?.data?.detail || '复制失败')
-  }
 }
 
 function viewTaskEssays() {

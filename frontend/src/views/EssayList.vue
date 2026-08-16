@@ -45,6 +45,12 @@
           <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
         </div>
       </div>
+      <div class="filter-row"><span class="filter-label">课程</span>
+        <select v-model="filters.courseId" class="filter-input" @change="applyFilter">
+          <option value="">全部</option>
+          <option v-for="c in courseList" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+      </div>
       <div class="filter-row"><span class="filter-label">批改者</span>
         <select v-model="filters.reviewerId" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
@@ -66,7 +72,7 @@
       <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" @click="applyFilter">查询</button>
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
       <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" @click="exportXlsx" :title="`导出当前页 ${list.length} 条`">📥 导出Excel(当前页)</button>
-      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" :disabled="!selectedIds.length" @click="exportXlsxSelected">📤 导出已选{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}</button>
+      <button v-if="!isGuest" class="btn" style="font-size:13px;padding:6px 14px" :disabled="!selectedIds.length" @click="exportXlsxSelected">📤 导出已选xlsx{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}</button>
     </div>
 
     <!-- 统计行 -->
@@ -391,6 +397,14 @@ const selectedIds = ref([])
 const selectedMeta = ref(new Map())
 const grades = ['初一','初二','初三','高一','高二','高三']
 const collectorList = ref([])
+const courseList = ref([])
+
+async function loadCourseList() {
+  try {
+    const res = await api.get('/essays/courses')
+    courseList.value = res.data || []
+  } catch {}
+}
 
 function syncSelectMeta(id, e) {
   if (e) selectedMeta.value.set(id, e)
@@ -416,7 +430,7 @@ const defaultCollectedBy = computed(() => {
   if (isAdmin.value) return ''
   return currentUser.value.id || ''
 })
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' })
+const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' })
 
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
@@ -574,6 +588,7 @@ function buildParams() {
   if (filters.value.remark) p.remark = filters.value.remark
   if (filters.value.taskId === 0 || filters.value.taskId) p.task_id = Number(filters.value.taskId)
   else if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
+  if (filters.value.courseId) p.course_id = Number(filters.value.courseId)
   if (filters.value.reviewerId) p.reviewer_id = Number(filters.value.reviewerId)
   if (filters.value.isSupplement) p.is_supplement = filters.value.isSupplement === 'true'
   if (filters.value.dateFrom) p.date_from = filters.value.dateFrom
@@ -638,7 +653,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '' }; filterTaskSearch.value = ''; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
   if (isGuest.value) return
@@ -961,13 +976,20 @@ onMounted(async () => {
   loadColumnSettings()
   await loadTasks()
   loadReviewers()
+  loadCourseList()
   window.addEventListener('resize', updateTopScrollWidth)
   // 点击外部关闭任务下拉框
   document.addEventListener('click', closeTaskDropdown)
   // 从URL参数读取task_id（优先：重置筛选后再按任务筛选）
   const taskIdFromQuery = Number(route.query.task_id)
+  const courseIdFromQuery = Number(route.query.course_id)
   const dayFromQuery = route.query.day
-  if (taskIdFromQuery) {
+  if (courseIdFromQuery) {
+    // 重置筛选后按课程筛选（课程管理跳转）
+    Object.keys(filters.value).forEach(k => { filters.value[k] = '' })
+    filters.value.collectedBy = defaultCollectedBy.value
+    filters.value.courseId = courseIdFromQuery
+  } else if (taskIdFromQuery) {
     // 重置所有筛选
     Object.keys(filters.value).forEach(k => { filters.value[k] = '' })
     filters.value.collectedBy = defaultCollectedBy.value

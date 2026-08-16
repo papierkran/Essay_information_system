@@ -2,10 +2,12 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">课程管理</div>
 
-    <div v-if="isDesktop" style="margin-bottom:16px;display:flex;gap:8px;align-items:center">
+    <div v-if="isDesktop" style="margin-bottom:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-success" @click="openCourseDialog()">+ 创建课程</button>
       <label class="btn btn-primary" style="cursor:pointer">📥 导入CSV<input type="file" accept=".csv" @change="previewCSV" style="display:none" /></label>
+      <button class="btn" @click="downloadTemplate">📄 下载模板</button>
       <span v-if="importing" style="font-size:13px;color:#999">解析中...</span>
+      <span style="font-size:12px;color:#999">CSV 第一列为课程名称（每行一个）</span>
       <input v-model="keyword" placeholder="搜索课程名称" class="filter-input" style="margin-left:auto" />
     </div>
 
@@ -24,6 +26,8 @@
         </div>
         <div class="form-actions" style="margin-top:12px">
           <button class="btn" @click="showImportPreview=false">取消</button>
+          <button class="btn" @click="selectAll">全选</button>
+          <button class="btn" @click="selectNewOnly">只选新增</button>
           <span style="font-size:13px;color:#999">已选 {{ selectedNames.length }} 个</span>
           <button class="btn btn-primary" @click="confirmImport" :disabled="selectedNames.length===0">确认导入</button>
         </div>
@@ -32,11 +36,13 @@
 
     <!-- 手机端操作按钮 -->
     <template v-if="!isDesktop">
-      <div style="display:flex;gap:8px;padding:12px 12px 0">
+      <div style="display:flex;gap:8px;padding:12px 12px 0;flex-wrap:wrap">
         <van-button type="success" size="small" @click="openCourseDialog()">创建课程</van-button>
         <van-button type="primary" size="small" @click="$refs.csvInput.click()">导入CSV</van-button>
-        <van-field v-model="keyword" placeholder="搜索课程名称" clearable style="flex:1" />
+        <van-button size="small" @click="downloadTemplate">模板</van-button>
+        <van-field v-model="keyword" placeholder="搜索课程名称" clearable style="flex:1;min-width:120px" />
       </div>
+      <div style="padding:6px 12px 0;font-size:12px;color:#999">CSV 第一列为课程名称（每行一个）</div>
       <input type="file" ref="csvInput" accept=".csv" style="display:none" @change="previewCSV" />
     </template>
 
@@ -45,18 +51,18 @@
       <table class="desktop-table" v-if="filteredCourses.length">
         <thead>
           <tr>
-            <th>课程名称</th>
-            <th>关联任务</th>
-            <th>关联作文</th>
-            <th>创建时间</th>
+            <th style="cursor:pointer" @click="toggleSort('name')">课程名称 {{ sortIcon('name') }}</th>
+            <th style="cursor:pointer" @click="toggleSort('task_count')">关联任务 {{ sortIcon('task_count') }}</th>
+            <th style="cursor:pointer" @click="toggleSort('essay_count')">关联作文 {{ sortIcon('essay_count') }}</th>
+            <th style="cursor:pointer" @click="toggleSort('created_at')">创建时间 {{ sortIcon('created_at') }}</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in filteredCourses" :key="c.id">
+          <tr v-for="c in sortedCourses" :key="c.id">
             <td>{{ c.name }}</td>
-            <td><span style="font-weight:600;color:#1677ff">{{ c.task_count || 0 }}</span></td>
-            <td><span style="font-weight:600;color:#52c41a">{{ c.essay_count || 0 }}</span></td>
+            <td><span style="font-weight:600;color:#1677ff;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.task_count || 0 }}</span></td>
+            <td><span style="font-weight:600;color:#52c41a;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.essay_count || 0 }}</span></td>
             <td>{{ c.created_at?.substring(0,10) }}</td>
             <td style="white-space:nowrap">
               <button class="btn" style="font-size:12px;padding:2px 8px" @click="openCourseDialog(c)">编辑</button>
@@ -70,16 +76,26 @@
 
     <!-- 手机端课程列表 -->
     <van-cell-group v-if="!isDesktop" inset style="margin-top:12px">
-      <van-cell v-for="c in filteredCourses" :key="c.id" :title="c.name"
-        :label="`任务 ${c.task_count || 0} · 作文 ${c.essay_count || 0} · ${c.created_at?.substring(0,10)}`"
-        is-link @click="openCourseDialog(c)" />
+      <van-swipe-cell v-for="c in sortedCourses" :key="c.id">
+        <van-cell :title="c.name" is-link @click="openCourseDialog(c)">
+          <template #label>
+            <span>任务 {{ c.task_count || 0 }}</span> · <span style="color:#1677ff" @click.stop="goEssays(c)">作文 {{ c.essay_count || 0 }}</span> · {{ c.created_at?.substring(0,10) }}
+          </template>
+        </van-cell>
+        <template #right>
+          <van-button square type="danger" text="删除" style="height:100%" @click="confirmDelCourse(c)" />
+        </template>
+      </van-swipe-cell>
       <van-cell v-if="!filteredCourses.length" title="暂无课程" />
     </van-cell-group>
 
     <!-- 课程弹窗 -->
     <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose">
       <van-form ref="courseFormRef">
-        <van-field v-model="courseForm.name" label="课程名称" :rules="[{required:true}]" />
+        <van-field v-model="courseForm.name" label="课程名称" maxlength="30" :rules="[{required:true}]" />
+        <div v-if="editingCourse.id" style="padding:0 16px 12px;font-size:13px;color:#999">
+          当前关联：{{ editingCourse.task_count || 0 }} 个任务 / {{ editingCourse.essay_count || 0 }} 篇作文
+        </div>
       </van-form>
     </van-dialog>
   </div>
@@ -87,10 +103,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
 import api from '../api'
 
+const router = useRouter()
 const { isDesktop } = useScreen()
 const courses = ref([])
 const keyword = ref('')
@@ -99,10 +117,38 @@ const filteredCourses = computed(() => {
   if (!kw) return courses.value
   return courses.value.filter(c => (c.name || '').toLowerCase().includes(kw))
 })
+
+const sortKey = ref('')
+const sortDir = ref('desc')
+const sortedCourses = computed(() => {
+  const list = filteredCourses.value
+  if (!sortKey.value) return list
+  return [...list].sort((a, b) => {
+    let va = a[sortKey.value]
+    let vb = b[sortKey.value]
+    if (va == null) va = ''
+    if (vb == null) vb = ''
+    const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
+function toggleSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+function sortIcon(key) {
+  if (sortKey.value !== key) return '⇅'
+  return sortDir.value === 'asc' ? '▲' : '▼'
+}
+
 const showCourseDialog = ref(false)
 const courseFormRef = ref(null)
 const editingCourse = ref({})
-const courseForm = ref({ name:'' })
+const courseForm = ref({ name: '' })
 const importing = ref(false)
 const showImportPreview = ref(false)
 const previewCourses = ref([])
@@ -115,12 +161,29 @@ async function loadData() {
   try {
     const res = await api.get('/admin/courses')
     courses.value = res.data
-  } catch {}
+  } catch { showToast('加载失败，请重试') }
 }
+
+function goEssays(cls) {
+  // 重置作文列表筛选后按课程跳转
+  localStorage.removeItem('essay_list_filters')
+  router.push({ path: '/essay/list', query: { course_id: cls.id } })
+}
+
+function downloadTemplate() {
+  const content = '\ufeff示例课程一\n示例课程二\n'
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = '课程导入模板.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function selectAll() { selectedNames.value = previewCourses.value.map(c => c.name) }
+function selectNewOnly() { selectedNames.value = previewCourses.value.filter(c => !c.exists).map(c => c.name) }
 
 function openCourseDialog(cls) {
   if (cls) { editingCourse.value = cls; courseForm.value = { name: cls.name } }
-  else { editingCourse.value = {}; courseForm.value = { name:'' } }
+  else { editingCourse.value = {}; courseForm.value = { name: '' } }
   showCourseDialog.value = true
 }
 
@@ -146,7 +209,7 @@ function onCourseClose(action) {
 function confirmDelCourse(cls) {
   showDialog({
     title: '确认删除',
-    message: `删除课程「${cls.name}」？\n（关联 ${cls.task_count || 0} 个任务 / ${cls.essay_count || 0} 篇作文，删除后这些数据的课程关联将失效）`,
+    message: `删除课程「${cls.name}」？\n（关联 ${cls.task_count || 0} 个任务 / ${cls.essay_count || 0} 篇作文，删除后这些数据的课程关联将失效，显示为「无课程」）`,
     showCancelButton: true,
   })
     .then(async () => {
