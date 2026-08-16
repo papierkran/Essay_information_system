@@ -36,11 +36,6 @@
       <input v-model="filters.course" placeholder="课程名称" class="filter-input" />
       <button class="btn" style="font-size:13px;padding:6px 14px" @click="clearFilter">重置</button>
     </div>
-    <div v-else style="display:flex;gap:8px;padding:0 12px;flex-wrap:wrap">
-      <van-field v-model="filters.name" placeholder="任务名称" clearable style="flex:1;min-width:120px" />
-      <van-field v-model="filters.course" placeholder="课程名称" clearable style="flex:1;min-width:120px" />
-      <van-button size="small" @click="clearFilter">重置</van-button>
-    </div>
 
     <!-- 桌面端任务列表 -->
     <div v-if="isDesktop">
@@ -100,7 +95,32 @@
     <!-- 手机端任务列表 -->
     <template v-else>
       <div class="mobile-filter">
-        <van-field v-model="mobileSearch" placeholder="搜索任务名称/课程/主题" clearable />
+        <div class="mobile-filter-top">
+          <van-field v-model="mobileSearch" placeholder="搜索任务名称/课程/主题" clearable />
+          <van-button size="small" :type="mobileFilterActive ? 'primary' : 'default'" icon="filter-o" @click="showMobileFilter = !showMobileFilter">
+            筛选{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+          </van-button>
+        </div>
+        <div v-if="showMobileFilter" class="mobile-filter-panel">
+          <div class="m-filter-row">
+            <select v-model="filters.grade" class="m-filter-input">
+              <option value="">全部年级</option>
+              <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+            </select>
+            <select v-model="filters.number" class="m-filter-input">
+              <option value="">全部第几次</option>
+              <option v-for="n in 10" :key="n" :value="n">第{{ n }}次</option>
+            </select>
+          </div>
+          <div class="m-filter-row">
+            <select v-model="filters.teachingMode" class="m-filter-input">
+              <option value="">全部提交方式</option>
+              <option value="线下">线下</option>
+              <option value="线上">线上</option>
+            </select>
+            <button class="btn m-filter-reset" @click="clearFilter">重置</button>
+          </div>
+        </div>
       </div>
       <div class="mobile-tabs">
         <span v-for="st in statusTabs" :key="st.value" class="mobile-tab" :class="{ active: filters.status === st.value }" @click="setStatusFilter(st.value)">{{ st.label }}</span>
@@ -229,6 +249,18 @@ const statusTabs = [
   { value: 'ended', label: '已结束' },
 ]
 const mobileSearch = ref('')
+const showMobileFilter = ref(false)
+const activeFilterCount = computed(() => {
+  const f = filters.value
+  let n = 0
+  if (f.grade) n++
+  if (f.number) n++
+  if (f.teachingMode) n++
+  if (f.course) n++
+  if (f.topic) n++
+  return n
+})
+const mobileFilterActive = computed(() => activeFilterCount.value > 0)
 
 const columnDefs = [
   { key: 'name', label: '任务名称', sortable: true },
@@ -625,6 +657,31 @@ async function onExportModeChosen(action) {
 
 /* ===== 手机端任务列表 ===== */
 .mobile-filter { padding: 8px 12px 0; }
+.mobile-filter-top { display: flex; gap: 8px; align-items: center; }
+.mobile-filter-top .van-field { flex: 1; margin: 0; }
+.mobile-filter-panel {
+  margin-top: 8px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-filter-row { display: flex; gap: 8px; }
+.m-filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+.m-filter-input:focus { border-color: #4096ff; }
+.m-filter-reset { flex: 1; }
 .mobile-tabs {
   display: flex;
   gap: 8px;

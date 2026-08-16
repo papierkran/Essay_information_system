@@ -73,7 +73,7 @@ const routes = [
     path: '/admin/corrected-upload',
     name: 'AdminCorrectedUpload',
     component: () => import('../views/AdminCorrectedUpload.vue'),
-    meta: { requiresAuth: true, roles: ['admin'] },
+    meta: { requiresAuth: true, roles: ['admin'], superAdmin: true },
   },
   {
     path: '/admin/tasks',
@@ -125,17 +125,24 @@ router.afterEach((to) => {
 router.beforeEach((to, from, next) => {
   let token = null
   let userRole = ''
+  let username = ''
   try {
     const raw = localStorage.getItem(`auth_${localStorage.getItem('activeAuth') || 'default'}`)
     if (raw) {
       const auth = JSON.parse(raw)
       token = auth.token
       userRole = auth.user?.role || ''
+      username = auth.user?.username || ''
     }
   } catch {}
 
   if (to.meta.requiresAuth && !token) {
     next('/login')
+    return
+  }
+
+  if (to.meta.superAdmin && username !== 'admin') {
+    next('/dashboard')
     return
   }
 
