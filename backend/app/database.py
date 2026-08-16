@@ -118,3 +118,13 @@ def _migrate_existing_columns():
                 conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operation_logs_batch_id ON operation_logs(batch_id)"))
     except Exception:
         pass
+
+    # course 表补充 classin_id 列（幂等）
+    try:
+        if "course" in inspector.get_table_names():
+            course_cols = {c["name"] for c in inspector.get_columns("course")}
+            if "classin_id" not in course_cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE course ADD COLUMN IF NOT EXISTS classin_id VARCHAR(50) DEFAULT ''"))
+    except Exception:
+        pass

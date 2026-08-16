@@ -38,7 +38,7 @@ def create_course(
     existing = db.query(Course).filter(Course.name == data.name, Course.deleted_at == None).first()
     if existing:
         raise HTTPException(status_code=400, detail="课程名称已存在")
-    cls = Course(name=data.name)
+    cls = Course(name=data.name, classin_id=data.classin_id or "")
     db.add(cls)
     db.commit()
     db.refresh(cls)
@@ -89,6 +89,7 @@ def update_course(
     if existing:
         raise HTTPException(status_code=400, detail="课程名称已存在")
     cls.name = data.name
+    cls.classin_id = data.classin_id or ""
     db.commit()
     db.refresh(cls)
     return CourseOut.model_validate(cls)
@@ -136,16 +137,18 @@ async def preview_courses_csv(
         if not line or 'ClassIn' in line or '学校名称' in line or '时间:' in line or '班级ID' in line:
             continue
         cols = line.split(',')
-        if len(cols) >= 3:
+        if len(cols) >= 2:
+            cid = cols[0].strip().strip('"')
             name = cols[1].strip().strip('"')
         else:
+            cid = ""
             name = line.strip().strip('"')
         if not name or name in ('--', '-') or name in ('课程名称', '名称', 'name', 'Name') or name in seen:
             continue
         seen.add(name)
         # 检查是否已存在
         existing = db.query(Course).filter(Course.name == name, Course.deleted_at == None).first()
-        courses_list.append({"name": name, "exists": existing is not None})
+        courses_list.append({"name": name, "classin_id": cid, "exists": existing is not None})
 
     return {"courses": courses_list}
 
@@ -169,6 +172,18 @@ async def confirm_import_courses(
     else:
         text = content.decode("utf-8", errors="replace")
 
+    lines = text.lstrip("\ufeff").split("\n")
+    name_to_cid = {}
+    for line in lines:
+        line = line.strip()
+        if not line or 'ClassIn' in line or '学校名称' in line or '时间:' in line or '班级ID' in line:
+            continue
+        cols = line.split(',')
+        if len(cols) >= 2:
+            cname = cols[1].strip().strip('"')
+            if cname:
+                name_to_cid[cname] = cols[0].strip().strip('"')
+
     imported = 0
     skipped = 0
     for name in selected_names:
@@ -179,7 +194,7 @@ async def confirm_import_courses(
         if existing:
             skipped += 1
             continue
-        cls = Course(name=name)
+        cls = Course(name=name, classin_id=name_to_cid.get(name, ""))
         db.add(cls)
         imported += 1
 

@@ -141,9 +141,9 @@
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <div class="upload-success-actions">
           <button class="btn" @click="goUploadList">去列表查看</button>
-          <button class="btn" @click="viewUploaded" :disabled="!uploadSuccessDialog.id">查看刚上传的作文</button>
+          <button class="btn" :disabled="!uploadSuccessDialog.id" @click="viewUploaded">查看刚上传的作文</button>
           <button class="btn btn-primary" @click="continueUpload">继续上传</button>
         </div>
       </div>
@@ -663,6 +663,23 @@ function openUploaded(s) {
 
 :deep(.upload-success-dialog) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.upload-success-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.upload-success-actions .btn {
+  flex: 1;
+  min-width: 96px;
+  justify-content: center;
+}
+@media (max-width: 480px) {
+  .upload-success-actions .btn {
+    min-width: 100%;
+  }
 }
 
 :deep(.upload-success-dialog .van-dialog__message) {

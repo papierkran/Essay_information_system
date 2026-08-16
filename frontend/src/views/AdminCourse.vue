@@ -7,7 +7,7 @@
       <label class="btn btn-primary" style="cursor:pointer">📥 导入CSV<input type="file" accept=".csv" @change="previewCSV" style="display:none" /></label>
       <button class="btn" @click="downloadTemplate">📄 下载模板</button>
       <span v-if="importing" style="font-size:13px;color:#999">解析中...</span>
-      <span style="font-size:12px;color:#999">CSV 第一列为课程名称（每行一个）</span>
+      <span style="font-size:12px;color:#999">CSV 第一列为 ClassIn 班级 ID，第二列为课程名称</span>
       <input v-model="keyword" placeholder="搜索课程名称" class="filter-input" style="margin-left:auto" />
     </div>
 
@@ -20,7 +20,7 @@
           <label v-for="(c, i) in previewCourses" :key="i"
             style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #f5f5f5;cursor:pointer">
             <input type="checkbox" :value="c.name" v-model="selectedNames" style="width:auto" />
-            <span>{{ c.name }}</span>
+            <span>{{ c.name }}<span v-if="c.classin_id" style="color:#999;font-size:12px;margin-left:6px">[{{ c.classin_id }}]</span></span>
             <span v-if="c.exists" class="tag tag-corrected" style="margin-left:auto">已存在</span>
           </label>
         </div>
@@ -42,7 +42,7 @@
         <van-button size="small" @click="downloadTemplate">模板</van-button>
         <van-field v-model="keyword" placeholder="搜索课程名称" clearable style="flex:1;min-width:120px" />
       </div>
-      <div style="padding:6px 12px 0;font-size:12px;color:#999">CSV 第一列为课程名称（每行一个）</div>
+      <div style="padding:6px 12px 0;font-size:12px;color:#999">CSV 第一列为 ClassIn 班级 ID，第二列为课程名称</div>
       <input type="file" ref="csvInput" accept=".csv" style="display:none" @change="previewCSV" />
     </template>
 
@@ -52,6 +52,7 @@
         <thead>
           <tr>
             <th style="cursor:pointer" @click="toggleSort('name')">课程名称 {{ sortIcon('name') }}</th>
+            <th>ClassIn ID</th>
             <th style="cursor:pointer" @click="toggleSort('task_count')">关联任务 {{ sortIcon('task_count') }}</th>
             <th style="cursor:pointer" @click="toggleSort('essay_count')">关联作文 {{ sortIcon('essay_count') }}</th>
             <th style="cursor:pointer" @click="toggleSort('created_at')">创建时间 {{ sortIcon('created_at') }}</th>
@@ -61,6 +62,7 @@
         <tbody>
           <tr v-for="c in sortedCourses" :key="c.id">
             <td>{{ c.name }}</td>
+            <td>{{ c.classin_id || '-' }}</td>
             <td><span style="font-weight:600;color:#1677ff;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.task_count || 0 }}</span></td>
             <td><span style="font-weight:600;color:#52c41a;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.essay_count || 0 }}</span></td>
             <td>{{ c.created_at?.substring(0,10) }}</td>
@@ -79,7 +81,7 @@
       <van-swipe-cell v-for="c in sortedCourses" :key="c.id">
         <van-cell :title="c.name" is-link @click="openCourseDialog(c)">
           <template #label>
-            <span>任务 {{ c.task_count || 0 }}</span> · <span style="color:#1677ff" @click.stop="goEssays(c)">作文 {{ c.essay_count || 0 }}</span> · {{ c.created_at?.substring(0,10) }}
+            <span v-if="c.classin_id" style="color:#999">[{{ c.classin_id }}]</span> 任务 {{ c.task_count || 0 }} · <span style="color:#1677ff" @click.stop="goEssays(c)">作文 {{ c.essay_count || 0 }}</span> · {{ c.created_at?.substring(0,10) }}
           </template>
         </van-cell>
         <template #right>
@@ -93,6 +95,7 @@
     <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose">
       <van-form ref="courseFormRef">
         <van-field v-model="courseForm.name" label="课程名称" maxlength="30" :rules="[{required:true}]" />
+        <van-field v-model="courseForm.classin_id" label="ClassIn班级ID" maxlength="50" placeholder="可选，如 C001" />
         <div v-if="editingCourse.id" style="padding:0 16px 12px;font-size:13px;color:#999">
           当前关联：{{ editingCourse.task_count || 0 }} 个任务 / {{ editingCourse.essay_count || 0 }} 篇作文
         </div>
@@ -171,7 +174,7 @@ function goEssays(cls) {
 }
 
 function downloadTemplate() {
-  const content = '\ufeff示例课程一\n示例课程二\n'
+  const content = '\ufeff班级ID,课程名称\nC001,示例课程一\nC002,示例课程二\n'
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = '课程导入模板.csv'; a.click()
@@ -182,14 +185,14 @@ function selectAll() { selectedNames.value = previewCourses.value.map(c => c.nam
 function selectNewOnly() { selectedNames.value = previewCourses.value.filter(c => !c.exists).map(c => c.name) }
 
 function openCourseDialog(cls) {
-  if (cls) { editingCourse.value = cls; courseForm.value = { name: cls.name } }
-  else { editingCourse.value = {}; courseForm.value = { name: '' } }
+  if (cls) { editingCourse.value = cls; courseForm.value = { name: cls.name, classin_id: cls.classin_id || '' } }
+  else { editingCourse.value = {}; courseForm.value = { name: '', classin_id: '' } }
   showCourseDialog.value = true
 }
 
 async function saveCourse() {
   try {
-    const payload = { name: courseForm.value.name }
+    const payload = { name: courseForm.value.name, classin_id: courseForm.value.classin_id }
     if (editingCourse.value.id) {
       await api.put(`/admin/courses/${editingCourse.value.id}`, payload)
       showToast('更新成功')
