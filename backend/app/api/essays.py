@@ -1067,6 +1067,28 @@ def pending_essays(
     return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/pending/next")
+def next_pending_essay(
+    current_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取「未改列表」中当前作文的下一篇（批改流水线跳转用）"""
+    if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
+        raise HTTPException(status_code=403, detail="无权限")
+    ids = [
+        row[0] for row in db.query(Essay.id)
+        .filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming", "rework"]))
+        .order_by(Essay.created_at.asc(), Essay.id.asc())
+        .all()
+    ]
+    if current_id in ids:
+        idx = ids.index(current_id)
+        if idx + 1 < len(ids):
+            return {"next_id": ids[idx + 1]}
+    return {"next_id": None}
+
+
 @router.get("/trash")
 def list_trash(
     page: int = 1,

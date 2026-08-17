@@ -113,7 +113,10 @@
 
         <div class="card top-card">
           <template v-if="canReview && essay.status !== 'corrected'">
-            <div class="card-header"><h3>📤 上传修改结果</h3></div>
+            <div class="card-header">
+              <h3>📤 上传修改结果</h3>
+              <button class="btn" style="font-size:12px;padding:4px 10px" @click="goNextPending">⏭ 下一个未修改</button>
+            </div>
             <div class="form-group">
               <label>选择修改后的 docx 文件</label>
               <input type="file" ref="fileInput" accept=".docx" @change="onFileSelected" />
@@ -138,7 +141,10 @@
             </button>
           </template>
           <template v-else>
-            <div class="card-header"><h3>{{ statusCardInfo.title }}</h3></div>
+            <div class="card-header">
+              <h3>{{ statusCardInfo.title }}</h3>
+              <button class="btn" style="font-size:12px;padding:4px 10px" @click="goNextPending">⏭ 下一个未修改</button>
+            </div>
             <p :style="{ color: statusCardInfo.color }">{{ statusCardInfo.text }}</p>
             <div v-if="canReview" class="form-group" style="margin-top:8px">
               <label>批改者备注</label>
@@ -489,7 +495,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -973,7 +979,51 @@ onUnmounted(() => {
   }
 })
 
+// 详情 → 详情（如「下一个未修改」）时组件实例复用，需监听 id 变化重新加载
+watch(() => route.params.id, (nid, oid) => {
+  if (nid && nid !== oid) {
+    loadTasks()
+    loadEssay()
+  }
+})
+
+async function goNextPending() {
+  if (isDirty.value) {
+    const ok = await showConfirmDialog({
+      title: '提示',
+      message: '有未保存的修改，确定要离开吗？',
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '留下编辑',
+      showCancelButton: true,
+    }).then(() => true).catch(() => false)
+    if (!ok) return
+  }
+  try {
+    const res = await api.get('/essays/pending/next', { params: { current_id: essay.value?.id } })
+    if (res.data.next_id) {
+      router.push(`/review/detail/${res.data.next_id}?from=pending`)
+    } else {
+      showToast('已是最后一篇未修改作文')
+    }
+  } catch (err) {
+    showToast(err.response?.data?.detail || '获取下一篇失败')
+  }
+}
+
 async function loadEssay() {
+  // 切换到另一篇作文时重置编辑状态与旧图片 blob
+  editingOriginal.value = false
+  editingCorrected.value = false
+  showReuploadOriginal.value = false
+  showReuploadCorrected.value = false
+  showReupload.value = false
+  fullscreenMode.value = null
+  if (images.value.length) {
+    images.value.forEach(u => {
+      if (u.startsWith('blob:')) window.URL.revokeObjectURL(u)
+    })
+    images.value = []
+  }
   try {
     const res = await api.get(`/essays/${route.params.id}`)
     essay.value = res.data
