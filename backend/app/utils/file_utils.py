@@ -10,7 +10,7 @@ def _load_settings():
     global _SETTINGS
     settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "settings.json")
     if os.path.exists(settings_path):
-        with open(settings_path) as f:
+        with open(settings_path, encoding="utf-8") as f:
             _SETTINGS = json.load(f)
     else:
         _SETTINGS = {"upload_dir": "uploads"}
@@ -46,10 +46,12 @@ def get_essay_dir(
     teaching_mode: str = "",
     task_name: str = "",
     task_created_at: datetime = None,
+    essay_title: str = "",
+    is_supplement: bool = False,
 ) -> str:
     """生成作文存储目录路径。
-    - 有任务：{年}/{MMDD}_{课程名}/{年级}{方式}第{N}次/{学生}/
-    - 无任务：{年}/{月}月/{日}/{年级}{方式}第{N}次/{学生}/
+    - 有任务：{年}/{MMDD}_{课程名}/{年级}{方式}第{N}次/{学生}/{标题}/
+    - 无任务：{年}/{月}月/{日}/{年级}{方式}第{N}次/{学生}/{标题}/
     """
     grade = safe_component(grade, "未定年级")
     if teaching_mode:
@@ -78,6 +80,11 @@ def get_essay_dir(
         )
     if student_name:
         path = os.path.join(path, safe_component(student_name, "未知"))
+    if essay_title:
+        title_component = safe_component(essay_title, "无标题")
+        if is_supplement:
+            title_component += "_补交"
+        path = os.path.join(path, title_component)
     return path
 
 

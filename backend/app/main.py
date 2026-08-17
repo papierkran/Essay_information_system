@@ -57,6 +57,14 @@ def on_startup():
     # 启动时同步 file_saved 状态（分批处理，仅标记，不删除记录）
     db = SessionLocal()
     try:
+        # 历史作文文件迁移到含「标题」层级的目录（修复同名多作文图片串台，幂等）
+        try:
+            from .api.essays import migrate_essay_dirs_with_title
+            moved = migrate_essay_dirs_with_title(db)
+            if moved:
+                logging.info("已迁移 %d 篇作文文件到含标题层级目录", moved)
+        except Exception as e:
+            logging.warning("作文文件目录迁移失败(可下次启动重试): %s", e)
         last_id = 0
         while True:
             batch = db.query(Essay).filter(Essay.id > last_id).order_by(Essay.id.asc()).limit(1000).all()

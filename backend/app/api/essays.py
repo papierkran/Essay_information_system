@@ -621,6 +621,10 @@ async def upload_essay(
         f"{grade_name}第{essay_number}次" if essay_number not in (None, 0) else grade_name,
         safe_component(student_name, "未知"),
     )
+    title_component = safe_component(essay_title, "无标题")
+    if is_supplement:
+        title_component += "_补交"
+    dir_path = os.path.join(dir_path, title_component)
     os.makedirs(dir_path, exist_ok=True)
 
     if files:
@@ -2845,6 +2849,8 @@ def update_essay(
     old_number = essay.essay_number
     old_student = essay.student_name
     old_mode = essay.teaching_mode
+    old_title = essay.essay_title or ""
+    old_supplement = essay.is_supplement or False
 
     if grade and can_edit:
         essay.grade = grade
@@ -2883,7 +2889,9 @@ def update_essay(
         new_grade != old_grade or
         new_number != old_number or
         new_student != old_student or
-        new_mode != old_mode
+        new_mode != old_mode or
+        (essay.essay_title or "") != old_title or
+        (essay.is_supplement or False) != old_supplement
     )):
         old_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
 
@@ -2902,6 +2910,7 @@ def update_essay(
             str(now.year), f"{now.month}月", str(now.day),
             new_grade or "未定年级", new_number, "", new_student, new_mode,
             task_name=task_name, task_created_at=task_created_at,
+            essay_title=essay.essay_title, is_supplement=essay.is_supplement,
         )
 
         new_content_file = move_content_file(essay, old_dir, new_dir, filenames=_essay_owned_filenames(essay, db))
@@ -3085,3 +3094,47 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
     if upgraded:
         db.commit()
     return result
+
+
+def migrate_essay_dirs_with_title(db):
+    """把历史作文文件迁移到含「标题」层级的目录（修复同名多作文图片串台）。幂等，可重复执行。"""
+    from ..utils.file_utils import get_essay_dir, move_content_file
+
+    now = datetime.now()
+    last_id = 0
+    moved = 0
+    while True:
+        batch = (
+            db.query(Essay)
+            .filter(Essay.id > last_id, Essay.content_file.isnot(None), Essay.content_file != "")
+            .order_by(Essay.id.asc())
+            .limit(500)
+            .all()
+        )
+        if not batch:
+            break
+        for e in batch:
+            last_id = e.id
+            old_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
+            task_name = ""
+            task_created_at = None
+            if e.task_id:
+                task = db.query(EssayTask).filter(EssayTask.id == e.task_id).first()
+                if task:
+                    task_name = task.name
+                    task_created_at = task.created_at
+            d = e.created_at or now
+            new_dir = get_essay_dir(
+                str(d.year), f"{d.month}月", str(d.day),
+                e.grade or "未定年级", e.essay_number, "", e.student_name, e.teaching_mode or "",
+                task_name=task_name, task_created_at=task_created_at,
+                essay_title=e.essay_title, is_supplement=e.is_supplement,
+            )
+            if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+                continue
+            new_content_file = move_content_file(e, old_dir, new_dir, filenames=_essay_owned_filenames(e, db))
+            if new_content_file:
+                e.content_file = new_content_file
+                moved += 1
+        db.commit()
+    return moved
