@@ -40,7 +40,8 @@
 
     <!-- 桌面端任务列表 -->
     <div v-if="isDesktop">
-      <table class="desktop-table" v-if="filteredTasks.length">
+      <div class="table-wrap" v-if="filteredTasks.length">
+      <table class="desktop-table">
         <thead>
           <tr>
             <th v-for="(col, ci) in columns" :key="col.key"
@@ -49,7 +50,7 @@
               @dragover.prevent="onDragOver($event, ci)"
               @drop="onDrop($event, ci)"
               @click="toggleSort(col.key)"
-              :class="{ sortable: col.sortable, sorted: sortKey === col.key }"
+              :class="{ sortable: col.sortable, sorted: sortKey === col.key, 'sticky-col': col.key === 'actions' }"
               :style="{ cursor: col.sortable ? 'pointer' : 'default' }">
               {{ col.label }}
               <span v-if="col.sortable && sortKey === col.key" class="sort-arrow">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
@@ -57,8 +58,8 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in sortedTasks" :key="t.id">
-            <td v-for="col in columns" :key="col.key">
+          <tr v-for="t in pagedTasks" :key="t.id">
+            <td v-for="col in columns" :key="col.key" :class="{ 'sticky-col': col.key === 'actions' }">
               <template v-if="col.key === 'name'">
                 <span class="task-name-link" @click="viewEssays(t)">{{ t.name }}</span>
               </template>
@@ -87,6 +88,22 @@
           </tr>
         </tbody>
       </table>
+      </div>
+      <div class="pagination" v-if="totalPages > 1">
+        <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
+        <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+        <span class="page-info">{{ page }} / {{ totalPages }}</span>
+        <button class="btn" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+        <button class="btn" :disabled="page >= totalPages" @click="goPage(totalPages)">末页</button>
+        <span style="margin-left:12px;font-size:13px;color:#666">每页
+          <select v-model.number="pageSize" @change="onPageSizeChange" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select> 条
+        </span>
+      </div>
       <div v-else class="card" style="padding:32px;text-align:center;color:#999">
         {{ tasks.length ? '无匹配任务' : '暂无收集任务，点击上方按钮创建' }}
       </div>
@@ -128,7 +145,7 @@
         <span v-for="st in statusTabs" :key="st.value" class="mobile-tab" :class="{ active: filters.status === st.value }" @click="setStatusFilter(st.value)">{{ st.label }}</span>
       </div>
       <div v-if="filteredTasks.length" class="mobile-task-list">
-        <div v-for="t in filteredTasks" :key="t.id" class="task-card">
+        <div v-for="t in pagedTasks" :key="t.id" class="task-card">
           <div class="task-card-head" @click="onCardClick(t)">
             <span class="task-card-name">{{ t.name }}</span>
             <van-tag :type="statusTagType(t)" :plain="!getTaskStatus(t).active">{{ getTaskStatus(t).label }}</van-tag>
@@ -158,6 +175,13 @@
             <button class="act-btn act-btn-danger" @click="confirmDelTask(t)">删除</button>
           </div>
         </div>
+      </div>
+      <div class="pagination" v-if="totalPages > 1">
+        <button class="btn" :disabled="page <= 1" @click="goPage(1)">首页</button>
+        <button class="btn" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+        <span class="page-info">{{ page }} / {{ totalPages }}</span>
+        <button class="btn" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+        <button class="btn" :disabled="page >= totalPages" @click="goPage(totalPages)">末页</button>
       </div>
       <div v-else style="padding:32px;text-align:center;color:#999">
         暂无收集任务
@@ -223,7 +247,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -387,6 +411,21 @@ const sortedTasks = computed(() => {
     return sortDir.value === 'asc' ? cmp : -cmp
   })
 })
+
+// ===== 分页 =====
+const page = ref(1)
+const pageSize = ref(20)
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedTasks.value.length / pageSize.value)))
+const pagedTasks = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return sortedTasks.value.slice(start, start + pageSize.value)
+})
+function goPage(p) {
+  page.value = Math.min(Math.max(1, p), totalPages.value)
+  window.scrollTo(0, 0)
+}
+function onPageSizeChange() { page.value = 1 }
+watch([filters, mobileSearch], () => { if (page.value !== 1) page.value = 1 })
 
 function getSortValue(t, key) {
   if (key === 'number') return t.essay_number || 0
@@ -657,6 +696,31 @@ async function onExportModeChosen(action) {
   font-size: 10px;
   margin-left: 2px;
 }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.desktop-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: visible;
+}
+.desktop-table th.sticky-col,
+.desktop-table td.sticky-col {
+  position: sticky;
+  right: 0;
+  background: #fff;
+  box-shadow: -1px 0 0 rgba(0,0,0,0.05);
+}
+.desktop-table th.sticky-col { background: #fafafa; z-index: 3; }
+.desktop-table td.sticky-col { z-index: 1; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 0;
+}
+.page-info { font-size: 14px; color: #333; }
 .desktop-table th.sortable {
   user-select: none;
 }

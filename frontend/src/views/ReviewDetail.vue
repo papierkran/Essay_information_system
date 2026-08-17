@@ -178,10 +178,10 @@
                   <button class="btn-mini" @click="showOriginalImages" v-if="essay.file_type === 'image' && images.length">📷 查看原文图片</button>
                   <button v-if="(essay.content_file || essay.content_text) && !isGuest" class="btn-mini" @click="downloadOriginal">📥 下载原文</button>
                   <button class="btn-mini" @click="toggleReuploadOriginal" v-if="canEdit">📤 重新上传</button>
-                  <button class="btn-mini" @click="doOcr" :disabled="ocrLoading" v-if="essay.file_type === 'image' && canEdit">
+                  <button class="btn-mini" @click="doOcr" :disabled="ocrLoading" v-if="essay.file_type === 'image' && canUseAiTools">
                     {{ ocrLoading ? '⏳ OCR中...' : '🔍 OCR识别' }}
                   </button>
-                  <button class="btn-mini" @click="doAiCorrect" :disabled="aiLoading" v-if="essay.content_text && canEdit">
+                  <button class="btn-mini" @click="doAiCorrect" :disabled="aiLoading" v-if="essay.content_text && canUseAiTools">
                     {{ aiLoading ? '⏳ AI修正中...' : '🤖 AI错别字修正' }}
                   </button>
                 </div>
@@ -362,8 +362,8 @@
             <van-cell title="✏️ 修改前">
               <template #right-icon>
                 <van-button v-if="essay.content_text && canEdit" size="mini" @click="toggleEditOriginal" style="margin-right:6px">{{ editingOriginal ? '✕ 取消' : '✏️ 编辑' }}</van-button>
-                <van-button v-if="essay.file_type === 'image' && canEdit" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:6px">🔍 OCR</van-button>
-                <van-button v-if="essay.content_text && canEdit" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 修正</van-button>
+                <van-button v-if="essay.file_type === 'image' && canUseAiTools" size="mini" :loading="ocrLoading" @click="doOcr" style="margin-right:6px">🔍 OCR</van-button>
+                <van-button v-if="essay.content_text && canUseAiTools" size="mini" :loading="aiLoading" @click="doAiCorrect">🤖 修正</van-button>
               </template>
             </van-cell>
             <div v-if="essay.file_type === 'image' && images.length" class="image-gallery">
@@ -528,6 +528,12 @@ const canReview = computed(() => {
   return role.includes('reviewer') || role.includes('admin')
 })
 const canEdit = computed(() => !isReadonly.value && isOwner.value)
+// 后端 OCR / AI 错别字修正允许 collector/reviewer/admin 调用，按钮显示权限与此一致
+const canUseAiTools = computed(() => {
+  if (isReadonly.value) return false
+  const role = currentUser.value.role || ''
+  return role.includes('collector') || role.includes('reviewer') || role.includes('admin')
+})
 const essay = ref(null)
 const correctionFile = ref('')
 const correctionText = ref('')
