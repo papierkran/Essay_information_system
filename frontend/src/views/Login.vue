@@ -120,6 +120,15 @@ function accountExpired(acct) {
   return exp ? Date.now() > exp : false
 }
 
+function redirectAfterLogin() {
+  const r = sessionStorage.getItem('loginRedirect')
+  sessionStorage.removeItem('loginRedirect')
+  if (r && r.startsWith('/') && !r.startsWith('//') && r !== '/login') {
+    return r
+  }
+  return '/dashboard'
+}
+
 function switchTo(acct) {
   if (acct.expired) {
     showToast('该账号登录已过期，请重新登录')
@@ -127,7 +136,7 @@ function switchTo(acct) {
   }
   setActiveAuth(acct.key)
   showToast(`切换到 ${acct.user?.nickname || acct.user?.username}`)
-  router.push('/dashboard')
+  router.replace(redirectAfterLogin())
 }
 
 function removeAccount(key) {
@@ -146,7 +155,7 @@ async function onLogin() {
     setActiveAuth(key)
     saveAuth({ token: res.data.access_token, user: res.data.user })
     showToast('登录成功')
-    router.push('/dashboard')
+    router.replace(redirectAfterLogin())
   } catch(err) { showToast(err.response?.data?.detail || '登录失败') }
   finally { loading.value = false }
 }

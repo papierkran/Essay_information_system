@@ -137,6 +137,10 @@ router.beforeEach((to, from, next) => {
   } catch {}
 
   if (to.meta.requiresAuth && !token) {
+    // 记录原始目标地址，登录成功后回跳
+    if (to.path !== '/login') {
+      sessionStorage.setItem('loginRedirect', to.fullPath)
+    }
     next('/login')
     return
   }

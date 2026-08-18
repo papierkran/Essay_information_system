@@ -96,6 +96,8 @@ api.interceptors.response.use(
     }
     if (resp?.status === 401) {
       clearAuth()
+      // 会话过期登出：不应触发登录后的回跳
+      sessionStorage.removeItem('loginRedirect')
       if (err.config?.url && !err.config.url.includes('/file/')) {
         window.location.hash = '#/login'
       }
