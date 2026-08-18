@@ -636,21 +636,26 @@ def trigger_backup(
 
     if host in ("localhost", "127.0.0.1", ""):
         if container:
-            cmd = ["docker", "exec", container] + pg_dump_cmd + ["-f", filepath]
+            cmd = ["docker", "exec", container] + pg_dump_cmd
         else:
-            cmd = pg_dump_cmd + ["-f", filepath]
+            cmd = pg_dump_cmd
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
     else:
         if container:
             cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                   f"root@{host}", "docker", "exec", container] + pg_dump_cmd + ["-f", filepath]
+                   f"root@{host}", "docker", "exec", container] + pg_dump_cmd
         else:
             cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                   f"root@{host}"] + pg_dump_cmd + ["-f", filepath]
+                   f"root@{host}"] + pg_dump_cmd
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
 
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"备份失败: {result.stderr}")
+    stdout = result.stdout
+    if stdout.startswith("\\restrict"):
+        stdout = stdout[stdout.index("\n") + 1:]
+    with open(filepath, "w") as f:
+        f.write(stdout)
 
     # 清理旧备份，最多保留 7 份
     try:

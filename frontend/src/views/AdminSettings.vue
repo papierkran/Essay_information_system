@@ -16,6 +16,17 @@
       <div class="card" id="sec-db">
         <div class="card-header"><h3>🗄️ 数据库连接</h3></div>
         <div class="form-group">
+          <label>连接方式</label>
+          <div style="display:flex;gap:12px;margin-top:4px">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="radio" v-model="dbMode" value="direct" /> 直连模式
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="radio" v-model="dbMode" value="docker" /> Docker 模式
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
           <label>主机地址</label>
           <input v-model="dbHost" placeholder="192.168.31.245" />
         </div>
@@ -39,10 +50,10 @@
             <input v-model="dbPass" type="password" placeholder="数据库密码" />
           </div>
         </div>
-        <div class="form-group">
+        <div class="form-group" v-if="dbMode === 'docker'">
           <label>Docker 容器名</label>
           <input v-model="dockerContainer" placeholder="pg" />
-          <p class="hint-text">数据库备份/恢复使用的 Docker 容器名称，留空则不使用 Docker</p>
+          <p class="hint-text">数据库备份/恢复使用的 Docker 容器名称</p>
         </div>
         <p class="hint-text" style="color:#999">修改后需重启后端服务生效。密码字段不会回显，留空则不修改。</p>
         <div class="form-actions" style="justify-content:flex-start">
@@ -334,6 +345,7 @@ const dbUser = ref('')
 const dbPass = ref('')
 const dbName = ref('')
 const dockerContainer = ref('pg')
+const dbMode = ref('direct')
 const saving = ref(false)
 const saved = ref(false)
 const exporting = ref(false)
@@ -692,7 +704,8 @@ onMounted(async () => {
     dbPort.value = dbInfo.port || '5432'
     dbUser.value = dbInfo.user || ''
     dbName.value = dbInfo.database || ''
-    dockerContainer.value = dbInfo.docker_container || 'pg'
+    dockerContainer.value = dbInfo.docker_container || ''
+    dbMode.value = dockerContainer.value ? 'docker' : 'direct'
   } catch {}
   await loadOcrConfig()
   await loadFixConfig()
@@ -709,7 +722,8 @@ async function saveSettings() {
   if (dbUser.value) payload.database.user = dbUser.value
   if (dbPass.value) payload.database.password = dbPass.value
   if (dbName.value) payload.database.database = dbName.value
-  if (dockerContainer.value) payload.database.docker_container = dockerContainer.value
+  if (dbMode.value === 'docker' && dockerContainer.value) payload.database.docker_container = dockerContainer.value
+  else payload.database.docker_container = ''
   try {
     await api.put('/admin/settings', payload)
     saved.value = true; showToast('设置已保存（重启后端生效）')
