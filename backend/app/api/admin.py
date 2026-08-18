@@ -651,6 +651,20 @@ def trigger_backup(
 
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"备份失败: {result.stderr}")
+
+    # 清理旧备份，最多保留 7 份
+    try:
+        all_backups = []
+        for f in os.listdir(folder):
+            if f.endswith(".sql") and f.startswith("essay_system_backup"):
+                fp = os.path.join(folder, f)
+                all_backups.append((os.path.getmtime(fp), fp))
+        all_backups.sort(key=lambda x: x[0], reverse=True)
+        for _, fp in all_backups[7:]:
+            os.unlink(fp)
+    except Exception:
+        pass
+
     return {"message": "备份成功", "filename": filename, "filepath": filepath}
 
 
