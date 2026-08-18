@@ -643,9 +643,16 @@ function openUploaded(s) {
 /* 任务选择面板：避免双重滚动容器导致无法回拉 */
 :deep(.task-picker-sheet) {
   max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+:deep(.task-picker-sheet .van-action-sheet__header) {
+  flex-shrink: 0;
 }
 :deep(.task-picker-sheet .van-action-sheet__content) {
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
