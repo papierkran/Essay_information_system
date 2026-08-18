@@ -6,7 +6,8 @@
     <van-cell-group inset style="margin-bottom:12px">
       <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
         placeholder="选择收集任务（将自动填充年级等信息）" @click="showTaskPicker = true" />
-      <!-- 显示选中模板的文章主题 -->
+      <!-- 显示选中模板的文章主题与课程 -->
+      <van-cell v-if="selectedTaskCourse" title="所属课程" :label="selectedTaskCourse" />
       <van-cell v-if="selectedTaskTopic" title="文章主题" :label="selectedTaskTopic" />
     </van-cell-group>
 
@@ -96,6 +97,7 @@
                 <span class="badge-mini tag-grade">{{ t.grade }}</span>
                 <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
                 <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
@@ -112,6 +114,7 @@
                 <span class="badge-mini tag-grade">{{ t.grade }}</span>
                 <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
                 <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
@@ -184,6 +187,7 @@ const previewImages = ref([])
 const selectedGrade = ref('')
 const selectedTaskName = ref('')
 const selectedTaskTopic = ref('')
+const selectedTaskCourse = ref('')
 const selectedTaskId = ref(null)
 const selectedCourseId = ref(null)
 const selectedCollector = ref(null)
@@ -404,12 +408,14 @@ function selectTask(tpl) {
     }
     selectedTaskName.value = tpl.name
     selectedTaskTopic.value = tpl.essay_topic || ''
+    selectedTaskCourse.value = tpl.course_name || ''
     selectedTaskId.value = tpl.id
     selectedCourseId.value = tpl.course_id || null
     showToast(`已选择：${tpl.name}`)
   } else {
     selectedTaskName.value = ''
     selectedTaskTopic.value = ''
+    selectedTaskCourse.value = ''
     selectedTaskId.value = null
     selectedCourseId.value = null
     showToast('已取消任务选择')
@@ -504,6 +510,7 @@ async function onSubmit() {
       selectedGrade.value = ''
       selectedTaskName.value = ''
       selectedTaskTopic.value = ''
+      selectedTaskCourse.value = ''
       selectedTaskId.value = null
       selectedCourseId.value = null
     }

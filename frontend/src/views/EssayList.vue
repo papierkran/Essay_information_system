@@ -203,6 +203,7 @@
             <span class="badge-mini tag-grade">{{ e.grade || '-' }}</span>
             <span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span>
             <span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span>
+            <span>👤 {{ e.collector_name || '未知' }}</span>
             <span>{{ e.task_name || '无任务' }}</span>
           </div>
           <div class="mobile-card-foot">

@@ -270,6 +270,7 @@
                 <span class="badge-mini tag-grade">{{ t.grade }}</span>
                 <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
                 <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
@@ -286,6 +287,7 @@
                 <span class="badge-mini tag-grade">{{ t.grade }}</span>
                 <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
                 <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
