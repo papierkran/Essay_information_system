@@ -57,9 +57,13 @@
         </div>
         <p class="hint-text" style="color:#999">修改后需重启后端服务生效。密码字段不会回显，留空则不修改。</p>
         <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveSettings" :disabled="saving">
+            {{ saving ? '保存中...' : '💾 保存数据库设置' }}
+          </button>
           <button class="btn" @click="testDb" :disabled="dbTesting">
             {{ dbTesting ? '检测中...' : '🔍 检测连接' }}
           </button>
+          <span v-if="saved" class="result-text success-text">✅ 已保存</span>
           <span v-if="dbTestResult" class="result-text" :class="dbTestResult.includes('正常') ? 'success-text' : 'error-text'">{{ dbTestResult }}</span>
         </div>
       </div>
@@ -288,6 +292,7 @@
             <thead>
               <tr>
                 <th>文件名</th>
+                <th>类型</th>
                 <th>大小</th>
                 <th>备份时间</th>
                 <th style="width:120px">操作</th>
@@ -296,6 +301,7 @@
             <tbody>
               <tr v-for="f in backupFiles" :key="f.filename">
                 <td class="backup-filename">{{ f.filename }}</td>
+                <td><span class="tag" :class="f.filename.includes('_light') ? 'tag-warning' : 'tag-ok'">{{ f.filename.includes('_light') ? '精简版' : '完整版' }}</span></td>
                 <td>{{ formatSize(f.size) }}</td>
                 <td>{{ formatTime(f.modified) }}</td>
                 <td>
@@ -310,6 +316,7 @@
               <div class="backup-mobile-info">
                 <div class="backup-mobile-name">{{ f.filename }}</div>
                 <div style="font-size:12px;color:#999">{{ formatSize(f.size) }} · {{ formatTime(f.modified) }}</div>
+                <div><span class="tag" :class="f.filename.includes('_light') ? 'tag-warning' : 'tag-ok'" style="font-size:11px;padding:1px 6px">{{ f.filename.includes('_light') ? '精简版' : '完整版' }}</span></div>
               </div>
               <div style="display:flex;gap:6px">
                 <button class="btn" style="padding:3px 10px;font-size:12px" @click="downloadBackup(f.filename)">⬇️</button>
@@ -629,10 +636,8 @@ async function resolveBackupFolder() {
 async function triggerBackup() {
   backingUp.value = true; backupMsg.value = ''
   try {
-    const res = await api.post('/admin/backup/trigger', null, {
-      params: { exclude_images: backupExcludeImages.value },
-    })
-    backupMsg.value = '✅ ' + (res.data.message || '备份成功')
+    const res = await api.post('/admin/backup/trigger')
+    backupMsg.value = '✅ ' + (res.data.message || '备份成功，完整版+精简版')
     await loadBackupList()
   } catch(err) {
     backupMsg.value = '❌ ' + (err.response?.data?.detail || err.message)
@@ -973,4 +978,7 @@ async function importDB(e) {
     width: 100px;
   }
 }
+.tag { display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600; }
+.tag-ok { background:#f6ffed;color:#52c41a;border:1px solid #b7eb8f; }
+.tag-warning { background:#fff7e6;color:#fa8c16;border:1px solid #ffd591; }
 </style>

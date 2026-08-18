@@ -602,11 +602,10 @@ async def import_database(
 
 @router.post("/backup/trigger")
 def trigger_backup(
-    exclude_images: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """在服务端触发备份，保存到备份目录"""
+    """在服务端触发备份，同时保存完整版（含图片）和精简版（不含图片）"""
     require_admin(current_user)
     cfg = _get_config(db, "backup", {})
     folder = cfg.get("folder", "")
@@ -623,54 +622,60 @@ def trigger_backup(
     container = DB_CONFIG.get("docker_container", "")
     host = DB_CONFIG["host"]
 
+    def _run_pg_dump(extra_args: list) -> str:
+        """执行 pg_dump，返回 stdout 内容"""
+        pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
+                       "--no-owner", "--no-acl", "--no-sync",
+                       "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
+                       "--on-conflict-do-nothing"] + extra_args
+        if host in ("localhost", "127.0.0.1", ""):
+            if container:
+                cmd = ["docker", "exec", container] + pg_dump_cmd
+            else:
+                cmd = pg_dump_cmd
+        else:
+            if container:
+                cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                       f"root@{host}", "docker", "exec", container] + pg_dump_cmd
+            else:
+                cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                       f"root@{host}"] + pg_dump_cmd
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+        output = result.stdout
+        if output.startswith("\\restrict"):
+            output = output[output.index("\n") + 1:]
+        return output
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"essay_system_backup_{ts}.sql"
-    filepath = os.path.join(folder, filename)
+    full_name = f"essay_system_backup_{ts}.sql"
+    light_name = f"essay_system_backup_{ts}_light.sql"
 
-    pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
-                   "--no-owner", "--no-acl", "--no-sync",
-                   "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
-                   "--on-conflict-do-nothing"]
-    if exclude_images:
-        pg_dump_cmd.append("--exclude-table=essay_images")
+    # 完整版（含图片）
+    full_content = _run_pg_dump([])
+    with open(os.path.join(folder, full_name), "w") as f:
+        f.write(full_content)
 
-    if host in ("localhost", "127.0.0.1", ""):
-        if container:
-            cmd = ["docker", "exec", container] + pg_dump_cmd
-        else:
-            cmd = pg_dump_cmd
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
-    else:
-        if container:
-            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                   f"root@{host}", "docker", "exec", container] + pg_dump_cmd
-        else:
-            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                   f"root@{host}"] + pg_dump_cmd
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+    # 精简版（不含图片）
+    light_content = _run_pg_dump(["--exclude-table=essay_images"])
+    with open(os.path.join(folder, light_name), "w") as f:
+        f.write(light_content)
 
-    if result.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"备份失败: {result.stderr}")
-    stdout = result.stdout
-    if stdout.startswith("\\restrict"):
-        stdout = stdout[stdout.index("\n") + 1:]
-    with open(filepath, "w") as f:
-        f.write(stdout)
-
-    # 清理旧备份，最多保留 7 份
-    try:
-        all_backups = []
+    # 清理旧备份，每类最多保留 7 份
+    def _cleanup(prefix: str):
+        backups = []
         for f in os.listdir(folder):
-            if f.endswith(".sql") and f.startswith("essay_system_backup"):
+            if f.startswith(prefix) and f.endswith(".sql"):
                 fp = os.path.join(folder, f)
-                all_backups.append((os.path.getmtime(fp), fp))
-        all_backups.sort(key=lambda x: x[0], reverse=True)
-        for _, fp in all_backups[7:]:
+                backups.append((os.path.getmtime(fp), fp))
+        backups.sort(key=lambda x: x[0], reverse=True)
+        for _, fp in backups[7:]:
             os.unlink(fp)
-    except Exception:
-        pass
 
-    return {"message": "备份成功", "filename": filename, "filepath": filepath}
+    _cleanup("essay_system_backup_")
+
+    return {"message": "备份成功", "files": [full_name, light_name]}
 
 
 @router.get("/backup/list")
