@@ -16,7 +16,7 @@
           :placeholder="selectedGrade || '请选择年级'" @click="showGradePicker = true" />
         <van-field v-model="form.grade" v-show="false" />
         <van-field v-model="form.essay_number" label="第几次作文" placeholder="数字（不填表示无）" type="digit" />
-        <van-field v-model="form.essay_title" label="作文标题" required placeholder="在粘贴本文中将自动填充第一行作为标题 输入标题（必填）" />
+        <van-field v-model="form.essay_title" label="作文标题" required placeholder="在粘贴文字中将自动填充第一行作为标题（必填）" />
         <div v-if="recentTitles.length" style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:6px">
           <van-tag v-for="t in recentTitles" :key="t" plain size="medium" @click="form.essay_title = t" style="cursor:pointer">{{ t }}</van-tag>
         </div>

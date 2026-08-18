@@ -6,6 +6,7 @@
     <div class="filter-bar">
       <div class="filter-row"><span class="filter-label">学生姓名</span><input v-model="filters.name" placeholder="搜索姓名" class="filter-input" @keyup.enter="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">作文标题</span><input v-model="filters.essayTitle" placeholder="搜索标题" class="filter-input" @keyup.enter="applyFilter" /></div>
+      <div class="filter-row"><span class="filter-label">作文内容</span><input v-model="filters.content" placeholder="搜索正文，多个关键词用空格分隔" class="filter-input" style="min-width:160px" @keyup.enter="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">年级</span>
         <select v-model="filters.grade" class="filter-input" @change="applyFilter">
           <option value="">全部</option>
@@ -319,7 +320,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
@@ -431,7 +432,7 @@ const defaultCollectedBy = computed(() => {
   if (isAdmin.value) return ''
   return currentUser.value.id || ''
 })
-const filters = ref({ name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' })
+const filters = ref({ name: '', essayTitle: '', content: '', grade: '', number: '', status: '', mode: '', collectedBy: '', remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' })
 
 // ===== 筛选持久化 =====
 const FILTER_KEY = 'essay_list_filters'
@@ -587,6 +588,7 @@ function buildParams() {
   if (filters.value.mode) p.teaching_mode = filters.value.mode
   if (filters.value.collectedBy) p.collected_by = Number(filters.value.collectedBy)
   if (filters.value.remark) p.remark = filters.value.remark
+  if (filters.value.content) p.content = filters.value.content
   if (filters.value.taskId === 0 || filters.value.taskId) p.task_id = Number(filters.value.taskId)
   else if (filterTaskSearch.value) p.task_name = filterTaskSearch.value
   if (filters.value.courseId) p.course_id = Number(filters.value.courseId)
@@ -654,7 +656,7 @@ function jumpToPage() {
   }
   goPage(p)
 }
-function clearFilter() { filters.value = { name: '', essayTitle: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' }; filterTaskSearch.value = ''; applyFilter() }
+function clearFilter() { filters.value = { name: '', essayTitle: '', content: '', grade: '', number: '', status: '', mode: '', collectedBy: defaultCollectedBy.value, remark: '', taskId: '', reviewerId: '', isSupplement: '', dateFrom: '', dateTo: '', correctedFrom: '', correctedTo: '', wordMin: '', wordMax: '', correctedMin: '', correctedMax: '', courseId: '' }; filterTaskSearch.value = ''; applyFilter() }
 
 function toggleSelect(id) {
   if (isGuest.value) return
@@ -820,22 +822,60 @@ async function onExportModeChosen(action) {
     corrected: '仅修改后 · 合并为一个docx',
     original: '仅修改前 · 合并为一个docx',
   }[action]
+  includeXlsx.value = false
+  simpleName.value = false
+  const msgChildren = [
+    h('div', {}, `导出方式：${modeLabel}`),
+    h('div', {}, `将导出已选的 ${selectedIds.value.length} 篇作文：`),
+    h('div', { style: { color: '#999', whiteSpace: 'pre-line' } }, previewText()),
+  ]
+  if (action === 'zip') {
+    msgChildren.push(
+      h('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', cursor: 'pointer', fontSize: '14px' } }, [
+        h('input', {
+          type: 'checkbox',
+          checked: includeXlsx.value,
+          onChange: (e) => { includeXlsx.value = e.target.checked },
+          style: { width: 'auto' },
+        }),
+        h('span', {}, '同时下载「导出已选xlsx」'),
+      ]),
+      h('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', cursor: 'pointer', fontSize: '14px' } }, [
+        h('input', {
+          type: 'checkbox',
+          checked: simpleName.value,
+          onChange: (e) => { simpleName.value = e.target.checked },
+          style: { width: 'auto' },
+        }),
+        h('span', {}, 'docx文件名只保留标题和姓名'),
+      ]),
+    )
+  }
   const confirmed = await showDialog({
     title: '确认导出',
-    message: `导出方式：${modeLabel}\n将导出已选的 ${selectedIds.value.length} 篇作文：\n\n${previewText()}`,
+    message: h('div', { style: { textAlign: 'left', fontSize: '13px', lineHeight: '1.8' } }, msgChildren),
     showCancelButton: true,
   }).catch(() => false)
   if (!confirmed) return
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
     let res
-    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob' })
+    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: simpleName.value } })
     else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob' })
     else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob' })
     else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob' })
     downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
-    closeToast()
-    showSuccessToast('导出成功')
+    if (action === 'zip') {
+      // 勾选后附带下载一份已选作文 xlsx
+      if (includeXlsx.value) {
+        try { await downloadXlsxFromItems(selectedPreviewList()) } catch {}
+      }
+      closeToast()
+      showSuccessToast(includeXlsx.value ? '导出成功（docx + 已选xlsx）' : '导出成功')
+    } else {
+      closeToast()
+      showSuccessToast('导出成功')
+    }
   } catch (err) {
     closeToast()
     showFailToast(err.response?.data?.detail || '导出失败')
@@ -935,6 +975,9 @@ async function doDelete() {
 
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
 
+const includeXlsx = ref(false)
+const simpleName = ref(false)
+
 function buildXlsxRows(items) {
   return items.map(e => [
     e.student_name, e.grade, e.essay_title, e.essay_number ? `第${e.essay_number}次` : '',
@@ -960,6 +1003,14 @@ async function exportXlsx() {
   }
 }
 
+async function downloadXlsxFromItems(items) {
+  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
+  const rows = buildXlsxRows(items)
+  const ts = new Date().toISOString().slice(0, 10)
+  await exportXlsxFile(`作文已选_${ts}.xlsx`, '作文列表', headers, rows)
+  return rows
+}
+
 async function exportXlsxSelected() {
   if (!selectedIds.value.length) return
   const items = selectedPreviewList()
@@ -971,10 +1022,7 @@ async function exportXlsxSelected() {
   if (!confirmed) return
   showLoadingToast({ message: '正在生成 Excel...', forbidClick: true, duration: 0 })
   try {
-    const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
-    const rows = buildXlsxRows(items)
-    const ts = new Date().toISOString().slice(0, 10)
-    await exportXlsxFile(`作文已选_${ts}.xlsx`, '作文列表', headers, rows)
+    const rows = await downloadXlsxFromItems(items)
     closeToast()
     showSuccessToast(`已导出 ${rows.length} 条`)
   } catch (err) {

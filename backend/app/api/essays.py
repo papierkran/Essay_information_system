@@ -869,6 +869,7 @@ def list_essays(
     course_id: int = None,
     remark: str = None,
     essay_title: str = None,
+    content: str = None,
     task_id: int = None,
     reviewer_id: int = None,
     is_supplement: bool = None,
@@ -908,6 +909,15 @@ def list_essays(
         q = q.filter(Essay.teaching_mode == teaching_mode)
     if remark:
         q = q.filter(Essay.collector_note.like(f"%{remark}%"))
+    if content:
+        # 多个关键词（空格/逗号等分隔）需全部命中（分别匹配原文或修改后内容）
+        keywords = [k.strip() for k in re.split(r"[\s,，、;；]+", content) if k.strip()]
+        conds = [
+            or_(Essay.content_text.like(f"%{kw}%"), Essay.corrected_text.like(f"%{kw}%"))
+            for kw in keywords
+        ]
+        if conds:
+            q = q.filter(and_(*conds))
     if collected_by:
         q = q.filter(Essay.collected_by == collected_by)
     if essay_title:
@@ -1998,10 +2008,11 @@ def batch_update_essays(
 @router.post("/batch-export-docx")
 def batch_export_docx(
     essay_ids: list[int],
+    simple_name: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量导出选中作文的docx（修改前后），打包为zip下载"""
+    """批量导出选中作文的docx（修改前后），打包为zip下载；simple_name=True 时文件名仅保留标题与姓名"""
     if "guest" in current_user.role:
         raise HTTPException(status_code=403, detail="游客无导出权限")
     from pydantic import BaseModel
@@ -2019,7 +2030,11 @@ def batch_export_docx(
         with zipfile.ZipFile(tmp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for essay in essays:
                 tmp_docx = _generate_docx(essay, show_corrected=True)
-                dl_name = _build_download_filename(essay)
+                if simple_name:
+                    dl_name = (f"{safe_component(essay.essay_title or '无标题', '无标题')}"
+                               f"——{safe_component(essay.student_name or '未知', '未知')}")
+                else:
+                    dl_name = _build_download_filename(essay)
                 # 将docx文件添加到zip中
                 zf.write(tmp_docx, f"改_{dl_name}.docx")
                 # 删除临时docx文件
