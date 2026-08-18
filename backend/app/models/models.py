@@ -76,6 +76,7 @@ class Course(Base):
     name = Column(String(100), nullable=False)
     grade = Column(Text, default="")  # 年级（可选，JSON数组，如 ["初三","高一"]）
     classin_id = Column(String(50), default="")  # ClassIn 班级 ID
+    start_date = Column(DateTime, nullable=True)  # 开课时间（可选）
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

@@ -2,228 +2,313 @@
   <div class="page" :class="{ 'desktop-layout': isDesktop }">
     <div v-if="isDesktop" class="page-title">系统设置</div>
 
-    <!-- 分区锚点导航 -->
     <div v-if="isDesktop" class="settings-nav">
-      <button class="nav-btn" @click="scrollToSection('sec-db')">🗄️ 数据库</button>
-      <button class="nav-btn" @click="scrollToSection('sec-server')">🌐 服务地址</button>
-      <button class="nav-btn" @click="scrollToSection('sec-upload')">📁 存储目录</button>
-      <button class="nav-btn" @click="scrollToSection('sec-ocr')">🔍 OCR</button>
-      <button class="nav-btn" @click="scrollToSection('sec-fix')">✏️ 错别字修正</button>
-      <button class="nav-btn" @click="scrollToSection('sec-edit')">✅ AI改作文</button>
-      <button class="nav-btn" @click="scrollToSection('sec-backup')">🗄️ 备份</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-db')">🗄️ 数据库</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-server')">🌐 服务地址</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-upload')">📁 存储目录</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-ocr')">🔍 OCR</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-fix')">✏️ 错别字修正</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-edit')">✅ AI改作文</button>
+      <button class="btn nav-btn" @click="scrollToSection('sec-backup')">🗄️ 备份</button>
     </div>
 
-    <div class="card" id="sec-db" style="max-width:600px">
-      <div class="card-header"><h3>🗄️ 数据库连接</h3></div>
-      <div class="form-group">
-        <label>主机地址</label>
-        <input v-model="dbHost" placeholder="192.168.31.245" class="input" />
-      </div>
-      <div class="form-group">
-        <label>端口</label>
-        <input v-model="dbPort" placeholder="5432" class="input" />
-      </div>
-      <div class="form-group">
-        <label>用户名</label>
-        <input v-model="dbUser" placeholder="postgres" class="input" />
-      </div>
-      <div class="form-group">
-        <label>密码</label>
-        <input v-model="dbPass" type="password" placeholder="数据库密码" class="input" />
-      </div>
-      <div class="form-group">
-        <label>数据库名</label>
-        <input v-model="dbName" placeholder="essay_system" class="input" />
-      </div>
-      <div class="form-group">
-        <label>Docker 容器名</label>
-        <input v-model="dockerContainer" placeholder="pg" class="input" />
-        <p style="font-size:12px;color:#999;margin-top:6px">
-          数据库备份/恢复使用的 Docker 容器名称，默认为 pg
-        </p>
-      </div>
-      <p style="font-size:12px;color:#999;margin-top:6px">
-        修改后需重启后端服务生效。密码字段不会回显，留空则不修改。
-      </p>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn" @click="testDb" :disabled="dbTesting">
-          {{ dbTesting ? '检测中...' : '🔍 检测连接' }}
-        </button>
-        <span v-if="dbTestResult" style="font-size:13px;margin-left:8px" :class="dbTestResult.includes('正常') ? 'success-text' : 'error-text'">{{ dbTestResult }}</span>
-      </div>
-    </div>
-
-    <div class="card" id="sec-server" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>🌐 后端服务地址</h3></div>
-      <div class="form-group">
-        <label>API 地址</label>
-        <input v-model="apiBaseUrl" placeholder="http://192.168.31.158:8000" class="input" />
-        <p style="font-size:12px;color:#999;margin-top:6px">
-          留空则使用默认地址（当前页面同源）。修改后刷新页面生效。
-        </p>
-      </div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveApiUrl">
-          {{ apiSaving ? '保存中...' : '保存' }}
-        </button>
-        <button class="btn" @click="testServer" :disabled="serverTesting" style="margin-left:8px">
-          {{ serverTesting ? '检测中...' : '🔍 检测连接' }}
-        </button>
-        <span v-if="apiSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存，请刷新页面</span>
-        <span v-if="serverTestResult" style="font-size:13px;margin-left:8px" :class="serverTestResult.includes('正常') ? 'success-text' : 'error-text'">{{ serverTestResult }}</span>
-      </div>
-    </div>
-
-    <div class="card" id="sec-upload" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>⚙️ 上传存储目录</h3></div>
-      <div class="form-group">
-        <label>文件存储路径（相对或绝对）</label>
-        <input v-model="uploadDir" placeholder="uploads" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px" />
-        <p style="font-size:12px;color:#999;margin-top:6px">
-          当前实际路径：<code style="background:#f5f5f5;padding:2px 6px;border-radius:4px">{{ resolvedPath }}</code>
-        </p>
-      </div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveSettings" :disabled="saving">
-          {{ saving ? '保存中...' : '保存设置' }}
-        </button>
-        <span v-if="saved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
-      </div>
-    </div>
-
-    <div class="card" id="sec-ocr" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>🔍 OCR 识别配置</h3></div>
-      <div class="form-group">
-        <label>
-          <input type="checkbox" v-model="ocrEnabled" />
-          启用 OCR 识别
-        </label>
-      </div>
-      <div class="form-group">
-        <label>服务商</label>
-        <select v-model="ocrProvider" class="input">
-          <option value="xfyun">讯飞 OCR</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>接口地址（URL）</label>
-        <input v-model="ocrUrl" placeholder="https://api.xfyun.cn/v1/service/v1/ocr" class="input" />
-      </div>
-      <div class="form-group">
-        <label>APPID</label>
-        <input v-model="ocrAppid" placeholder="讯飞应用 APPID" class="input" />
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <input v-model="ocrApiKey" type="password" placeholder="讯飞 API Key" class="input" />
-      </div>
-      <div class="form-group">
-        <label>识别语言</label>
-        <input v-model="ocrLanguage" placeholder="cn|en" class="input" />
-      </div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveOcrConfig" :disabled="ocrSaving">
-          {{ ocrSaving ? '保存中...' : '💾 保存 OCR 配置' }}
-        </button>
-        <span v-if="ocrSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
-      </div>
-    </div>
-
-    <div class="card" id="sec-fix" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>✏️ 修改前 - AI 错别字修正</h3></div>
-      <div class="form-group">
-        <label><input type="checkbox" v-model="fixEnabled" /> 启用</label>
-      </div>
-      <div class="form-group">
-        <label>服务商</label>
-        <select v-model="fixProvider" class="input">
-          <option value="deepseek">DeepSeek</option>
-          <option value="openai">OpenAI</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>API 地址</label>
-        <input v-model="fixBaseUrl" :placeholder="fixProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" class="input" />
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <input v-model="fixApiKey" type="password" placeholder="API Key" class="input" />
-      </div>
-      <div class="form-group">
-        <label>模型</label>
-        <input v-model="fixModel" :placeholder="fixProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" class="input" />
-      </div>
-      <div class="form-group">
-        <label>提示词</label>
-        <textarea v-model="fixPrompt" rows="4" class="input" style="resize:vertical;font-family:monospace"></textarea>
-        <p style="font-size:12px;color:#999;margin-top:4px"><code>{text}</code> 为文章占位符</p>
-      </div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveFixConfig" :disabled="fixSaving">{{ fixSaving ? '保存中...' : '💾 保存' }}</button>
-        <span v-if="fixSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
-      </div>
-    </div>
-
-    <div class="card" id="sec-edit" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>✅ 修改后 - AI 改作文</h3></div>
-      <div class="form-group">
-        <label><input type="checkbox" v-model="editEnabled" /> 启用</label>
-      </div>
-      <div class="form-group">
-        <label>服务商</label>
-        <select v-model="editProvider" class="input">
-          <option value="deepseek">DeepSeek</option>
-          <option value="openai">OpenAI</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>API 地址</label>
-        <input v-model="editBaseUrl" :placeholder="editProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" class="input" />
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <input v-model="editApiKey" type="password" placeholder="API Key" class="input" />
-      </div>
-      <div class="form-group">
-        <label>模型</label>
-        <input v-model="editModel" :placeholder="editProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" class="input" />
-      </div>
-      <div class="form-group">
-        <label>提示词</label>
-        <textarea v-model="editPrompt" rows="4" class="input" style="resize:vertical;font-family:monospace"></textarea>
-        <p style="font-size:12px;color:#999;margin-top:4px"><code>{text}</code> 为文章占位符</p>
-      </div>
-      <div class="form-group">
-        <label>字数范围（留空则不限制）</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input v-model="editMinCount" type="number" min="0" placeholder="最小字数" class="input" style="width:120px;flex:none" />
-          <span style="color:#999">~</span>
-          <input v-model="editMaxCount" type="number" min="0" placeholder="最大字数" class="input" style="width:120px;flex:none" />
+    <div class="settings-layout">
+      <div class="card" id="sec-db">
+        <div class="card-header"><h3>🗄️ 数据库连接</h3></div>
+        <div class="form-group">
+          <label>主机地址</label>
+          <input v-model="dbHost" placeholder="192.168.31.245" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>端口</label>
+            <input v-model="dbPort" placeholder="5432" />
+          </div>
+          <div class="form-group">
+            <label>数据库名</label>
+            <input v-model="dbName" placeholder="essay_system" />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>用户名</label>
+            <input v-model="dbUser" placeholder="postgres" />
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input v-model="dbPass" type="password" placeholder="数据库密码" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Docker 容器名</label>
+          <input v-model="dockerContainer" placeholder="pg" />
+          <p class="hint-text">数据库备份/恢复使用的 Docker 容器名称，留空则不使用 Docker</p>
+        </div>
+        <p class="hint-text" style="color:#999">修改后需重启后端服务生效。密码字段不会回显，留空则不修改。</p>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn" @click="testDb" :disabled="dbTesting">
+            {{ dbTesting ? '检测中...' : '🔍 检测连接' }}
+          </button>
+          <span v-if="dbTestResult" class="result-text" :class="dbTestResult.includes('正常') ? 'success-text' : 'error-text'">{{ dbTestResult }}</span>
         </div>
       </div>
-      <div class="form-actions" style="justify-content:flex-start">
-        <button class="btn btn-primary" @click="saveEditConfig" :disabled="editSaving">{{ editSaving ? '保存中...' : '💾 保存' }}</button>
-        <span v-if="editSaved" style="font-size:13px;color:#52c41a;margin-left:8px">✅ 已保存</span>
-      </div>
-    </div>
 
-    <div class="card" id="sec-backup" style="max-width:600px;margin-top:20px">
-      <div class="card-header"><h3>🗄️ 数据库备份</h3></div>
-      <p style="font-size:13px;color:#666;margin-bottom:16px">导出当前全部数据为 SQL 文件，或导入 SQL 文件恢复数据。</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <button class="btn btn-primary" @click="exportDB" :disabled="exporting">
-          {{ exporting ? '导出中...' : '📥 导出数据库' }}
-        </button>
-        <label class="btn" style="cursor:pointer">
-          📤 导入数据库
-          <input type="file" accept=".sql" style="display:none" @change="importDB" />
-        </label>
+      <div class="card" id="sec-server">
+        <div class="card-header"><h3>🌐 后端服务地址</h3></div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input v-model="apiBaseUrl" placeholder="http://192.168.31.158:8000" />
+          <p class="hint-text">留空则使用默认地址（当前页面同源）。修改后刷新页面生效。</p>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveApiUrl">
+            {{ apiSaving ? '保存中...' : '保存' }}
+          </button>
+          <button class="btn" @click="testServer" :disabled="serverTesting">
+            {{ serverTesting ? '检测中...' : '🔍 检测连接' }}
+          </button>
+          <span v-if="apiSaved" class="result-text success-text">✅ 已保存，请刷新页面</span>
+          <span v-if="serverTestResult" class="result-text" :class="serverTestResult.includes('正常') ? 'success-text' : 'error-text'">{{ serverTestResult }}</span>
+        </div>
       </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="excludeImages" v-model="excludeImages" />
-        <label for="excludeImages" style="font-size:13px;color:#666">不导出图片数据库（essay_images）</label>
+
+      <div class="card" id="sec-upload">
+        <div class="card-header"><h3>📁 上传存储目录</h3></div>
+        <div class="form-group">
+          <label>文件存储路径（相对或绝对）</label>
+          <input v-model="uploadDir" placeholder="uploads" />
+          <p class="hint-text">
+            当前实际路径：<code class="code-text">{{ resolvedPath }}</code>
+          </p>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveSettings" :disabled="saving">
+            {{ saving ? '保存中...' : '保存设置' }}
+          </button>
+          <span v-if="saved" class="result-text success-text">✅ 已保存</span>
+        </div>
       </div>
-      <p v-if="dbMsg" style="font-size:13px;margin-top:12px" :class="dbMsg.includes('成功') ? 'success-text' : 'error-text'">{{ dbMsg }}</p>
+
+      <div class="card" id="sec-ocr">
+        <div class="card-header"><h3>🔍 OCR 识别配置</h3></div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="ocrEnabled" />
+            <span>启用 OCR 识别</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>服务商</label>
+          <select v-model="ocrProvider">
+            <option value="xfyun">讯飞 OCR</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>接口地址</label>
+          <input v-model="ocrUrl" placeholder="https://api.xfyun.cn/v1/service/v1/ocr" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>APPID</label>
+            <input v-model="ocrAppid" placeholder="讯飞应用 APPID" />
+          </div>
+          <div class="form-group">
+            <label>识别语言</label>
+            <input v-model="ocrLanguage" placeholder="cn|en" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input v-model="ocrApiKey" type="password" placeholder="讯飞 API Key" />
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveOcrConfig" :disabled="ocrSaving">
+            {{ ocrSaving ? '保存中...' : '💾 保存 OCR 配置' }}
+          </button>
+          <span v-if="ocrSaved" class="result-text success-text">✅ 已保存</span>
+        </div>
+      </div>
+
+      <div class="card" id="sec-fix">
+        <div class="card-header"><h3>✏️ 修改前 - AI 错别字修正</h3></div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="fixEnabled" />
+            <span>启用</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>服务商</label>
+          <select v-model="fixProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input v-model="fixBaseUrl" :placeholder="fixProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>API Key</label>
+            <input v-model="fixApiKey" type="password" placeholder="API Key" />
+          </div>
+          <div class="form-group">
+            <label>模型</label>
+            <input v-model="fixModel" :placeholder="fixProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>提示词</label>
+          <textarea v-model="fixPrompt" rows="4" class="mono-textarea"></textarea>
+          <p class="hint-text"><code class="code-text">{text}</code> 为文章占位符</p>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveFixConfig" :disabled="fixSaving">{{ fixSaving ? '保存中...' : '💾 保存' }}</button>
+          <span v-if="fixSaved" class="result-text success-text">✅ 已保存</span>
+        </div>
+      </div>
+
+      <div class="card" id="sec-edit">
+        <div class="card-header"><h3>✅ 修改后 - AI 改作文</h3></div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="editEnabled" />
+            <span>启用</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>服务商</label>
+          <select v-model="editProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input v-model="editBaseUrl" :placeholder="editProvider === 'deepseek' ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1'" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>API Key</label>
+            <input v-model="editApiKey" type="password" placeholder="API Key" />
+          </div>
+          <div class="form-group">
+            <label>模型</label>
+            <input v-model="editModel" :placeholder="editProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>提示词</label>
+          <textarea v-model="editPrompt" rows="4" class="mono-textarea"></textarea>
+          <p class="hint-text"><code class="code-text">{text}</code> 为文章占位符</p>
+        </div>
+        <div class="form-group">
+          <label>字数范围（留空则不限制）</label>
+          <div class="range-group">
+            <input v-model="editMinCount" type="number" min="0" placeholder="最小字数" />
+            <span class="range-sep">~</span>
+            <input v-model="editMaxCount" type="number" min="0" placeholder="最大字数" />
+          </div>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveEditConfig" :disabled="editSaving">{{ editSaving ? '保存中...' : '💾 保存' }}</button>
+          <span v-if="editSaved" class="result-text success-text">✅ 已保存</span>
+        </div>
+      </div>
+
+      <div class="card" id="sec-backup">
+        <div class="card-header"><h3>🗄️ 数据库备份</h3></div>
+
+        <div class="form-group">
+          <label>备份频率</label>
+          <select v-model="backupFrequency">
+            <option value="never">停用</option>
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+            <option value="manual">仅手动</option>
+          </select>
+          <p class="hint-text">自动备份需要后端常驻运行，定时任务由后端进程内调度</p>
+        </div>
+
+        <div class="form-group">
+          <label>备份文件夹</label>
+          <div class="folder-row">
+            <input v-model="backupFolder" placeholder="留空则不启用服务器端备份" />
+            <button class="btn" @click="resolveBackupFolder" :disabled="resolvingFolder">
+              {{ resolvingFolder ? '检测中...' : '🔍 检测路径' }}
+            </button>
+          </div>
+          <p v-if="resolvedBackupPath" class="hint-text">
+            实际路径：<code class="code-text">{{ resolvedBackupPath }}</code>
+          </p>
+        </div>
+
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" @click="saveBackupConfig" :disabled="backupSaving">
+            {{ backupSaving ? '保存中...' : '💾 保存备份配置' }}
+          </button>
+          <span v-if="backupSaved" class="result-text success-text">✅ 已保存</span>
+        </div>
+
+        <div style="border-top:1px solid #f0f0f0;margin:16px -24px 0;padding:16px 24px 0">
+          <div class="backup-actions">
+            <button class="btn btn-primary" @click="triggerBackup" :disabled="backingUp">
+              {{ backingUp ? '备份中...' : '📥 立即备份' }}
+            </button>
+            <button class="btn" @click="exportDB" :disabled="exporting">
+              {{ exporting ? '导出中...' : '⬇️ 下载备份' }}
+            </button>
+            <label class="btn import-btn">
+              📤 导入恢复
+              <input type="file" accept=".sql" style="display:none" @change="importDB" />
+            </label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="backupExcludeImages" v-model="backupExcludeImages" />
+            <label for="backupExcludeImages">不导出图片数据库（essay_images）</label>
+          </div>
+          <p v-if="backupMsg" class="result-text" style="margin-top:8px" :class="backupMsg.includes('失败') ? 'error-text' : 'success-text'">{{ backupMsg }}</p>
+        </div>
+
+        <div v-if="backupFiles.length > 0" style="border-top:1px solid #f0f0f0;margin:16px -24px 0;padding:16px 24px 0">
+          <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:12px">📂 已有备份文件</div>
+          <table class="backup-table" v-if="isDesktop">
+            <thead>
+              <tr>
+                <th>文件名</th>
+                <th>大小</th>
+                <th>备份时间</th>
+                <th style="width:120px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="f in backupFiles" :key="f.filename">
+                <td class="backup-filename">{{ f.filename }}</td>
+                <td>{{ formatSize(f.size) }}</td>
+                <td>{{ formatTime(f.modified) }}</td>
+                <td>
+                  <button class="btn" style="padding:3px 10px;font-size:12px" @click="downloadBackup(f.filename)">⬇️</button>
+                  <button class="btn" style="padding:3px 10px;font-size:12px;margin-left:4px" @click="deleteBackup(f.filename)">🗑️</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else>
+            <div v-for="f in backupFiles" :key="f.filename" class="backup-mobile-item">
+              <div class="backup-mobile-info">
+                <div class="backup-mobile-name">{{ f.filename }}</div>
+                <div style="font-size:12px;color:#999">{{ formatSize(f.size) }} · {{ formatTime(f.modified) }}</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn" style="padding:3px 10px;font-size:12px" @click="downloadBackup(f.filename)">⬇️</button>
+                <button class="btn" style="padding:3px 10px;font-size:12px" @click="deleteBackup(f.filename)">🗑️</button>
+              </div>
+            </div>
+          </div>
+          <p v-if="backupListMsg" style="font-size:12px;color:#999;margin-top:8px">{{ backupListMsg }}</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -252,8 +337,8 @@ const dockerContainer = ref('pg')
 const saving = ref(false)
 const saved = ref(false)
 const exporting = ref(false)
-const dbMsg = ref('')
-const excludeImages = ref(false)
+const backupMsg = ref('')
+const backupExcludeImages = ref(false)
 const apiBaseUrl = ref(localStorage.getItem('apiBaseUrl') || '')
 const apiSaving = ref(false)
 const apiSaved = ref(false)
@@ -289,6 +374,16 @@ const editMinCount = ref('')
 const editMaxCount = ref('')
 const editSaved = ref(false)
 const editSaving = ref(false)
+
+const backupFrequency = ref('never')
+const backupFolder = ref('')
+const resolvedBackupPath = ref('')
+const resolvingFolder = ref(false)
+const backupSaving = ref(false)
+const backupSaved = ref(false)
+const backingUp = ref(false)
+const backupFiles = ref([])
+const backupListMsg = ref('')
 
 function saveApiUrl() {
   apiSaving.value = true
@@ -472,11 +567,126 @@ async function saveEditConfig() {
   finally { editSaving.value = false }
 }
 
+async function loadBackupConfig() {
+  try {
+    const res = await api.get('/admin/config/backup')
+    const cfg = res.data.config_value || {}
+    backupFrequency.value = cfg.frequency || 'never'
+    backupFolder.value = cfg.folder || ''
+    backupExcludeImages.value = !!cfg.exclude_images
+  } catch {}
+}
+
+async function saveBackupConfig() {
+  backupSaving.value = true; backupSaved.value = false
+  try {
+    await api.put('/admin/config/backup', {
+      config_key: 'backup',
+      config_value: {
+        frequency: backupFrequency.value,
+        folder: backupFolder.value,
+        exclude_images: backupExcludeImages.value,
+      },
+    })
+    backupSaved.value = true; showToast('备份配置已保存')
+    setTimeout(() => backupSaved.value = false, 3000)
+    await loadBackupList()
+  } catch(err) { showToast(err.response?.data?.detail || '保存失败') }
+  finally { backupSaving.value = false }
+}
+
+async function resolveBackupFolder() {
+  resolvingFolder.value = true
+  try {
+    const res = await api.post('/admin/backup/resolve-folder', null, {
+      params: { folder: backupFolder.value || '' },
+    })
+    resolvedBackupPath.value = res.data.resolved_path || ''
+    if (res.data.exists) {
+      showToast('✅ 路径有效')
+    } else if (backupFolder.value) {
+      showToast('⚠️ 路径不存在，将自动创建')
+    }
+  } catch(err) {
+    showToast(err.response?.data?.detail || '检测路径失败')
+  } finally {
+    resolvingFolder.value = false
+  }
+}
+
+async function triggerBackup() {
+  backingUp.value = true; backupMsg.value = ''
+  try {
+    const res = await api.post('/admin/backup/trigger', null, {
+      params: { exclude_images: backupExcludeImages.value },
+    })
+    backupMsg.value = '✅ ' + (res.data.message || '备份成功')
+    await loadBackupList()
+  } catch(err) {
+    backupMsg.value = '❌ ' + (err.response?.data?.detail || err.message)
+  } finally {
+    backingUp.value = false
+  }
+}
+
+async function loadBackupList() {
+  try {
+    const res = await api.get('/admin/backup/list')
+    backupFiles.value = res.data.files || []
+    backupListMsg.value = backupFiles.value.length === 0 ? '暂无备份文件' : ''
+  } catch(err) {
+    backupListMsg.value = '加载失败'
+  }
+}
+
+async function downloadBackup(filename) {
+  try {
+    const res = await api.get(`/admin/backup/download/${filename}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  } catch(err) {
+    showToast(err.response?.data?.detail || '下载失败')
+  }
+}
+
+async function deleteBackup(filename) {
+  const confirmed = await showConfirmDialog({
+    title: '确认删除',
+    message: `确定删除备份文件 ${filename} 吗？`,
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    await api.delete(`/admin/backup/delete/${filename}`)
+    showToast('已删除')
+    await loadBackupList()
+  } catch(err) {
+    showToast(err.response?.data?.detail || '删除失败')
+  }
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let size = bytes
+  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++ }
+  return size.toFixed(1) + ' ' + units[i]
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 onMounted(async () => {
   try {
     const res = await api.get('/admin/settings')
     uploadDir.value = res.data.upload_dir || 'uploads'
     resolvedPath.value = res.data._resolved_path || ''
+    resolvedBackupPath.value = res.data._resolved_backup_path || ''
     const dbInfo = res.data._db_info || {}
     dbHost.value = dbInfo.host || ''
     dbPort.value = dbInfo.port || '5432'
@@ -487,6 +697,8 @@ onMounted(async () => {
   await loadOcrConfig()
   await loadFixConfig()
   await loadEditConfig()
+  await loadBackupConfig()
+  await loadBackupList()
 })
 
 async function saveSettings() {
@@ -506,23 +718,23 @@ async function saveSettings() {
 }
 
 async function exportDB() {
-  exporting.value = true; dbMsg.value = ''
+  exporting.value = true; backupMsg.value = ''
   try {
-    const res = await api.get('/admin/database/export', { params: { exclude_images: excludeImages.value }, responseType: 'blob' })
+    const res = await api.get('/admin/database/export', { params: { exclude_images: backupExcludeImages.value }, responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a'); a.href = url
     const ts = new Date().toISOString().slice(0,19).replace(/[:-]/g, '')
     a.download = `essay_system_backup_${ts}.sql`; a.click()
     URL.revokeObjectURL(url)
-    dbMsg.value = excludeImages.value ? '✅ 导出成功（不含图片数据库）' : '✅ 导出成功'
-  } catch(err) { dbMsg.value = '❌ 导出失败: ' + (err.response?.data?.detail || err.message) }
+    backupMsg.value = backupExcludeImages.value ? '✅ 导出成功（不含图片数据库）' : '✅ 导出成功'
+  } catch(err) { backupMsg.value = '❌ 导出失败: ' + (err.response?.data?.detail || err.message) }
   finally { exporting.value = false }
 }
 
 async function importDB(e) {
   const file = e.target.files[0]
   if (!file) return
-  dbMsg.value = ''
+  backupMsg.value = ''
   const confirmed = await showConfirmDialog({
     title: '确认导入数据库？',
     message: '将使用所选 SQL 文件恢复数据库，现有数据可能被覆盖。建议先导出备份，再执行导入。',
@@ -531,17 +743,18 @@ async function importDB(e) {
   try {
     const fd = new FormData(); fd.append('file', file)
     const res = await api.post('/admin/database/import', fd)
-    dbMsg.value = '✅ 导入成功，请重启后端'
-  } catch(err) { dbMsg.value = '❌ 导入失败: ' + (err.response?.data?.detail || err.message) }
+    backupMsg.value = '✅ 导入成功，请重启后端'
+  } catch(err) { backupMsg.value = '❌ 导入失败: ' + (err.response?.data?.detail || err.message) }
   finally { e.target.value = '' }
 }
 </script>
 
 <style scoped>
 .page { padding: 0; }
-.input { width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px; }
-.success-text { color: #52c41a; }
-.error-text { color: #ff4d4f; }
+
+.settings-layout {
+  max-width: 720px;
+}
 
 .settings-nav {
   position: sticky;
@@ -554,17 +767,196 @@ async function importDB(e) {
   margin-bottom: 8px;
   background: #f0f2f5;
 }
+
 .nav-btn {
-  padding: 5px 14px;
-  border: 1px solid #d9d9d9;
-  border-radius: 16px;
-  background: #fff;
   font-size: 13px;
-  cursor: pointer;
+  padding: 5px 14px;
+  border-radius: 16px;
   color: #555;
-  transition: all 0.15s;
 }
 .nav-btn:hover { border-color: #1677ff; color: #1677ff; }
+
 .card { scroll-margin-top: 70px; }
-@media (max-width: 767px) { .page { padding: 0; } }
+
+.hint-text {
+  font-size: 12px;
+  color: #999;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.code-text {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.success-text { color: #52c41a; }
+.error-text { color: #ff4d4f; }
+
+.result-text {
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+.checkbox-label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.mono-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: monospace;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+.mono-textarea:focus {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(24,144,255,0.1);
+}
+
+.range-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.range-group input {
+  width: 140px;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  flex: none;
+}
+.range-group input:focus {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(24,144,255,0.1);
+}
+.range-sep {
+  color: #999;
+  font-size: 14px;
+}
+
+.backup-desc {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.import-btn {
+  cursor: pointer;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.checkbox-group label {
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+}
+
+.folder-row {
+  display: flex;
+  gap: 8px;
+}
+.folder-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.folder-row input:focus {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(24,144,255,0.1);
+}
+
+.backup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.backup-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: #fafafa;
+  font-weight: 600;
+  color: #666;
+  border-bottom: 1px solid #f0f0f0;
+}
+.backup-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.backup-table tr:hover td {
+  background: #fafafa;
+}
+.backup-filename {
+  font-family: monospace;
+  font-size: 12px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-mobile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.backup-mobile-item:last-child {
+  border-bottom: none;
+}
+.backup-mobile-info {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+.backup-mobile-name {
+  font-size: 13px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .settings-layout {
+    max-width: none;
+  }
+  .range-group input {
+    width: 100px;
+  }
+}
 </style>

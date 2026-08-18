@@ -38,7 +38,8 @@ def create_course(
     existing = db.query(Course).filter(Course.name == data.name, Course.deleted_at == None).first()
     if existing:
         raise HTTPException(status_code=400, detail="课程名称已存在")
-    cls = Course(name=data.name, grade=data.grade, classin_id=data.classin_id or "")
+    cls = Course(name=data.name, grade=data.grade, classin_id=data.classin_id or "",
+                 start_date=data.start_date)
     db.add(cls)
     db.commit()
     db.refresh(cls)
@@ -91,6 +92,7 @@ def update_course(
     cls.name = data.name
     cls.grade = data.grade
     cls.classin_id = data.classin_id or ""
+    cls.start_date = data.start_date
     db.commit()
     db.refresh(cls)
     return CourseOut.model_validate(cls)
@@ -365,6 +367,15 @@ def get_settings(current_user: User = Depends(get_current_user)):
         "docker_container": db_info["docker_container"],
     }
 
+    # 返回备份配置解析路径
+    _db = SessionLocal()
+    try:
+        backup_cfg = _get_config(_db, "backup", {})
+        folder = backup_cfg.get("folder", "")
+        settings["_resolved_backup_path"] = os.path.abspath(folder) if folder else ""
+    finally:
+        _db.close()
+
     # 保护：返回时从原始设置中移除数据库密码
     db_config = settings.get("database", {})
     if "password" in db_config and db_config["password"]:
@@ -585,6 +596,147 @@ async def import_database(
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=f"导入失败: {result.stderr[:300]}")
     return {"message": "导入成功"}
+
+
+# ===== 备份管理 =====
+
+@router.post("/backup/trigger")
+def trigger_backup(
+    exclude_images: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """在服务端触发备份，保存到备份目录"""
+    require_admin(current_user)
+    cfg = _get_config(db, "backup", {})
+    folder = cfg.get("folder", "")
+    if not folder:
+        raise HTTPException(status_code=400, detail="请先配置备份文件夹")
+    folder = os.path.abspath(folder)
+    os.makedirs(folder, exist_ok=True)
+
+    import subprocess
+    from ..database import _load_db_settings
+    DB_CONFIG = _load_db_settings()
+    env = os.environ.copy()
+    env["PGPASSWORD"] = DB_CONFIG["password"]
+    container = DB_CONFIG.get("docker_container", "")
+    host = DB_CONFIG["host"]
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"essay_system_backup_{ts}.sql"
+    filepath = os.path.join(folder, filename)
+
+    pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
+                   "--no-owner", "--no-acl", "--no-sync",
+                   "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
+                   "--on-conflict-do-nothing"]
+    if exclude_images:
+        pg_dump_cmd.append("--exclude-table=essay_images")
+
+    if host in ("localhost", "127.0.0.1", ""):
+        if container:
+            cmd = ["docker", "exec", container] + pg_dump_cmd + ["-f", filepath]
+        else:
+            cmd = pg_dump_cmd + ["-f", filepath]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+    else:
+        if container:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}", "docker", "exec", container] + pg_dump_cmd + ["-f", filepath]
+        else:
+            cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                   f"root@{host}"] + pg_dump_cmd + ["-f", filepath]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"备份失败: {result.stderr}")
+    return {"message": "备份成功", "filename": filename, "filepath": filepath}
+
+
+@router.get("/backup/list")
+def list_backups(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """列出备份目录中的所有备份文件"""
+    require_admin(current_user)
+    cfg = _get_config(db, "backup", {})
+    folder = cfg.get("folder", "")
+    if not folder or not os.path.isdir(folder):
+        return {"files": []}
+    folder = os.path.abspath(folder)
+    files = []
+    for f in os.listdir(folder):
+        if f.endswith(".sql") and f.startswith("essay_system_backup"):
+            fp = os.path.join(folder, f)
+            st = os.stat(fp)
+            files.append({
+                "filename": f,
+                "size": st.st_size,
+                "modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            })
+    files.sort(key=lambda x: x["modified"], reverse=True)
+    return {"files": files}
+
+
+@router.get("/backup/download/{filename}")
+def download_backup(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """下载指定的备份文件"""
+    require_admin(current_user)
+    cfg = _get_config(db, "backup", {})
+    folder = cfg.get("folder", "")
+    if not folder:
+        raise HTTPException(status_code=400, detail="备份文件夹未配置")
+    folder = os.path.abspath(folder)
+    filepath = os.path.normpath(os.path.join(folder, filename))
+    if not filepath.startswith(folder):
+        raise HTTPException(status_code=400, detail="非法文件名")
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    return FileResponse(filepath, filename=filename, media_type="application/octet-stream")
+
+
+@router.delete("/backup/delete/{filename}")
+def delete_backup(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """删除指定的备份文件"""
+    require_admin(current_user)
+    cfg = _get_config(db, "backup", {})
+    folder = cfg.get("folder", "")
+    if not folder:
+        raise HTTPException(status_code=400, detail="备份文件夹未配置")
+    folder = os.path.abspath(folder)
+    filepath = os.path.normpath(os.path.join(folder, filename))
+    if not filepath.startswith(folder):
+        raise HTTPException(status_code=400, detail="非法文件名")
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    os.unlink(filepath)
+    return {"message": f"已删除 {filename}"}
+
+
+@router.post("/backup/resolve-folder")
+def resolve_backup_folder(
+    folder: str = "",
+    current_user: User = Depends(get_current_user),
+):
+    """解析备份文件夹路径（检测当前输入值，不依赖已保存的配置）"""
+    require_admin(current_user)
+    if not folder:
+        return {"resolved_path": "", "exists": False}
+    try:
+        resolved = os.path.abspath(folder)
+        return {"resolved_path": resolved, "exists": os.path.isdir(resolved)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/test-server")

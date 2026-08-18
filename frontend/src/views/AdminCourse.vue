@@ -54,6 +54,7 @@
             <th style="cursor:pointer" @click="toggleSort('name')">课程名称 {{ sortIcon('name') }}</th>
             <th>年级</th>
             <th>ClassIn ID</th>
+            <th>开课时间</th>
             <th style="cursor:pointer" @click="toggleSort('task_count')">关联任务 {{ sortIcon('task_count') }}</th>
             <th style="cursor:pointer" @click="toggleSort('essay_count')">关联作文 {{ sortIcon('essay_count') }}</th>
             <th style="cursor:pointer" @click="toggleSort('created_at')">创建时间 {{ sortIcon('created_at') }}</th>
@@ -64,6 +65,8 @@
           <tr v-for="c in sortedCourses" :key="c.id">
             <td>{{ c.name }}</td>
             <td>{{ c.grade ? parseGrades(c.grade).join('、') : '-' }}</td>
+            <td>{{ c.classin_id || '-' }}</td>
+            <td>{{ c.start_date?.substring(0,10) || '-' }}</td>
             <td><span style="font-weight:600;color:#1677ff;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.task_count || 0 }}</span></td>
             <td><span style="font-weight:600;color:#52c41a;cursor:pointer" :title="'查看「' + c.name + '」的作文'" @click="goEssays(c)">{{ c.essay_count || 0 }}</span></td>
             <td>{{ c.created_at?.substring(0,10) }}</td>
@@ -83,7 +86,9 @@
         <van-cell :title="c.name" is-link @click="openCourseDialog(c)">
           <template #label>
             <span v-if="c.grade" style="color:#999">[{{ parseGrades(c.grade).join('、') }}]</span>
-            <span v-if="c.classin_id" style="color:#999">[{{ c.classin_id }}]</span> 任务 {{ c.task_count || 0 }} · <span style="color:#1677ff" @click.stop="goEssays(c)">作文 {{ c.essay_count || 0 }}</span> · {{ c.created_at?.substring(0,10) }}
+            <span v-if="c.classin_id" style="color:#999">[{{ c.classin_id }}]</span>
+            <span v-if="c.start_date" style="color:#999">开课{{ c.start_date.substring(0,10) }}</span>
+            任务 {{ c.task_count || 0 }} · <span style="color:#1677ff" @click.stop="goEssays(c)">作文 {{ c.essay_count || 0 }}</span> · {{ c.created_at?.substring(0,10) }}
           </template>
         </van-cell>
         <template #right>
@@ -97,7 +102,6 @@
     <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose">
       <van-form ref="courseFormRef">
         <van-field v-model="courseForm.name" label="课程名称" maxlength="30" :rules="[{required:true}]" />
-        <van-field v-model="courseForm.name" label="课程名称" maxlength="30" :rules="[{required:true}]" />
         <van-field label="年级（可多选）">
           <template #input>
             <van-checkbox-group v-model="courseForm.grades" direction="horizontal" style="flex-wrap:wrap">
@@ -106,6 +110,10 @@
           </template>
         </van-field>
         <van-field v-model="courseForm.classin_id" label="ClassIn班级ID" maxlength="50" placeholder="可选，如 C001" />
+        <van-field :model-value="courseForm.start_date || ''" is-link readonly label="开课时间" placeholder="选择开课时间（可选）" @click="showDatePicker = true" />
+        <van-action-sheet v-model:show="showDatePicker" title="选择开课时间">
+          <van-date-picker v-if="showDatePicker" type="date" :min-date="minDate" :max-date="maxDate" @confirm="onDateConfirm" @cancel="showDatePicker = false" />
+        </van-action-sheet>
         <div v-if="editingCourse.id" style="padding:0 16px 12px;font-size:13px;color:#999">
           当前关联：{{ editingCourse.task_count || 0 }} 个任务 / {{ editingCourse.essay_count || 0 }} 篇作文
         </div>
@@ -161,8 +169,11 @@ function sortIcon(key) {
 const showCourseDialog = ref(false)
 const courseFormRef = ref(null)
 const editingCourse = ref({})
-const courseForm = ref({ name: '', grades: [] })
+const courseForm = ref({ name: '', grades: [], start_date: '' })
 const gradeOptions = ['初一','初二','初三','高一','高二','高三']
+const showDatePicker = ref(false)
+const minDate = new Date(2020, 0, 1)
+const maxDate = new Date(2030, 11, 31)
 const importing = ref(false)
 const showImportPreview = ref(false)
 const previewCourses = ref([])
@@ -200,20 +211,35 @@ function parseGrades(val) {
   try { const g = JSON.parse(val); return Array.isArray(g) ? g : [val] } catch { return [val] }
 }
 
+function onDateConfirm({ selectedValues }) {
+  courseForm.value.start_date = selectedValues.join('-')
+  showDatePicker.value = false
+}
+
 function openCourseDialog(cls) {
   if (cls) {
     editingCourse.value = cls
-    courseForm.value = { name: cls.name, grades: parseGrades(cls.grade), classin_id: cls.classin_id || '' }
+    courseForm.value = {
+      name: cls.name,
+      grades: parseGrades(cls.grade),
+      classin_id: cls.classin_id || '',
+      start_date: cls.start_date?.substring(0, 10) || '',
+    }
   } else {
     editingCourse.value = {}
-    courseForm.value = { name: '', grades: [], classin_id: '' }
+    courseForm.value = { name: '', grades: [], classin_id: '', start_date: '' }
   }
   showCourseDialog.value = true
 }
 
 async function saveCourse() {
   try {
-    const payload = { name: courseForm.value.name, grade: JSON.stringify(courseForm.value.grades), classin_id: courseForm.value.classin_id }
+    const payload = {
+      name: courseForm.value.name,
+      grade: JSON.stringify(courseForm.value.grades),
+      classin_id: courseForm.value.classin_id,
+      start_date: courseForm.value.start_date || null,
+    }
     if (editingCourse.value.id) {
       await api.put(`/admin/courses/${editingCourse.value.id}`, payload)
       showToast('更新成功')

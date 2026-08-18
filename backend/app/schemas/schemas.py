@@ -82,6 +82,7 @@ class CourseCreate(BaseModel):
     name: str
     grade: str = ""
     classin_id: str = ""
+    start_date: Optional[datetime] = None
 
 
 class CourseOut(BaseModel):
@@ -89,6 +90,7 @@ class CourseOut(BaseModel):
     name: str
     grade: str = ""
     classin_id: str = ""
+    start_date: Optional[datetime] = None
     created_at: datetime
     task_count: int = 0
     essay_count: int = 0
