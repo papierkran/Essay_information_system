@@ -86,7 +86,8 @@
     </van-action-sheet>
 
     <!-- 模板选择器 -->
-    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务" class="task-picker-sheet">
+    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务" class="task-picker-sheet"
+      :style="{ maxHeight: '88vh', display: 'flex', flexDirection: 'column' }">
       <div class="picker-list">
         <div style="padding:8px 16px">
           <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
@@ -642,7 +643,7 @@ function openUploaded(s) {
 
 /* 任务选择面板：避免双重滚动容器导致无法回拉 */
 :deep(.task-picker-sheet) {
-  max-height: 90vh;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
 }
@@ -651,10 +652,10 @@ function openUploaded(s) {
 }
 :deep(.task-picker-sheet .van-action-sheet__content) {
   overflow: hidden;
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 :deep(.task-picker-sheet .picker-list) {
   max-height: none;
