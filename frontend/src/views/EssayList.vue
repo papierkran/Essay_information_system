@@ -858,9 +858,19 @@ async function doBatchTask() {
   const targetName = batchTaskId.value === 0
     ? '无任务'
     : (taskList.value.find(t => t.id === batchTaskId.value)?.name || '')
+  const targetTask = taskList.value.find(t => t.id === batchTaskId.value)
+  const targetGrade = batchTaskId.value === 0
+    ? '无'
+    : (targetTask?.grade ? targetTask.grade : '无')
+  const targetNumber = batchTaskId.value === 0
+    ? '无'
+    : (targetTask?.essay_number ? `第${targetTask.essay_number}次` : '无')
+  const targetCourse = batchTaskId.value === 0
+    ? '无'
+    : (targetTask?.course_name ? targetTask.course_name : '无')
   const confirmed = await showDialog({
     title: '确认修改任务',
-    message: `确定将 ${selectedIds.value.length} 条作文的任务修改为「${targetName}」吗？`,
+    message: `确定将 ${selectedIds.value.length} 条作文的任务修改为「${targetName}」吗？\n作文的年级将同步为「${targetGrade}」，第几次将同步为「${targetNumber}」，课程将同步为「${targetCourse}」。`,
     showCancelButton: true,
   }).catch(() => false)
   if (!confirmed) return

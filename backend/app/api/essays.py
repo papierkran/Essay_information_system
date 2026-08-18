@@ -1966,9 +1966,16 @@ def batch_update_essays(
     if "task_id" in data:
         from sqlalchemy.exc import IntegrityError
         new_task_id = data["task_id"] if data["task_id"] else None
+        new_task = None
+        if new_task_id:
+            new_task = db.query(EssayTask).filter(EssayTask.id == new_task_id, EssayTask.deleted_at == None).first()
         for e in essays:
             savepoint = db.begin_nested()
             e.task_id = new_task_id
+            # 更换任务时同步年级/第几次/课程为新任务的值（任务无值则清空）
+            e.grade = (new_task.grade or "") if new_task else ""
+            e.essay_number = (new_task.essay_number or 0) if new_task else 0
+            e.course_id = (new_task.course_id or None) if new_task else None
             try:
                 db.flush()
                 savepoint.commit()
