@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
@@ -1073,25 +1073,27 @@ def next_pending_essay(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取「未改列表」中当前作文的下一篇（批改流水线跳转用）"""
+    """获取当前作文之后的下一篇未修改作文（批改流水线跳转用）"""
     if "reviewer" not in current_user.role and "admin" not in current_user.role and "guest" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
-    ids = [
-        row[0] for row in db.query(Essay.id)
-        .filter(Essay.deleted_at == None, Essay.status.in_(["pending", "confirming", "rework"]))
-        .order_by(Essay.created_at.asc(), Essay.id.asc())
-        .all()
-    ]
-    if current_id in ids:
-        idx = ids.index(current_id)
-        if idx + 1 < len(ids):
-            return {"next_id": ids[idx + 1]}
-        # 当前是最后一篇未修改作文
+    cur = db.query(Essay).filter(Essay.id == current_id).first()
+    if not cur:
         return {"next_id": None}
-    # 当前作文不在未修改列表中（如已修改完成）→ 从第一篇未修改作文开始
-    if ids:
-        return {"next_id": ids[0]}
-    return {"next_id": None}
+    cur_created = cur.created_at or datetime.min
+    next_row = (
+        db.query(Essay.id)
+        .filter(
+            Essay.deleted_at == None,
+            Essay.status.in_(["pending", "confirming", "rework"]),
+            or_(
+                Essay.created_at > cur_created,
+                and_(Essay.created_at == cur_created, Essay.id > cur.id),
+            ),
+        )
+        .order_by(Essay.created_at.asc(), Essay.id.asc())
+        .first()
+    )
+    return {"next_id": next_row[0] if next_row else None}
 
 
 @router.get("/trash")
