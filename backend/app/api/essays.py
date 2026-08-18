@@ -1882,7 +1882,7 @@ def export_docx(
 
 
 @router.post("/{essay_id}/ocr")
-def ocr_essay(
+async def ocr_essay(
     essay_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1910,7 +1910,7 @@ def ocr_essay(
     essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
     meta = {}
     try:
-        text = ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg, meta=meta)
+        text = await ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg, meta=meta)
         essay.content_text = text
         op_text = "OCR 识别完成"
         if meta.get("image_corrected"):
@@ -1929,7 +1929,7 @@ def ocr_essay(
 
 
 @router.post("/{essay_id}/ai-correct")
-def ai_correct_essay(
+async def ai_correct_essay(
     essay_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1962,7 +1962,7 @@ def ai_correct_essay(
             "teaching_mode": essay.teaching_mode,
             "task_name": essay.task.name if essay.task else None,
         }
-        result = ai_correct_text(essay.content_text, llm_cfg, essay_info=essay_info)
+        result = await ai_correct_text(essay.content_text, llm_cfg, essay_info=essay_info)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
         if not essay.essay_title or not essay.essay_title.strip():
@@ -1988,7 +1988,7 @@ def ai_correct_essay(
 
 
 @router.post("/{essay_id}/ai-rewrite")
-def ai_rewrite_essay(
+async def ai_rewrite_essay(
     essay_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -2022,7 +2022,7 @@ def ai_rewrite_essay(
         except: count_max = None
 
     try:
-        rewritten = ai_rewrite_text(
+        rewritten = await ai_rewrite_text(
             essay.content_text, llm_cfg,
             prompt_template=llm_cfg.get("prompt"),
             count_min=count_min, count_max=count_max,
@@ -2377,7 +2377,7 @@ def batch_ocr_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量 OCR 识别选中作文的图片"""
+    import asyncio
     if "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
     essay_ids = data.get("ids", [])
@@ -2404,7 +2404,7 @@ def batch_ocr_essays(
         try:
             essay_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
             meta = {}
-            text = ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg, meta=meta)
+            text = asyncio.run(ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg, meta=meta))
             e.content_text = text
             op_text = "批量 OCR 识别完成"
             if meta.get("image_corrected"):
@@ -2423,7 +2423,7 @@ def batch_ai_correct_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量 AI 错别字修正选中作文的内容"""
+    import asyncio
     if "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
     essay_ids = data.get("ids", [])
@@ -2450,7 +2450,7 @@ def batch_ai_correct_essays(
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
             continue
         try:
-            result = ai_correct_text(e.content_text, llm_cfg)
+            result = asyncio.run(ai_correct_text(e.content_text, llm_cfg))
             corrected_text = result.get("修改后内容", e.content_text)
             e.content_text = corrected_text
             _log_operation(db, e.id, current_user.id, "编辑", "批量 AI 错别字修正")
@@ -2467,7 +2467,8 @@ def batch_ai_rewrite_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量 AI 改写（一键修改）选中作文，结果保存到 corrected_text"""
+    import asyncio
+    from datetime import datetime
     if "reviewer" not in current_user.role and "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="无权限")
     essay_ids = data.get("ids", [])
@@ -2494,7 +2495,7 @@ def batch_ai_rewrite_essays(
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
             continue
         try:
-            rewritten = ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt"))
+            rewritten = asyncio.run(ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt")))
             e.corrected_text = rewritten
             if e.status in ("pending", "rework") and e.content_text and e.content_text.strip():
                 e.status = "confirming"

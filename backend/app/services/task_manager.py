@@ -94,7 +94,7 @@ threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
 def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):
-    """在后台线程中执行批量 OCR（线程池并发，每篇独立 session）"""
+    import asyncio
     import os
     from ..utils.ocr_utils import ocr_essay_images_with_fallback
 
@@ -105,7 +105,7 @@ def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_confi
             raise RuntimeError("非图片类型或无文件")
         essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
         meta = {}
-        text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg, meta=meta)
+        text = asyncio.run(ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg, meta=meta))
         e.content_text = text
         op_text = "批量 OCR 识别完成"
         if meta.get("image_corrected"):
@@ -172,6 +172,7 @@ def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_labe
 
 
 def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+    import asyncio
     from ..utils.ocr_utils import ai_correct_text
 
     def worker(sdb, e):
@@ -185,7 +186,7 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
             "teaching_mode": e.teaching_mode,
             "task_name": e.task.name if e.task else None,
         }
-        result = ai_correct_text(e.content_text, llm_cfg, essay_info=essay_info)
+        result = asyncio.run(ai_correct_text(e.content_text, llm_cfg, essay_info=essay_info))
         corrected_text = result.get("修改后内容", e.content_text)
         e.content_text = corrected_text
         if not e.essay_title or not e.essay_title.strip():
@@ -198,13 +199,14 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
 
 
 def run_batch_ai_rewrite(task_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+    import asyncio
     from datetime import datetime
     from ..utils.ocr_utils import ai_rewrite_text
 
     def worker(sdb, e):
         if not e.content_text or not e.content_text.strip():
             raise RuntimeError("无文字内容")
-        rewritten = ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt"))
+        rewritten = asyncio.run(ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt")))
         e.corrected_text = rewritten
         if e.status in ("pending", "rework") and e.content_text and e.content_text.strip():
             e.status = "confirming"
@@ -222,7 +224,7 @@ def _get_upload_dir(db):
 
 
 def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
-    """后台流水线：OCR → AI错别字修正 → AI一键修改，三个阶段各自独立任务卡片"""
+    import asyncio
     from datetime import datetime
     import os
     from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text
@@ -231,7 +233,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         if (not e.content_text or not e.content_text.strip()) and e.file_type == "image" and e.content_file:
             essay_dir = os.path.dirname(os.path.join(_get_upload_dir(sdb), e.content_file))
             meta = {}
-            text = ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}), meta=meta)
+            text = asyncio.run(ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}), meta=meta))
             e.content_text = text
             op_text = "流水线 OCR 识别完成"
             if meta.get("image_corrected"):
@@ -251,7 +253,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             "teaching_mode": e.teaching_mode,
             "task_name": e.task.name if e.task else None,
         }
-        result = ai_correct_text(e.content_text, typo_cfg, essay_info=essay_info)
+        result = asyncio.run(ai_correct_text(e.content_text, typo_cfg, essay_info=essay_info))
         corrected_text = result.get("修改后内容", e.content_text)
         e.content_text = corrected_text
         if not e.essay_title or not e.essay_title.strip():
@@ -263,7 +265,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
     def rewrite_worker(sdb, e):
         if not e.content_text or not e.content_text.strip():
             raise RuntimeError("无文字内容")
-        rewritten = ai_rewrite_text(e.content_text, editor_cfg, prompt_template=editor_cfg.get("prompt"))
+        rewritten = asyncio.run(ai_rewrite_text(e.content_text, editor_cfg, prompt_template=editor_cfg.get("prompt")))
         e.corrected_text = rewritten
         if e.status in ("pending", "rework"):
             e.status = "confirming"

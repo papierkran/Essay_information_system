@@ -4,12 +4,12 @@ import time
 import hashlib
 import base64
 import re
+import asyncio
 import logging
 from typing import Optional
-import httpx
 
-import requests
-from openai import OpenAI
+import httpx
+from openai import AsyncOpenAI
 
 from .image_corrector import correct_document_image
 
@@ -40,10 +40,10 @@ def _get_xfyun_header(config: dict) -> dict:
 def ocr_image(image_path: str, config: dict, timeout: int = 30) -> list[str]:
     with open(image_path, "rb") as f:
         img_data = f.read()
-    return ocr_image_bytes(img_data, config, timeout)
+    return asyncio.run(ocr_image_bytes(img_data, config, timeout))
 
 
-def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30, meta: dict = None) -> list[str]:
+async def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30, meta: dict = None) -> list[str]:
     url = config.get("url", "")
     if not url:
         raise RuntimeError("OCR URL 未配置")
@@ -61,21 +61,21 @@ def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30, meta: dict
 
     max_retries = 3
     last_error = None
-    for attempt in range(max_retries):
-        try:
-            resp = requests.post(url, headers=headers, data=data, timeout=timeout)
-            resp.raise_for_status()
-            result = resp.json()
-            break
-        except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError,
-                requests.exceptions.ReadTimeout, requests.exceptions.Timeout) as e:
-            last_error = e
-            logger.warning(f"OCR 请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
-            continue
-    else:
-        raise RuntimeError(f"OCR 请求失败，已重试 {max_retries} 次: {last_error}")
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for attempt in range(max_retries):
+            try:
+                resp = await client.post(url, headers=headers, data=data)
+                resp.raise_for_status()
+                result = resp.json()
+                break
+            except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException) as e:
+                last_error = e
+                logger.warning(f"OCR 请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                continue
+        else:
+            raise RuntimeError(f"OCR 请求失败，已重试 {max_retries} 次: {last_error}")
 
     if result.get("code") != "0":
         raise RuntimeError(f"OCR 失败: {result.get('desc', '未知错误')}")
@@ -108,14 +108,7 @@ def ocr_image_bytes(img_data: bytes, config: dict, timeout: int = 30, meta: dict
     return paragraphs
 
 
-def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None, meta: dict = None) -> str:
-    """对一篇作文的图片做 OCR。
-
-    - 传入 ``images``(list[(filename, bytes)) 时，直接对这些图片的字节做 OCR，不读取本地目录。
-    - 否则从本地目录扫描图片文件做 OCR。
-    二者都无可用图片时报错。
-    - 传入 ``meta``(dict) 时，记录图片矫正统计（image_corrected / max_rotation）。
-    """
+async def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None, meta: dict = None) -> str:
     if images is not None:
         collected = list(images)
     else:
@@ -130,7 +123,6 @@ def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None, meta
                 continue
             with open(img_path, "rb") as f:
                 collected.append((fname, f.read()))
-        collected = collected
 
     if not collected:
         raise RuntimeError("目录中没有可识别的图片")
@@ -138,7 +130,7 @@ def ocr_essay_images(essay_dir: str, ocr_config: dict, images: list = None, meta
     all_paragraphs = []
     for fname, content in collected:
         logger.info(f"OCR 识别: {fname}")
-        paragraphs = ocr_image_bytes(content, ocr_config, meta=meta)
+        paragraphs = await ocr_image_bytes(content, ocr_config, meta=meta)
         all_paragraphs.extend(paragraphs)
 
     if not all_paragraphs:
@@ -177,15 +169,10 @@ def _list_dir_images(essay_dir: str) -> list:
     return items
 
 
-def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config: dict, meta: dict = None) -> str:
-    """对一篇作文图片做 OCR，优先本地目录，目录里没有图片时用数据库中的图片兜底。
-
-    使用数据库兜底时记录一条日志，便于排查本地图片是否缺失。
-    - 传入 ``meta``(dict) 时，记录图片矫正统计。
-    """
+async def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config: dict, meta: dict = None) -> str:
     local_images = _list_dir_images(essay_dir)
     if local_images:
-        return ocr_essay_images(essay_dir, ocr_config, meta=meta)
+        return await ocr_essay_images(essay_dir, ocr_config, meta=meta)
 
     db_images = fetch_essay_images_from_db(db, essay_id)
     if db_images:
@@ -193,7 +180,7 @@ def ocr_essay_images_with_fallback(db, essay_id: int, essay_dir: str, ocr_config
             "本地目录无图片，已使用数据库图片兜底 (essay_id=%s, images=%s, dir=%s)",
             essay_id, len(db_images), essay_dir,
         )
-        return ocr_essay_images("", ocr_config, images=db_images, meta=meta)
+        return await ocr_essay_images("", ocr_config, images=db_images, meta=meta)
 
     raise RuntimeError("目录中没有可识别的图片")
 
@@ -212,7 +199,7 @@ DEFAULT_EDITOR_PROMPT = (
 )
 
 
-def _create_llm_client(llm_config: dict):
+def _create_async_llm_client(llm_config: dict):
     base_url = (llm_config.get("base_url") or "").strip() or "https://api.deepseek.com/v1"
     api_key = (llm_config.get("api_key") or "").strip()
     model = (llm_config.get("model") or "").strip() or "deepseek-chat"
@@ -228,7 +215,7 @@ def _create_llm_client(llm_config: dict):
             saved_proxy[var] = os.environ.pop(var)
 
     try:
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     finally:
         os.environ.update(saved_proxy)
 
@@ -286,13 +273,13 @@ DEFAULT_TYPO_FIX_PROMPT = (
 )
 
 
-def ai_correct_text(text: str, llm_config: dict, prompt_template: str = None, essay_info: dict = None) -> dict:
-    client, model = _create_llm_client(llm_config)
+async def ai_correct_text(text: str, llm_config: dict, prompt_template: str = None, essay_info: dict = None) -> dict:
+    client, model = _create_async_llm_client(llm_config)
     if not prompt_template:
         prompt_template = llm_config.get("prompt") or DEFAULT_TYPO_FIX_PROMPT
     prompt = _build_prompt(prompt_template, text, essay_info)
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": "你是一名严谨的中文校对助手"},
@@ -336,8 +323,8 @@ def count_cjk_chars(text: str) -> int:
     return count
 
 
-def ai_rewrite_text(text: str, llm_config: dict, prompt_template: str = None, count_min: int = None, count_max: int = None) -> str:
-    client, model = _create_llm_client(llm_config)
+async def ai_rewrite_text(text: str, llm_config: dict, prompt_template: str = None, count_min: int = None, count_max: int = None) -> str:
+    client, model = _create_async_llm_client(llm_config)
     if not prompt_template:
         prompt_template = DEFAULT_EDITOR_PROMPT
 
@@ -354,7 +341,7 @@ def ai_rewrite_text(text: str, llm_config: dict, prompt_template: str = None, co
             )
             prompt += hint
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": "你是一名优秀的中文写作编辑助手"},
