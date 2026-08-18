@@ -1148,21 +1148,57 @@ def restore_essay(
 @router.get("/stats")
 def essay_stats(
     year: int = None,
+    date_from: str = None,
+    date_to: str = None,
+    trend_days: int = 14,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Dashboard 统计数据（year 指定热力图年份，缺省为近365天）"""
+    """Dashboard 统计数据。year 指定年份；date_from/date_to 指定日期范围（格式 YYYY-MM-DD，优先于 year）；trend_days 趋势图天数，独立于年份"""
     now = datetime.now()
     today = now.date()
     month_start = today.replace(day=1)
 
     base = db.query(Essay).filter(Essay.deleted_at == None)
+    if date_from or date_to:
+        if date_from:
+            try:
+                dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+                base = base.filter(Essay.created_at >= dt_from)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                base = base.filter(Essay.created_at <= dt_to)
+            except ValueError:
+                pass
+    elif year:
+        year_start = datetime(year, 1, 1)
+        year_end = datetime(year, 12, 31, 23, 59, 59)
+        base = base.filter(Essay.created_at >= year_start, Essay.created_at <= year_end)
+
+    total = base.count()
+    pending = base.filter(Essay.status.in_(["pending", "confirming", "rework"])).count()
+
     total = base.count()
     pending = base.filter(Essay.status.in_(["pending", "confirming", "rework"])).count()
     confirming = base.filter(Essay.status == "confirming").count()
     rework = base.filter(Essay.status == "rework").count()
     corrected = base.filter(Essay.status == "corrected").count()
-    this_month = base.filter(Essay.created_at >= month_start).count()
+    if date_from or date_to:
+        this_month = base.filter(Essay.created_at >= month_start).count()
+    elif year and year == now.year:
+        this_month = base.filter(Essay.created_at >= month_start).count()
+    elif year:
+        ym_start = datetime(year, month_start.month, 1)
+        if month_start.month == 12:
+            ym_end = datetime(year, 12, 31, 23, 59, 59)
+        else:
+            ym_end = datetime(year, month_start.month + 1, 1) - timedelta(seconds=1)
+        this_month = base.filter(Essay.created_at >= ym_start, Essay.created_at <= ym_end).count()
+    else:
+        this_month = base.filter(Essay.created_at >= month_start).count()
 
     grade_rows = (
         base.with_entities(Essay.grade, func.count(Essay.id))
@@ -1193,8 +1229,13 @@ def essay_stats(
     )
     collector_rank = [{"name": n or u, "value": c} for n, u, c in collector_rows]
 
-    # 近14天有上传的收集者（用于趋势图按人分组展示）
-    window_start = datetime.combine(today - timedelta(days=13), datetime.min.time())
+    # 趋势图：独立于年份，始终取最近 N 天
+    trend_days = max(7, min(365, trend_days or 14))
+    ref_end = today
+    ref_start = today - timedelta(days=trend_days - 1)
+    window_start = datetime.combine(ref_start, datetime.min.time())
+
+    trend_base = db.query(Essay).filter(Essay.deleted_at == None, Essay.created_at >= window_start)
     collector_rows = (
         db.query(Essay.collected_by, User.nickname, User.username, func.count(Essay.id).label("cnt"))
         .join(User, User.id == Essay.collected_by)
@@ -1222,12 +1263,12 @@ def essay_stats(
         day_collector_map.setdefault(str(day), {})[cid] = cnt
 
     trend = []
-    for i in range(13, -1, -1):
+    for i in range(trend_days - 1, -1, -1):
         d = today - timedelta(days=i)
         d_start = datetime.combine(d, datetime.min.time())
         d_end = datetime.combine(d, datetime.max.time())
-        uploaded = base.filter(Essay.created_at >= d_start, Essay.created_at <= d_end).count()
-        done = base.filter(Essay.corrected_at >= d_start, Essay.corrected_at <= d_end).count()
+        uploaded = trend_base.filter(Essay.created_at >= d_start, Essay.created_at <= d_end).count()
+        done = trend_base.filter(Essay.corrected_at >= d_start, Essay.corrected_at <= d_end).count()
         by_collector = {str(cid): day_collector_map.get(d.strftime("%Y-%m-%d"), {}).get(cid, 0) for cid in trend_collector_ids}
         trend.append({
             "date": d.strftime("%m-%d"),
@@ -1236,9 +1277,25 @@ def essay_stats(
             "by_collector": by_collector,
         })
 
-    # GitHub 风格：按年每日上传数量（贡献热力图）
-    # 可切换年份；缺省展示近365天
-    if year:
+    # GitHub 风格：每日上传数量（贡献热力图）
+    if date_from or date_to:
+        heatmap_start = datetime.strptime(date_from, "%Y-%m-%d") if date_from else (today - timedelta(days=364))
+        heatmap_end = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if date_to else today
+        heatmap_end = max(heatmap_end, heatmap_start)
+        daily_rows = (
+            db.query(func.date(Essay.created_at).label("day"), func.count(Essay.id).label("cnt"))
+            .filter(Essay.deleted_at == None, Essay.created_at >= heatmap_start, Essay.created_at <= heatmap_end)
+            .group_by("day")
+            .all()
+        )
+        daily_map = {str(day): cnt for day, cnt in daily_rows}
+        daily_upload = []
+        cur = heatmap_start.date()
+        end = heatmap_end.date()
+        while cur <= end:
+            daily_upload.append({"date": cur.strftime("%Y-%m-%d"), "count": daily_map.get(cur.strftime("%Y-%m-%d"), 0)})
+            cur += timedelta(days=1)
+    elif year:
         year_start = datetime(year, 1, 1)
         year_end = datetime(year, 12, 31, 23, 59, 59)
         daily_rows = (
@@ -1255,20 +1312,35 @@ def essay_stats(
             d = (year_start + timedelta(days=i)).date()
             daily_upload.append({"date": d.strftime("%Y-%m-%d"), "count": daily_map.get(d.strftime("%Y-%m-%d"), 0)})
     else:
-        year_start = datetime.combine(today - timedelta(days=364), datetime.min.time())
+        # 全部：展示所有年份的全量数据
+        year_rows_full = (
+            db.query(func.extract("year", Essay.created_at).label("yr"))
+            .filter(Essay.deleted_at == None)
+            .distinct()
+            .all()
+        )
+        all_years = sorted([int(yr) for yr, in year_rows_full if yr is not None])
+        if all_years:
+            heatmap_start = datetime(all_years[0], 1, 1)
+            heatmap_end = datetime(all_years[-1], 12, 31, 23, 59, 59)
+        else:
+            heatmap_start = datetime.combine(today - timedelta(days=364), datetime.min.time())
+            heatmap_end = datetime.combine(today, datetime.max.time())
         daily_rows = (
             db.query(func.date(Essay.created_at).label("day"), func.count(Essay.id).label("cnt"))
-            .filter(Essay.deleted_at == None, Essay.created_at >= year_start)
+            .filter(Essay.deleted_at == None, Essay.created_at >= heatmap_start, Essay.created_at <= heatmap_end)
             .group_by("day")
             .all()
         )
         daily_map = {str(day): cnt for day, cnt in daily_rows}
         daily_upload = []
-        for i in range(364, -1, -1):
-            d = today - timedelta(days=i)
-            daily_upload.append({"date": d.strftime("%Y-%m-%d"), "count": daily_map.get(d.strftime("%Y-%m-%d"), 0)})
+        cur = heatmap_start.date()
+        end = heatmap_end.date()
+        while cur <= end:
+            daily_upload.append({"date": cur.strftime("%Y-%m-%d"), "count": daily_map.get(cur.strftime("%Y-%m-%d"), 0)})
+            cur += timedelta(days=1)
 
-    # 可用的年份列表（有上传记录的年份，用于热力图年份切换）
+    # 可用的年份列表（有上传记录的年份，用于年份切换）
     year_rows = (
         db.query(func.extract("year", Essay.created_at).label("yr"))
         .filter(Essay.deleted_at == None)
@@ -1276,6 +1348,57 @@ def essay_stats(
         .all()
     )
     available_years = sorted([int(yr) for yr, in year_rows if yr is not None], reverse=True)
+
+    # 每月上传/修改统计（按年/日期范围过滤）
+    monthly_upload_rows = (
+        base.with_entities(func.date_trunc("month", Essay.created_at).label("month"), func.count(Essay.id).label("cnt"))
+        .group_by("month")
+        .order_by("month")
+        .all()
+    )
+    monthly_map = {}
+    for m, c in monthly_upload_rows:
+        if m:
+            monthly_map[m.strftime("%Y-%m-%d")] = c
+    monthly_corrected_rows = (
+        db.query(func.date_trunc("month", Essay.corrected_at).label("month"), func.count(Essay.id).label("cnt"))
+        .filter(Essay.deleted_at == None, Essay.corrected_at.isnot(None))
+        .group_by("month")
+        .order_by("month")
+        .all()
+    )
+    corrected_map = {}
+    for m, c in monthly_corrected_rows:
+        if m:
+            corrected_map[m.strftime("%Y-%m-%d")] = c
+    # 确定月份范围
+    if date_from or date_to:
+        if date_from:
+            month_start = datetime.strptime(date_from[:7] + "-01", "%Y-%m-%d")
+        else:
+            ys = available_years[-1] if available_years else today.year
+            month_start = datetime(ys, 1, 1)
+        if date_to:
+            month_end = datetime.strptime(date_to[:7] + "-01", "%Y-%m-%d")
+        else:
+            ye = available_years[0] if available_years else today.year
+            month_end = datetime(ye, 12, 1)
+    elif year:
+        month_start = datetime(year, 1, 1)
+        month_end = datetime(year, 12, 1)
+    else:
+        years_list = available_years or [today.year]
+        month_start = datetime(years_list[-1], 1, 1)
+        month_end = datetime(years_list[0], 12, 1)
+    monthly = []
+    cur = month_start
+    while cur <= month_end:
+        key = cur.strftime("%Y-%m-%d")
+        m = monthly_map.get(key, 0)
+        c = corrected_map.get(key, 0)
+        if m > 0 or c > 0:
+            monthly.append({"month": cur.strftime("%Y-%m"), "uploaded": m, "corrected": c})
+        cur = (cur.replace(day=28) + timedelta(days=4)).replace(day=1)
 
     return {
         "total": total,
@@ -1290,6 +1413,7 @@ def essay_stats(
         "trend": trend,
         "trend_collectors": trend_collectors,
         "daily_upload": daily_upload,
+        "monthly": monthly,
         "available_years": available_years,
     }
 

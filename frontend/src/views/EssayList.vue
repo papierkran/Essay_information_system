@@ -41,7 +41,7 @@
       </div>
       <div class="filter-row">
         <span class="filter-label">任务</span>
-        <button class="filter-input task-select-btn" @click="showTaskPicker = true" :style="{ width: '160px', textAlign: 'left', cursor: 'pointer', color: filterTaskSearch ? '#333' : '#999' }">
+        <button class="filter-input task-select-btn" @click="taskPickerMode = 'filter'; showTaskPicker = true" :style="{ width: '160px', textAlign: 'left', cursor: 'pointer', color: filterTaskSearch ? '#333' : '#999' }">
           {{ filterTaskSearch || '搜索任务' }}
         </button>
       </div>
@@ -293,24 +293,14 @@
     </van-dialog>
 
     <!-- 批量修改任务 -->
-    <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="taskSearch = ''; batchTaskId = ''">
+    <van-dialog v-model:show="showBatchTask" title="修改任务" :show-cancel-button="true" @confirm="doBatchTask" @open="batchTaskId = ''; batchTaskSearch = ''">
       <div style="padding:16px">
         <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的任务修改为（必选）：</p>
         <div class="batch-preview" style="margin-bottom:8px">
           <div class="batch-preview-title">涉及作文：</div>
           <div class="batch-preview-body">{{ previewText() }}</div>
         </div>
-        <input v-model="taskSearch" placeholder="搜索任务名称..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box" />
-        <div style="max-height:200px;overflow-y:auto;margin-top:4px;border:1px solid #d9d9d9;border-radius:6px">
-          <div v-if="batchTaskId === ''" style="padding:8px 12px;color:#fa8c16;font-size:12px;border-bottom:1px solid #f5f5f5">请先选择要修改为的任务，或选择「无任务」</div>
-          <div @click="batchTaskId = 0; taskSearch = ''" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5" :style="{ background: batchTaskId === 0 ? '#e6f4ff' : '#fff' }">
-            <span style="color:#999">无任务</span>
-          </div>
-          <div v-for="t in filteredTasks" :key="t.id" @click="batchTaskId = t.id; taskSearch = t.name" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5" :style="{ background: batchTaskId === t.id ? '#e6f4ff' : '#fff' }">
-            {{ t.name }}
-          </div>
-          <div v-if="!filteredTasks.length" style="padding:12px;text-align:center;color:#999">无匹配任务</div>
-        </div>
+        <button class="task-select-btn" style="width:100%;text-align:left" @click="openBatchTaskPicker">{{ batchTaskSearch || '请选择任务' }}</button>
       </div>
     </van-dialog>
 
@@ -418,7 +408,7 @@ const batchCollectorId = ref('')
 const showBatchTask = ref(false)
 const batchTaskId = ref('')
 const showExportSheet = ref(false)
-const taskSearch = ref('')
+const batchTaskSearch = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
 const filterTaskSearch = ref('')
@@ -479,20 +469,40 @@ function taskIsActive(t) {
     && (!t.start_time || new Date(t.start_time) <= now)
 }
 
+const taskPickerMode = ref('filter')
+
 function selectTask(task) {
-  if (task === null) {
-    filters.value.taskId = ''
-    filterTaskSearch.value = ''
-  } else if (task === 0) {
-    filters.value.taskId = 0
-    filterTaskSearch.value = '无任务'
+  if (taskPickerMode.value === 'batch') {
+    if (task === null) {
+      batchTaskId.value = ''
+      batchTaskSearch.value = ''
+    } else if (task === 0) {
+      batchTaskId.value = 0
+      batchTaskSearch.value = '无任务'
+    } else {
+      batchTaskId.value = task.id
+      batchTaskSearch.value = task.name
+    }
   } else {
-    filters.value.taskId = task.id
-    filterTaskSearch.value = task.name
+    if (task === null) {
+      filters.value.taskId = ''
+      filterTaskSearch.value = ''
+    } else if (task === 0) {
+      filters.value.taskId = 0
+      filterTaskSearch.value = '无任务'
+    } else {
+      filters.value.taskId = task.id
+      filterTaskSearch.value = task.name
+    }
+    applyFilter()
   }
   showTaskPicker.value = false
   pickerTaskSearch.value = ''
-  applyFilter()
+}
+
+function openBatchTaskPicker() {
+  taskPickerMode.value = 'batch'
+  showTaskPicker.value = true
 }
 
 watch([pickerTaskSearch, showActiveOnly], () => {
