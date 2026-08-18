@@ -67,28 +67,41 @@ const COMMON_ERRORS = {
 export function getApiErrorMessage(err, fallback = '请求失败') {
   if (!err) return fallback
   if (err.response) {
+    // 拦截器已把 detail 统一为带状态码的消息，此处直接使用
     const detail = err.response.data?.detail
     if (typeof detail === 'string' && detail.trim()) return detail
-    return COMMON_ERRORS[err.response.status] || `请求失败 (${err.response.status})`
+    return `[${err.response.status}] ${COMMON_ERRORS[err.response.status] || '请求失败'}`
   }
-  if (err.code === 'ECONNABORTED') return '请求超时，请重试'
+  if (err.code === 'ECONNABORTED') return '[ECONNABORTED] 请求超时，请重试'
+  if (err.code) return `[${err.code}] 网络连接失败，请检查服务器地址或网络`
   return '网络连接失败，请检查服务器地址或网络'
 }
 
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401) {
+    const resp = err.response
+    // 统一为响应错误附加带状态码的消息（页面读取 err.response.data.detail 处自动生效）
+    let hadDetail = false
+    if (resp) {
+      const status = resp.status
+      const rawDetail = resp.data?.detail
+      hadDetail = typeof rawDetail === 'string' && rawDetail.trim()
+      const msg = hadDetail
+        ? `[${status}] ${rawDetail}`
+        : `[${status}] ${COMMON_ERRORS[status] || '请求失败'}`
+      if (resp.data && typeof resp.data === 'object') {
+        resp.data.detail = msg
+      }
+    }
+    if (resp?.status === 401) {
       clearAuth()
       if (err.config?.url && !err.config.url.includes('/file/')) {
         window.location.hash = '#/login'
       }
-    } else if (err.config && err.config.__toastError !== false) {
-      const detail = err.response?.data?.detail
-      const hasDetail = typeof detail === 'string' && detail.trim()
-      if (!hasDetail) {
-        showToast(getApiErrorMessage(err))
-      }
+    } else if (err.config && err.config.__toastError !== false && !hadDetail) {
+      // 后端未返回 detail 时才由拦截器兜底提示（避免与页面 catch 重复提示）
+      showToast(getApiErrorMessage(err))
     }
     return Promise.reject(err)
   }
