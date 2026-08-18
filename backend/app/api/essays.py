@@ -1086,6 +1086,11 @@ def next_pending_essay(
         idx = ids.index(current_id)
         if idx + 1 < len(ids):
             return {"next_id": ids[idx + 1]}
+        # 当前是最后一篇未修改作文
+        return {"next_id": None}
+    # 当前作文不在未修改列表中（如已修改完成）→ 从第一篇未修改作文开始
+    if ids:
+        return {"next_id": ids[0]}
     return {"next_id": None}
 
 

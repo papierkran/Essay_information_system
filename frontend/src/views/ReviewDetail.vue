@@ -1003,7 +1003,7 @@ async function goNextPending() {
     if (res.data.next_id) {
       router.push(`/review/detail/${res.data.next_id}?from=pending`)
     } else {
-      showToast('已是最后一篇未修改作文')
+      showToast('没有更多未修改作文')
     }
   } catch (err) {
     showToast(err.response?.data?.detail || '获取下一篇失败')
