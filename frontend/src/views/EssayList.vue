@@ -1,6 +1,9 @@
 <template>
   <div class="page">
-    <div class="page-title">作文列表</div>
+    <div class="page-title">
+      作文列表
+      <span v-if="!isAdmin && filters.collectedBy === defaultCollectedBy" class="title-hint">⚠️ 首次进入默认筛选收集者为当前用户，如需查看其他作文，请点击「重置」或手动将收集者调整为「全部」</span>
+    </div>
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
@@ -36,15 +39,11 @@
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
         </select>
       </div>
-      <div ref="taskFilterRef" class="filter-row" style="position:relative">
+      <div class="filter-row">
         <span class="filter-label">任务</span>
-        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
-        <div v-if="showTaskDropdown" class="task-dropdown">
-          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === '' || filters.taskId === null || filters.taskId === undefined }" class="task-item">全部</div>
-          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = '无任务'; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === 0 }" class="task-item" style="color:#999">无任务</div>
-          <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
-          <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
-        </div>
+        <button class="filter-input task-select-btn" @click="showTaskPicker = true" :style="{ width: '160px', textAlign: 'left', cursor: 'pointer', color: filterTaskSearch ? '#333' : '#999' }">
+          {{ filterTaskSearch || '搜索任务' }}
+        </button>
       </div>
       <div class="filter-row"><span class="filter-label">课程</span>
         <select v-model="filters.courseId" class="filter-input" @change="applyFilter">
@@ -315,13 +314,83 @@
       </div>
     </van-dialog>
 
+    <!-- 任务选择器 -->
+    <van-action-sheet v-model:show="showTaskPicker" title="选择任务筛选" class="task-picker-sheet"
+      :style="{ maxHeight: '88vh', display: 'flex', flexDirection: 'column' }">
+      <div class="picker-list">
+        <div style="padding:8px 16px">
+          <input v-model="pickerTaskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+        </div>
+        <div style="padding:0 16px 8px;display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
+          <van-checkbox v-model="showActiveOnly" icon-size="16px" shape="square">只看收集中</van-checkbox>
+          <span style="color:#999;font-size:12px">（关闭可查看全部 {{ sortedTaskList.length }} 个任务）</span>
+        </div>
+        <div class="task-item-option" @click="selectTask(null)" :class="{ active: filters.taskId === '' || filters.taskId === null || filters.taskId === undefined }">
+          <span style="font-weight:500">全部</span>
+        </div>
+        <div class="task-item-option" style="color:#999" @click="selectTask(0)" :class="{ active: filters.taskId === 0 }">
+          <span>无任务</span>
+        </div>
+        <div class="task-split">
+          <div class="task-col">
+            <div class="task-col-title">线上</div>
+            <template v-for="t in pagedOnlineTasks" :key="t.id">
+              <div class="task-item-option" @click="selectTask(t)" :class="{ active: filters.taskId == t.id }">
+                <div class="task-item-title">
+                  <span style="font-weight:500">{{ t.name }}</span>
+                  <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+                </div>
+                <div class="task-item-meta">
+                  <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                  <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                  <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                  <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+                  <span v-if="t.essay_topic" style="color:#999;font-size:12px">{{ t.essay_topic }}</span>
+                </div>
+              </div>
+            </template>
+            <div v-if="filteredOnlineTasks.length > PAGE_SIZE" class="pagination-row">
+              <button class="btn" :disabled="pageOnline <= 1" @click="pageOnline--">上一页</button>
+              <span class="page-info">{{ pageOnline }} / {{ onlineTotalPages }}</span>
+              <button class="btn" :disabled="pageOnline >= onlineTotalPages" @click="pageOnline++">下一页</button>
+            </div>
+            <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
+          </div>
+          <div class="task-col">
+            <div class="task-col-title">线下</div>
+            <template v-for="t in pagedOfflineTasks" :key="t.id">
+              <div class="task-item-option" @click="selectTask(t)" :class="{ active: filters.taskId == t.id }">
+                <div class="task-item-title">
+                  <span style="font-weight:500">{{ t.name }}</span>
+                  <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+                </div>
+                <div class="task-item-meta">
+                  <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                  <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                  <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                  <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+                  <span v-if="t.essay_topic" style="color:#999;font-size:12px">{{ t.essay_topic }}</span>
+                </div>
+              </div>
+            </template>
+            <div v-if="filteredOfflineTasks.length > PAGE_SIZE" class="pagination-row">
+              <button class="btn" :disabled="pageOffline <= 1" @click="pageOffline--">上一页</button>
+              <span class="page-info">{{ pageOffline }} / {{ offlineTotalPages }}</span>
+              <button class="btn" :disabled="pageOffline >= offlineTotalPages" @click="pageOffline++">下一页</button>
+            </div>
+            <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
+          </div>
+        </div>
+      </div>
+    </van-action-sheet>
+
     <!-- 批量导出方式选择 -->
     <ExportModeSheet :show="showExportSheet" title="选择导出方式" @update:show="showExportSheet = $event" @confirm="onExportModeChosen" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showDialog, showToast, showLoadingToast, closeToast, showSuccessToast, showFailToast } from 'vant'
 import api, { useAuth } from '../api'
@@ -353,32 +422,82 @@ const taskSearch = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
 const filterTaskSearch = ref('')
-const showTaskDropdown = ref(false)
-const taskFilterRef = ref(null)
+const showTaskPicker = ref(false)
+const pickerTaskSearch = ref('')
+const showActiveOnly = ref(false)
 
-function closeTaskDropdown(e) {
-  if (taskFilterRef.value && !taskFilterRef.value.contains(e.target)) {
-    showTaskDropdown.value = false
-  }
-}
-
-const filteredTasks = computed(() => {
-  if (!taskSearch.value) return taskList.value
-  const kw = taskSearch.value.toLowerCase()
-  return taskList.value.filter(t => t.name.toLowerCase().includes(kw))
+const sortedTaskList = computed(() => {
+  return [...taskList.value].sort((a, b) => {
+    const aMig = (a.course_name || '').includes('迁移')
+    const bMig = (b.course_name || '').includes('迁移')
+    if (aMig !== bMig) return aMig ? 1 : -1
+    const aActive = taskIsActive(a)
+    const bActive = taskIsActive(b)
+    if (aActive !== bActive) return aActive ? -1 : 1
+    return 0
+  })
 })
 
-const filteredTaskOptions = computed(() => {
-  // 已通过下拉选中任务或无任务时，重新打开展示全部任务供切换
-  if (filters.value.taskId === 0 || filters.value.taskId) return taskList.value
-  if (!filterTaskSearch.value) return taskList.value
-  const kw = filterTaskSearch.value
-  // 智能分段匹配：将搜索词拆为 中文段 + 数字段，按顺序匹配（允许中间有任意字符）
-  const segments = kw.match(/[\u4e00-\u9fff]+|\d+/g)
-  if (!segments || segments.length === 0) return taskList.value.filter(t => t.name.toLowerCase().includes(kw.toLowerCase()))
-  const pattern = segments.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
-  const regex = new RegExp(pattern, 'i')
-  return taskList.value.filter(t => regex.test(t.name))
+const filteredOnlineTasks = computed(() => {
+  let list = sortedTaskList.value.filter(t => t.teaching_mode === '线上')
+  if (showActiveOnly.value && !pickerTaskSearch.value.trim()) list = list.filter(t => taskIsActive(t))
+  if (pickerTaskSearch.value.trim()) {
+    const kw = pickerTaskSearch.value.toLowerCase()
+    list = list.filter(t => (t.name + (t.essay_topic || '') + (t.grade || '')).toLowerCase().includes(kw))
+  }
+  return list
+})
+
+const filteredOfflineTasks = computed(() => {
+  let list = sortedTaskList.value.filter(t => t.teaching_mode !== '线上')
+  if (showActiveOnly.value && !pickerTaskSearch.value.trim()) list = list.filter(t => taskIsActive(t))
+  if (pickerTaskSearch.value.trim()) {
+    const kw = pickerTaskSearch.value.toLowerCase()
+    list = list.filter(t => (t.name + (t.essay_topic || '') + (t.grade || '')).toLowerCase().includes(kw))
+  }
+  return list
+})
+
+const PAGE_SIZE = 10
+const pageOnline = ref(1)
+const pageOffline = ref(1)
+const onlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOnlineTasks.value.length / PAGE_SIZE)))
+const offlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOfflineTasks.value.length / PAGE_SIZE)))
+const pagedOnlineTasks = computed(() => {
+  const start = (pageOnline.value - 1) * PAGE_SIZE
+  return filteredOnlineTasks.value.slice(start, start + PAGE_SIZE)
+})
+const pagedOfflineTasks = computed(() => {
+  const start = (pageOffline.value - 1) * PAGE_SIZE
+  return filteredOfflineTasks.value.slice(start, start + PAGE_SIZE)
+})
+
+function taskIsActive(t) {
+  const now = new Date()
+  return t.is_active
+    && (!t.deadline || new Date(t.deadline) >= now)
+    && (!t.start_time || new Date(t.start_time) <= now)
+}
+
+function selectTask(task) {
+  if (task === null) {
+    filters.value.taskId = ''
+    filterTaskSearch.value = ''
+  } else if (task === 0) {
+    filters.value.taskId = 0
+    filterTaskSearch.value = '无任务'
+  } else {
+    filters.value.taskId = task.id
+    filterTaskSearch.value = task.name
+  }
+  showTaskPicker.value = false
+  pickerTaskSearch.value = ''
+  applyFilter()
+}
+
+watch([pickerTaskSearch, showActiveOnly], () => {
+  pageOnline.value = 1
+  pageOffline.value = 1
 })
 
 const router = useRouter()
@@ -1038,8 +1157,6 @@ onMounted(async () => {
   loadReviewers()
   loadCourseList()
   window.addEventListener('resize', updateTopScrollWidth)
-  // 点击外部关闭任务下拉框
-  document.addEventListener('click', closeTaskDropdown)
   // 从URL参数读取task_id（优先：重置筛选后再按任务筛选）
   const taskIdFromQuery = Number(route.query.task_id)
   const courseIdFromQuery = Number(route.query.course_id)
@@ -1079,7 +1196,6 @@ onMounted(async () => {
   await applyFilter()
 })
 onUnmounted(() => {
-  document.removeEventListener('click', closeTaskDropdown)
   window.removeEventListener('resize', updateTopScrollWidth)
 })
 </script>
@@ -1105,29 +1221,6 @@ onUnmounted(() => {
 .filter-input:focus { border-color: #4096ff; }
 .filter-input[type="number"] { width: 60px; }
 
-.task-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 100;
-  min-width: 200px;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #fff;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  margin-top: 4px;
-}
-.task-item {
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.task-item:hover { background: #f0f0f0; }
-.task-item-active { background: #e6f4ff; color: #1677ff; }
-
 .batch-bar {
   display: flex;
   align-items: center;
@@ -1144,6 +1237,19 @@ onUnmounted(() => {
 .stats-bar strong { font-size: 15px; }
 .stat-pending { color: #d46b08; }
 .stat-corrected { color: #52c41a; }
+
+.title-hint {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 4px 10px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #d46b08;
+  vertical-align: middle;
+  line-height: 1.4;
+}
 
 /* 批量预览 */
 .batch-preview {
@@ -1345,4 +1451,26 @@ onUnmounted(() => {
   border-top: 1px dashed #f0f0f0;
 }
 .mobile-card-actions { display: flex; align-items: center; gap: 6px; }
+
+/* 任务选择器 */
+.task-picker-sheet :deep(.van-action-sheet__content) { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.task-picker-sheet .picker-list { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+.task-item-option {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+.task-item-option:hover { background: #f5f5f5; }
+.task-item-option.active { background: #e6f4ff; }
+.task-item-title { display: flex; align-items: center; margin-bottom: 4px; }
+.task-item-title span { font-size: 14px; }
+.task-item-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.task-split { display: flex; gap: 8px; padding: 0 4px; }
+.task-col { flex: 1; min-width: 0; }
+.task-col-title { font-size: 13px; color: #999; padding: 12px 12px 6px; font-weight: 600; }
+.task-select-btn { background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 6px 12px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-select-btn:hover { border-color: #1677ff; }
+.pagination-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
+.page-info { font-size: 12px; color: #666; }
 </style>

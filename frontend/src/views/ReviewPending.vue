@@ -34,15 +34,11 @@
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
         </select>
       </div>
-      <div ref="taskFilterRef" class="filter-row" style="position:relative">
+      <div class="filter-row">
         <span class="filter-label">任务</span>
-        <input v-model="filterTaskSearch" placeholder="搜索任务" class="filter-input" style="width:120px" @focus="showTaskDropdown = true" @input="showTaskDropdown = true" @keyup.enter="applyFilter" />
-        <div v-if="showTaskDropdown" class="task-dropdown">
-          <div @mousedown.prevent @click="filters.taskId = ''; filterTaskSearch = ''; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': !filters.taskId }" class="task-item">全部</div>
-          <div @mousedown.prevent @click="filters.taskId = 0; filterTaskSearch = '无任务'; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId === 0 }" class="task-item" style="color:#999">无任务</div>
-          <div v-for="t in filteredTaskOptions" :key="t.id" @mousedown.prevent @click="filters.taskId = t.id; filterTaskSearch = t.name; showTaskDropdown = false; applyFilter()" :class="{ 'task-item-active': filters.taskId == t.id }" class="task-item">{{ t.name }}</div>
-          <div v-if="!filteredTaskOptions.length" class="task-item" style="color:#999">无匹配任务</div>
-        </div>
+        <button class="filter-input task-select-btn" @click="showTaskPicker = true" :style="{ width: '140px', textAlign: 'left', cursor: 'pointer', color: filterTaskSearch ? '#333' : '#999' }">
+          {{ filterTaskSearch || '搜索任务' }}
+        </button>
       </div>
       <div class="filter-row"><span class="filter-label">上传起始</span><input v-model="filters.dateFrom" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
       <div class="filter-row"><span class="filter-label">上传截止</span><input v-model="filters.dateTo" type="date" class="filter-input" style="width:140px" @change="applyFilter" /></div>
@@ -160,7 +156,9 @@
           </select>
         </div>
         <div class="m-filter-row">
-          <input v-model="filterTaskSearch" placeholder="任务名称搜索" class="m-filter-input" @input="applyFilter" />
+          <button class="m-filter-input task-select-btn" @click="showTaskPicker = true" :style="{ textAlign: 'left', cursor: 'pointer', color: filterTaskSearch ? '#333' : '#999' }">
+            {{ filterTaskSearch || '搜索任务' }}
+          </button>
           <input v-model.number="filters.essayNumber" type="number" min="1" placeholder="第几次" class="m-filter-input" @input="applyFilter" />
         </div>
         <div class="m-filter-row">
@@ -242,10 +240,80 @@
       <div v-if="!opLogs.length && !loadingLogs" class="log-empty">暂无相关操作日志</div>
     </div>
   </div>
+
+  <!-- 任务选择器 -->
+  <van-action-sheet v-model:show="showTaskPicker" title="选择任务筛选" class="task-picker-sheet"
+    :style="{ maxHeight: '88vh', display: 'flex', flexDirection: 'column' }">
+    <div class="picker-list">
+      <div style="padding:8px 16px">
+        <input v-model="pickerTaskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+      </div>
+      <div style="padding:0 16px 8px;display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
+        <van-checkbox v-model="showActiveOnly" icon-size="16px" shape="square">只看收集中</van-checkbox>
+        <span style="color:#999;font-size:12px">（关闭可查看全部 {{ sortedTaskList.length }} 个任务）</span>
+      </div>
+      <div class="task-item-option" @click="selectTask(null)" :class="{ active: !filters.taskId }">
+        <span style="font-weight:500">全部</span>
+      </div>
+      <div class="task-item-option" style="color:#999" @click="selectTask(0)" :class="{ active: filters.taskId === 0 }">
+        <span>无任务</span>
+      </div>
+      <div class="task-split">
+        <div class="task-col">
+          <div class="task-col-title">线上</div>
+          <template v-for="t in pagedOnlineTasks" :key="t.id">
+            <div class="task-item-option" @click="selectTask(t)" :class="{ active: filters.taskId == t.id }">
+              <div class="task-item-title">
+                <span style="font-weight:500">{{ t.name }}</span>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+              </div>
+              <div class="task-item-meta">
+                <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+                <span v-if="t.essay_topic" style="color:#999;font-size:12px">{{ t.essay_topic }}</span>
+              </div>
+            </div>
+          </template>
+          <div v-if="filteredOnlineTasks.length > PAGE_SIZE" class="pagination-row">
+            <button class="btn" :disabled="pageOnline <= 1" @click="pageOnline--">上一页</button>
+            <span class="page-info">{{ pageOnline }} / {{ onlineTotalPages }}</span>
+            <button class="btn" :disabled="pageOnline >= onlineTotalPages" @click="pageOnline++">下一页</button>
+          </div>
+          <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
+        </div>
+        <div class="task-col">
+          <div class="task-col-title">线下</div>
+          <template v-for="t in pagedOfflineTasks" :key="t.id">
+            <div class="task-item-option" @click="selectTask(t)" :class="{ active: filters.taskId == t.id }">
+              <div class="task-item-title">
+                <span style="font-weight:500">{{ t.name }}</span>
+                <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
+              </div>
+              <div class="task-item-meta">
+                <span class="badge-mini tag-grade">{{ t.grade }}</span>
+                <span class="badge-mini tag-number">第{{ t.essay_number }}次</span>
+                <span class="badge-mini" :class="t.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ t.teaching_mode || '线下' }}</span>
+                <span v-if="t.course_name" class="badge-mini tag-course">{{ t.course_name }}</span>
+                <span v-if="t.essay_topic" style="color:#999;font-size:12px">{{ t.essay_topic }}</span>
+              </div>
+            </div>
+          </template>
+          <div v-if="filteredOfflineTasks.length > PAGE_SIZE" class="pagination-row">
+            <button class="btn" :disabled="pageOffline <= 1" @click="pageOffline--">上一页</button>
+            <span class="page-info">{{ pageOffline }} / {{ offlineTotalPages }}</span>
+            <button class="btn" :disabled="pageOffline >= offlineTotalPages" @click="pageOffline++">下一页</button>
+          </div>
+          <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
+        </div>
+      </div>
+    </div>
+  </van-action-sheet>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
 import { useScreen } from '../composables/useScreen'
@@ -266,8 +334,9 @@ const selectedIds = ref([])
 const collectorList = ref([])
 const taskList = ref([])
 const filterTaskSearch = ref('')
-const showTaskDropdown = ref(false)
-const taskFilterRef = ref(null)
+const showTaskPicker = ref(false)
+const pickerTaskSearch = ref('')
+const showActiveOnly = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
@@ -346,22 +415,79 @@ const mobileFilterActive = computed(() => {
 
 function statusLabel(s) { return { pending: '未修改', confirming: '待确认', rework: '待重改', corrected: '已修改' }[s] || s }
 
-function closeTaskDropdown(e) {
-  if (taskFilterRef.value && !taskFilterRef.value.contains(e.target)) {
-    showTaskDropdown.value = false
+const sortedTaskList = computed(() => {
+  return [...taskList.value].sort((a, b) => {
+    const aMig = (a.course_name || '').includes('迁移')
+    const bMig = (b.course_name || '').includes('迁移')
+    if (aMig !== bMig) return aMig ? 1 : -1
+    const aActive = taskIsActive(a)
+    const bActive = taskIsActive(b)
+    if (aActive !== bActive) return aActive ? -1 : 1
+    return 0
+  })
+})
+
+const filteredOnlineTasks = computed(() => {
+  let list = sortedTaskList.value.filter(t => t.teaching_mode === '线上')
+  if (showActiveOnly.value && !pickerTaskSearch.value.trim()) list = list.filter(t => taskIsActive(t))
+  if (pickerTaskSearch.value.trim()) {
+    const kw = pickerTaskSearch.value.toLowerCase()
+    list = list.filter(t => (t.name + (t.essay_topic || '') + (t.grade || '')).toLowerCase().includes(kw))
   }
+  return list
+})
+
+const filteredOfflineTasks = computed(() => {
+  let list = sortedTaskList.value.filter(t => t.teaching_mode !== '线上')
+  if (showActiveOnly.value && !pickerTaskSearch.value.trim()) list = list.filter(t => taskIsActive(t))
+  if (pickerTaskSearch.value.trim()) {
+    const kw = pickerTaskSearch.value.toLowerCase()
+    list = list.filter(t => (t.name + (t.essay_topic || '') + (t.grade || '')).toLowerCase().includes(kw))
+  }
+  return list
+})
+
+const PAGE_SIZE = 10
+const pageOnline = ref(1)
+const pageOffline = ref(1)
+const onlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOnlineTasks.value.length / PAGE_SIZE)))
+const offlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOfflineTasks.value.length / PAGE_SIZE)))
+const pagedOnlineTasks = computed(() => {
+  const start = (pageOnline.value - 1) * PAGE_SIZE
+  return filteredOnlineTasks.value.slice(start, start + PAGE_SIZE)
+})
+const pagedOfflineTasks = computed(() => {
+  const start = (pageOffline.value - 1) * PAGE_SIZE
+  return filteredOfflineTasks.value.slice(start, start + PAGE_SIZE)
+})
+
+watch([pickerTaskSearch, showActiveOnly], () => {
+  pageOnline.value = 1
+  pageOffline.value = 1
+})
+
+function taskIsActive(t) {
+  const now = new Date()
+  return t.is_active
+    && (!t.deadline || new Date(t.deadline) >= now)
+    && (!t.start_time || new Date(t.start_time) <= now)
 }
 
-const filteredTaskOptions = computed(() => {
-  if (!filterTaskSearch.value) return taskList.value
-  const kw = filterTaskSearch.value
-  // 智能分段匹配：将搜索词拆为 中文段 + 数字段，按顺序匹配（允许中间有任意字符）
-  const segments = kw.match(/[\u4e00-\u9fff]+|\d+/g)
-  if (!segments || segments.length === 0) return taskList.value.filter(t => t.name.toLowerCase().includes(kw.toLowerCase()))
-  const pattern = segments.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')
-  const regex = new RegExp(pattern, 'i')
-  return taskList.value.filter(t => regex.test(t.name))
-})
+function selectTask(task) {
+  if (task === null) {
+    filters.value.taskId = ''
+    filterTaskSearch.value = ''
+  } else if (task === 0) {
+    filters.value.taskId = 0
+    filterTaskSearch.value = '无任务'
+  } else {
+    filters.value.taskId = task.id
+    filterTaskSearch.value = task.name
+  }
+  showTaskPicker.value = false
+  pickerTaskSearch.value = ''
+  applyFilter()
+}
 
 const sortBy = ref('')
 const sortOrder = ref('asc')
@@ -596,7 +722,6 @@ async function fetchCollectorsAndTasks() {
 onMounted(() => {
   load()
   fetchCollectorsAndTasks()
-  document.addEventListener('click', closeTaskDropdown)
   refreshLogs()
   if (isDesktop.value) {
     startLogPolling()
@@ -608,7 +733,6 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
-  document.removeEventListener('click', closeTaskDropdown)
   stopLogPolling()
   clearTimeout(logRefreshTimer)
   if (logVisibilityHandler) {
@@ -638,29 +762,6 @@ onUnmounted(() => {
 .filter-input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
 .filter-input:focus { border-color: #4096ff; }
 .filter-input[type="number"] { width: 60px; }
-
-.task-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 100;
-  min-width: 200px;
-  max-height: 200px;
-  overflow-y: auto;
-  background: #fff;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  margin-top: 4px;
-}
-.task-item {
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.task-item:hover { background: #f0f0f0; }
-.task-item-active { background: #e6f4ff; color: #1677ff; }
 
 .batch-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
 .row-selected { background-color: #e6f4ff !important; }
@@ -838,4 +939,26 @@ onUnmounted(() => {
   border-radius: 4px;
   padding: 1px 6px;
 }
+
+/* 任务选择器 */
+.task-picker-sheet :deep(.van-action-sheet__content) { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.task-picker-sheet .picker-list { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+.task-item-option {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+.task-item-option:hover { background: #f5f5f5; }
+.task-item-option.active { background: #e6f4ff; }
+.task-item-title { display: flex; align-items: center; margin-bottom: 4px; }
+.task-item-title span { font-size: 14px; }
+.task-item-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.task-split { display: flex; gap: 8px; padding: 0 4px; }
+.task-col { flex: 1; min-width: 0; }
+.task-col-title { font-size: 13px; color: #999; padding: 12px 12px 6px; font-weight: 600; }
+.task-select-btn { background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 6px 12px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-select-btn:hover { border-color: #1677ff; }
+.pagination-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
+.page-info { font-size: 12px; color: #666; }
 </style>

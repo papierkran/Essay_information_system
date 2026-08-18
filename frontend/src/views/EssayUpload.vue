@@ -100,7 +100,7 @@
         <div class="task-split">
           <div class="task-col">
             <div class="task-col-title">线上</div>
-            <van-cell v-for="t in filteredOnlineTasks" :key="t.id" @click="selectTask(t)">
+            <van-cell v-for="t in pagedOnlineTasks" :key="t.id" @click="selectTask(t)">
               <template #title>
                 <span style="font-weight:500">{{ t.name }}</span>
                 <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
@@ -113,11 +113,16 @@
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
+            <div v-if="filteredOnlineTasks.length > PAGE_SIZE" class="pagination-row">
+              <button class="btn" :disabled="pageOnline <= 1" @click="pageOnline--">上一页</button>
+              <span class="page-info">{{ pageOnline }} / {{ onlineTotalPages }}</span>
+              <button class="btn" :disabled="pageOnline >= onlineTotalPages" @click="pageOnline++">下一页</button>
+            </div>
             <div v-if="!filteredOnlineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线上任务</div>
           </div>
           <div class="task-col">
             <div class="task-col-title">线下</div>
-            <van-cell v-for="t in filteredOfflineTasks" :key="t.id" @click="selectTask(t)">
+            <van-cell v-for="t in pagedOfflineTasks" :key="t.id" @click="selectTask(t)">
               <template #title>
                 <span style="font-weight:500">{{ t.name }}</span>
                 <van-tag v-if="taskIsActive(t)" type="primary" style="margin-left:6px">收集中</van-tag>
@@ -130,6 +135,11 @@
                 <span v-if="t.essay_topic" style="color:#999">{{ t.essay_topic }}</span>
               </template>
             </van-cell>
+            <div v-if="filteredOfflineTasks.length > PAGE_SIZE" class="pagination-row">
+              <button class="btn" :disabled="pageOffline <= 1" @click="pageOffline--">上一页</button>
+              <span class="page-info">{{ pageOffline }} / {{ offlineTotalPages }}</span>
+              <button class="btn" :disabled="pageOffline >= offlineTotalPages" @click="pageOffline++">下一页</button>
+            </div>
             <div v-if="!filteredOfflineTasks.length" style="padding:16px;text-align:center;color:#999;font-size:13px">暂无线下任务</div>
           </div>
         </div>
@@ -262,7 +272,7 @@ const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode
 const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
 
 const taskSearch = ref('')
-const showActiveOnly = ref(true)
+const showActiveOnly = ref(false)
 const filteredOnlineTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
   let list = onlineTasks.value
@@ -276,6 +286,20 @@ const filteredOfflineTasks = computed(() => {
   if (showActiveOnly.value && !kw) list = list.filter(taskIsActive)
   if (!kw) return list
   return list.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+})
+
+const PAGE_SIZE = 10
+const pageOnline = ref(1)
+const pageOffline = ref(1)
+const onlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOnlineTasks.value.length / PAGE_SIZE)))
+const offlineTotalPages = computed(() => Math.max(1, Math.ceil(filteredOfflineTasks.value.length / PAGE_SIZE)))
+const pagedOnlineTasks = computed(() => {
+  const start = (pageOnline.value - 1) * PAGE_SIZE
+  return filteredOnlineTasks.value.slice(start, start + PAGE_SIZE)
+})
+const pagedOfflineTasks = computed(() => {
+  const start = (pageOffline.value - 1) * PAGE_SIZE
+  return filteredOfflineTasks.value.slice(start, start + PAGE_SIZE)
 })
 
 function taskIsActive(t) {
@@ -295,6 +319,11 @@ watch(contentParagraphs, (paras) => {
   if (first && !form.value.essay_title) {
     form.value.essay_title = first
   }
+})
+
+watch([taskSearch, showActiveOnly], () => {
+  pageOnline.value = 1
+  pageOffline.value = 1
 })
 
 onMounted(async () => {
@@ -775,4 +804,6 @@ function openUploaded(s) {
   line-height: 1.8;
   color: #333;
 }
+.pagination-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
+.page-info { font-size: 12px; color: #666; }
 </style>
