@@ -611,13 +611,20 @@ async function createCourse() {
 
 const filteredTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
-  return tasks.value.filter(t => {
+  const list = tasks.value.filter(t => {
     if (taskFilterByCourse.value && selectedCourseId.value && t.course_id !== selectedCourseId.value) return false
     if (!kw) return true
     return (t.name || '').toLowerCase().includes(kw)
       || (t.essay_topic || '').toLowerCase().includes(kw)
       || (t.grade || '').includes(kw)
       || (t.course_name || '').toLowerCase().includes(kw)
+  })
+  // 迁移任务排到末尾
+  return [...list].sort((a, b) => {
+    const aMig = (a.course_name || '').includes('迁移')
+    const bMig = (b.course_name || '').includes('迁移')
+    if (aMig !== bMig) return aMig ? 1 : -1
+    return 0
   })
 })
 

@@ -38,7 +38,7 @@ def create_course(
     existing = db.query(Course).filter(Course.name == data.name, Course.deleted_at == None).first()
     if existing:
         raise HTTPException(status_code=400, detail="课程名称已存在")
-    cls = Course(name=data.name, classin_id=data.classin_id or "")
+    cls = Course(name=data.name, grade=data.grade, classin_id=data.classin_id or "")
     db.add(cls)
     db.commit()
     db.refresh(cls)
@@ -89,6 +89,7 @@ def update_course(
     if existing:
         raise HTTPException(status_code=400, detail="课程名称已存在")
     cls.name = data.name
+    cls.grade = data.grade
     cls.classin_id = data.classin_id or ""
     db.commit()
     db.refresh(cls)

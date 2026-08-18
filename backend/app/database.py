@@ -128,3 +128,13 @@ def _migrate_existing_columns():
                     conn.execute(text("ALTER TABLE course ADD COLUMN IF NOT EXISTS classin_id VARCHAR(50) DEFAULT ''"))
     except Exception:
         pass
+
+    # course 表补充 grade 列（幂等，Text 类型支持多选JSON数组）
+    try:
+        if "course" in inspector.get_table_names():
+            course_cols = {c["name"] for c in inspector.get_columns("course")}
+            if "grade" not in course_cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE course ADD COLUMN IF NOT EXISTS grade TEXT DEFAULT ''"))
+    except Exception:
+        pass

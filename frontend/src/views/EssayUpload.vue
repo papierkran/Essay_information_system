@@ -2,6 +2,12 @@
   <div class="page">
     <div v-if="isDesktop" class="page-title">上传作文</div>
 
+    <!-- 补交规则提示 -->
+    <div class="tips-box">
+      <span class="tips-icon">💡</span>
+      <span>未在收集中（未开始 / 已结束 / 已过期）的任务，选择后会自动勾选补交</span>
+    </div>
+
     <!-- 模板选择区域 -->
     <van-cell-group inset style="margin-bottom:12px">
       <van-field :model-value="selectedTaskName" is-link readonly label="选择收集任务"
@@ -52,7 +58,8 @@
           </template>
         </van-field>
         <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" :closeable="true" />
-        <van-field v-model="form.content_text" label="或粘贴文字" type="textarea" placeholder="粘贴文字..." rows="4" autosize />
+        <van-field v-model="form.content_text" label="上传文本作文" type="textarea" placeholder="建议优先文字上传，粘贴作文内容..." rows="4" autosize />
+        <div class="field-tips">tips：第一行为标题，会自动识别填充到「作文标题」</div>
         <div v-if="contentParagraphs.length" class="upload-preview">
           <div class="upload-preview-title">📄 预览</div>
           <div class="content-text">
@@ -79,10 +86,14 @@
     </van-action-sheet>
 
     <!-- 模板选择器 -->
-    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
+    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务" class="task-picker-sheet">
       <div class="picker-list">
         <div style="padding:8px 16px">
           <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+        </div>
+        <div style="padding:0 16px 8px;display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
+          <van-checkbox v-model="showActiveOnly" icon-size="16px" shape="square">只看收集中</van-checkbox>
+          <span style="color:#999;font-size:12px">（关闭可查看全部 {{ sortedTasks.length }} 个任务）</span>
         </div>
         <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
         <div class="task-split">
@@ -235,6 +246,10 @@ function pickStudent(name) {
 
 const sortedTasks = computed(() => {
   return [...tasks.value].sort((a, b) => {
+    // 迁移任务排到末尾
+    const aMig = (a.course_name || '').includes('迁移')
+    const bMig = (b.course_name || '').includes('迁移')
+    if (aMig !== bMig) return aMig ? 1 : -1
     const aActive = taskIsActive(a)
     const bActive = taskIsActive(b)
     if (aActive !== bActive) return aActive ? -1 : 1
@@ -246,15 +261,20 @@ const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode
 const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
 
 const taskSearch = ref('')
+const showActiveOnly = ref(true)
 const filteredOnlineTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return onlineTasks.value
-  return onlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+  let list = onlineTasks.value
+  if (showActiveOnly.value && !kw) list = list.filter(taskIsActive)
+  if (!kw) return list
+  return list.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 const filteredOfflineTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return offlineTasks.value
-  return offlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+  let list = offlineTasks.value
+  if (showActiveOnly.value && !kw) list = list.filter(taskIsActive)
+  if (!kw) return list
+  return list.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 
 function taskIsActive(t) {
@@ -347,6 +367,12 @@ function buildPreviewImages() {
 }
 
 function afterRead() {
+  // 兜底：确保每个图片项都有 objectUrl，供缩略图显示
+  for (const item of fileList.value) {
+    if (item.file && isImageFile(item.file) && !item.objectUrl && !item.content) {
+      item.objectUrl = URL.createObjectURL(item.file)
+    }
+  }
   buildPreviewImages()
 }
 
@@ -366,7 +392,11 @@ async function onUploadDrop(e) {
       continue
     }
     const out = await compressImageFile(file)
-    fileList.value.push({ file: out, status: 'done', message: '' })
+    const item = { file: out, status: 'done', message: '' }
+    if (isImageFile(out)) {
+      item.objectUrl = URL.createObjectURL(out)
+    }
+    fileList.value.push(item)
     added++
   }
   if (docRejected) {
@@ -584,6 +614,48 @@ function openUploaded(s) {
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
 @media (max-width: 767px) { .page { padding: 0; } }
+
+.tips-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 10px 14px;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ad6800;
+}
+.tips-icon {
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.field-tips {
+  padding: 4px 16px 10px;
+  font-size: 12px;
+  color: #1677ff;
+  background: #e6f4ff;
+}
+
+/* 任务选择面板：避免双重滚动容器导致无法回拉 */
+:deep(.task-picker-sheet) {
+  max-height: 90vh;
+}
+:deep(.task-picker-sheet .van-action-sheet__content) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+:deep(.task-picker-sheet .picker-list) {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 .upload-preview {
   margin: 8px 16px 16px;

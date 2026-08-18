@@ -80,12 +80,14 @@ class Token(BaseModel):
 # ===== 课程 =====
 class CourseCreate(BaseModel):
     name: str
+    grade: str = ""
     classin_id: str = ""
 
 
 class CourseOut(BaseModel):
     id: int
     name: str
+    grade: str = ""
     classin_id: str = ""
     created_at: datetime
     task_count: int = 0

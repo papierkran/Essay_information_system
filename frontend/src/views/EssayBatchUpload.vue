@@ -252,10 +252,14 @@
     </van-action-sheet>
 
     <!-- 模板选择器 -->
-    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务">
+    <van-action-sheet v-model:show="showTaskPicker" title="选择收集任务" class="task-picker-sheet">
       <div class="picker-list">
         <div style="padding:8px 16px">
           <input v-model="taskSearch" placeholder="搜索任务名称/主题/年级..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;outline:none" />
+        </div>
+        <div style="padding:0 16px 8px;display:flex;align-items:center;gap:6px;font-size:13px;color:#666">
+          <van-checkbox v-model="showActiveOnly" icon-size="16px" shape="square">只看收集中</van-checkbox>
+          <span style="color:#999;font-size:12px">（关闭可查看全部 {{ sortedTasks.length }} 个任务）</span>
         </div>
         <van-cell title="不使用模板" @click="selectTask(null)" style="color:#999" />
         <div class="task-split">
@@ -543,8 +547,13 @@ function selectTask(tpl) {
 }
 
 const taskSearch = ref('')
+const showActiveOnly = ref(true)
 const sortedTasks = computed(() => {
   return [...tasks.value].sort((a, b) => {
+    // 迁移任务排到末尾
+    const aMig = (a.course_name || '').includes('迁移')
+    const bMig = (b.course_name || '').includes('迁移')
+    if (aMig !== bMig) return aMig ? 1 : -1
     const aActive = taskIsActive(a)
     const bActive = taskIsActive(b)
     if (aActive !== bActive) return aActive ? -1 : 1
@@ -555,13 +564,17 @@ const onlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode
 const offlineTasks = computed(() => sortedTasks.value.filter(t => t.teaching_mode !== '线上'))
 const filteredOnlineTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return onlineTasks.value
-  return onlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+  let list = onlineTasks.value
+  if (showActiveOnly.value && !kw) list = list.filter(taskIsActive)
+  if (!kw) return list
+  return list.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 const filteredOfflineTasks = computed(() => {
   const kw = taskSearch.value.trim().toLowerCase()
-  if (!kw) return offlineTasks.value
-  return offlineTasks.value.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
+  let list = offlineTasks.value
+  if (showActiveOnly.value && !kw) list = list.filter(taskIsActive)
+  if (!kw) return list
+  return list.filter(t => (t.name || '').toLowerCase().includes(kw) || (t.essay_topic || '').toLowerCase().includes(kw) || (t.grade || '').includes(kw))
 })
 
 function taskIsActive(t) {
@@ -712,6 +725,23 @@ function copyResult() {
 .page { padding: 16px; }
 .picker-list { max-height: 70vh; overflow-y: auto; }
 @media (max-width: 767px) { .page { padding: 0; } }
+
+/* 任务选择面板：避免双重滚动容器导致无法回拉 */
+:deep(.task-picker-sheet) {
+  max-height: 90vh;
+}
+:deep(.task-picker-sheet .van-action-sheet__content) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+:deep(.task-picker-sheet .picker-list) {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 .mode-boxes {
   display: grid;
