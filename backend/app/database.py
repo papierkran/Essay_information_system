@@ -148,3 +148,13 @@ def _migrate_existing_columns():
                     conn.execute(text("ALTER TABLE course ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
     except Exception:
         pass
+
+    # essays 表补充 corrected_title 列（幂等）
+    try:
+        if "essays" in inspector.get_table_names():
+            essay_cols = {c["name"] for c in inspector.get_columns("essays")}
+            if "corrected_title" not in essay_cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE essays ADD COLUMN IF NOT EXISTS corrected_title VARCHAR(200) DEFAULT ''"))
+    except Exception:
+        pass
