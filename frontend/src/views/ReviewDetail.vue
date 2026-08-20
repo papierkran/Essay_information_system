@@ -482,17 +482,6 @@
     </div>
 
     <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" :closeable="true" close-icon-position="top-right" />
-
-    <van-dialog v-model:show="showTitleMismatch" title="提示" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true" @update:show="onTitleMismatchUpdateShow">
-      <div class="title-mismatch-body">{{ titleMismatchMessage }}</div>
-      <template #footer>
-        <div class="title-mismatch-actions">
-          <button class="btn" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('不保留')">不保留</button>
-          <button class="btn" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('取消')">取消</button>
-          <button class="btn btn-primary" style="font-size:14px;padding:8px 16px" @click="titleMismatchChoose('保留修改后的标题')">保留修改后的标题</button>
-        </div>
-      </template>
-    </van-dialog>
   </div>
 </template>
 
@@ -931,25 +920,18 @@ async function saveCorrectedEdit() {
   savingCorrectedEdit.value = true
   try {
     let text = (correctedContentRef.value?.innerText || '').replace(/\n+$/, '')
-    let finalTitle = editForm.value.essay_title || essay.value.essay_title || ''
     const baseName = editForm.value.student_name || essay.value.student_name || ''
     if (text.trim()) {
       const corrTitle = firstLineTitle(text)
-      if (corrTitle && finalTitle && corrTitle !== finalTitle) {
-        const action = await askTitleMismatch(corrTitle, finalTitle)
-        if (action === '取消') return
-        if (action === '保留修改后的标题') {
-          finalTitle = corrTitle
-        }
-      }
-      const ensured = ensureContentHeader(text, finalTitle, baseName)
+      const ensured = ensureContentHeader(text, corrTitle, baseName)
       if (ensured.changed.length) {
         text = ensured.text
       }
     }
     const params = { corrected_text: text }
-    if (finalTitle !== (editForm.value.essay_title || essay.value.essay_title || '')) {
-      params.essay_title = finalTitle
+    const corrTitle = firstLineTitle(text)
+    if (corrTitle && corrTitle !== (essay.value.corrected_title || '')) {
+      params.corrected_title = corrTitle
     }
     await api.put(`/essays/${route.params.id}`, null, { params })
     showToast('保存成功')
@@ -1190,19 +1172,9 @@ async function uploadCorrection(fromReupload = false) {
     let finalCorrected = srcText.trim()
       ? srcText
       : (essay.value.corrected_text || '')
-    let finalTitle = baseTitle
     if (finalCorrected.trim()) {
-      // 修改后标题与基本信息不一致 → 弹窗确认
       const corrTitle = firstLineTitle(finalCorrected)
-      if (corrTitle && baseTitle && corrTitle !== baseTitle) {
-        const action = await askTitleMismatch(corrTitle, baseTitle)
-        if (action === '取消') return
-        if (action === '保留修改后的标题') {
-          await api.put(`/essays/${route.params.id}`, null, { params: { essay_title: corrTitle } })
-          finalTitle = corrTitle
-        }
-      }
-      const ensured = ensureContentHeader(finalCorrected, finalTitle, baseName)
+      const ensured = ensureContentHeader(finalCorrected, corrTitle, baseName)
       if (ensured.changed.length) {
         finalCorrected = ensured.text
       }
@@ -1212,6 +1184,10 @@ async function uploadCorrection(fromReupload = false) {
     if (selectedFile.value) fd.append('file', selectedFile.value)
     fd.append('corrected_text', finalCorrected)
     fd.append('reviewer_note', correctionNote.value || '')
+    const corrTitle = firstLineTitle(finalCorrected)
+    if (corrTitle && corrTitle !== (essay.value.corrected_title || '')) {
+      fd.append('corrected_title', corrTitle)
+    }
     await api.post(`/essays/${route.params.id}/upload-correction`, fd)
     showToast('修改提交成功')
     await loadEssay()
@@ -1222,29 +1198,6 @@ async function uploadCorrection(fromReupload = false) {
     showReuploadCorrected.value = false
   } catch (err) { showToast(err.response?.data?.detail || '上传失败') }
   finally { uploading.value = false }
-}
-
-const showTitleMismatch = ref(false)
-const titleMismatchMessage = ref('')
-let titleMismatchResolve = null
-
-function askTitleMismatch(corrTitle, baseTitle) {
-  titleMismatchMessage.value = `修改后的标题「${corrTitle}」与基本信息标题「${baseTitle}」不一致，是否保留修改后的标题？\n\n选择「保留」将更新基本信息中的作文标题为「${corrTitle}」；选择「不保留」则按基本信息标题补全；选择「取消」则放弃本次操作。`
-  showTitleMismatch.value = true
-  return new Promise(resolve => { titleMismatchResolve = resolve })
-}
-
-function titleMismatchChoose(action) {
-  showTitleMismatch.value = false
-  titleMismatchResolve && titleMismatchResolve(action)
-  titleMismatchResolve = null
-}
-
-function onTitleMismatchUpdateShow(val) {
-  if (!val && titleMismatchResolve) {
-    titleMismatchResolve('取消')
-    titleMismatchResolve = null
-  }
 }
 
 async function confirmEssay() {
@@ -1261,24 +1214,16 @@ async function confirmEssay() {
       }
     }
 
-    // 修改后内容：检测标题不一致 → 弹窗；补全标题/姓名行
-    let finalTitle = baseTitle
+    // 修改后内容：自动提取修改后标题
     let finalCorrected = essay.value.corrected_text || ''
     if (finalCorrected.trim()) {
       const corrTitle = firstLineTitle(finalCorrected)
-      if (corrTitle && baseTitle && corrTitle !== baseTitle) {
-        const action = await askTitleMismatch(corrTitle, baseTitle)
-        if (action === '取消') return
-        if (action === '保留修改后的标题') {
-          finalTitle = corrTitle
-        }
-      }
-      const ensured = ensureContentHeader(finalCorrected, finalTitle, baseName)
+      const ensured = ensureContentHeader(finalCorrected, corrTitle, baseName)
       if (ensured.changed.length && ensured.text !== finalCorrected) {
         await api.put(`/essays/${route.params.id}`, null, { params: { corrected_text: ensured.text } })
       }
-      if (finalTitle !== baseTitle) {
-        await api.put(`/essays/${route.params.id}`, null, { params: { essay_title: finalTitle } })
+      if (corrTitle && corrTitle !== (essay.value.corrected_title || '')) {
+        await api.put(`/essays/${route.params.id}`, null, { params: { corrected_title: corrTitle } })
       }
     }
 
@@ -1770,20 +1715,6 @@ async function doReupload() {
   background: #fff;
   overflow-y: auto;
   padding: 20px;
-}
-
-.title-mismatch-body {
-  padding: 20px 24px 8px;
-  font-size: 14px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  color: #323233;
-}
-.title-mismatch-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px 20px;
 }
 
 @media (max-width: 767px) {

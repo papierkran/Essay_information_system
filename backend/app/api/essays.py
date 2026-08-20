@@ -849,6 +849,8 @@ async def upload_correction_docx(
                 essay.corrected_at = parsed_ts
         if not essay.essay_title:
             essay.essay_title = _derive_title(essay.content_text) or _derive_title(essay.corrected_text)
+        if not essay.corrected_title and essay.corrected_text:
+            essay.corrected_title = _derive_title(essay.corrected_text)
         _log_operation(db, essay.id, current_user.id, "修改", student_name)
         db.commit()
         db.refresh(essay)
@@ -3067,6 +3069,8 @@ def update_essay(
         essay.content_text = content_text
     if corrected_text is not None and can_edit_corrected:
         essay.corrected_text = corrected_text
+        if not essay.corrected_title:
+            essay.corrected_title = _derive_title(corrected_text)
     if collector_note is not None and can_edit:
         essay.collector_note = collector_note
     if reviewer_note is not None and can_edit_review_note:
