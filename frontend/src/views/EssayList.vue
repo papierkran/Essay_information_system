@@ -161,6 +161,7 @@
                 <td v-else-if="col.key === 'created_at'">{{ formatDateTime(e.created_at) }}</td>
                 <td v-else-if="col.key === 'corrected_at'">{{ formatDateTime(e.corrected_at) || '-' }}</td>
                 <td v-else-if="col.key === 'collector_note' || col.key === 'reviewer_note'" class="td-note" :title="e[col.field] || ''">{{ e[col.field] || '-' }}</td>
+              <td v-else-if="col.key === 'corrected_title'">{{ e.corrected_title || '-' }}</td>
               <td v-else>{{ e[col.field] || '-' }}</td>
               </template>
               <td class="sticky-col" style="white-space:nowrap" @click.stop>
@@ -198,6 +199,7 @@
             <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
           </div>
           <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}</div>
+          <div class="mobile-card-title" style="color:#1677ff" @click="goDetail(e)">{{ e.corrected_title || '' }}</div>
           <div class="mobile-card-meta" @click="goDetail(e)">
             <span class="badge-mini tag-grade">{{ e.grade || '-' }}</span>
             <span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span>
@@ -589,6 +591,7 @@ const allColumns = ref([
   { key: 'student_name', label: '学生姓名', field: 'student_name', sortable: true, sort: 'student_name', visible: true, fixed: true },
   { key: 'grade', label: '年级', field: 'grade', sortable: false, visible: true },
   { key: 'essay_title', label: '作文标题', field: 'essay_title', sortable: false, visible: true },
+  { key: 'corrected_title', label: '修改后标题', field: 'corrected_title', sortable: false, visible: false },
   { key: 'essay_number', label: '第几次', field: 'essay_number', sortable: true, sort: 'essay_number', visible: true },
   { key: 'teaching_mode', label: '提交方式', field: 'teaching_mode', sortable: false, visible: true },
   { key: 'status', label: '是否修改', field: 'status', sortable: true, sort: 'status', visible: true },
@@ -675,7 +678,7 @@ function saveColumns() {
   showColumnSettings.value = false
 }
 function resetColumns() {
-  const defaults = { student_name: true, grade: true, essay_title: true, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: true, course_name: false, collector_note: false, reviewer_note: false, is_supplement: true, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: false }
+  const defaults = { student_name: true, grade: true, essay_title: true, corrected_title: false, essay_number: true, teaching_mode: true, status: true, collector_name: true, reviewer_name: false, task_name: true, course_name: false, collector_note: false, reviewer_note: false, is_supplement: true, word_count: false, corrected_word_count: false, created_at: true, corrected_at: true, file_saved: false }
   allColumns.value.forEach(c => { c.visible = defaults[c.key] !== undefined ? defaults[c.key] : false })
 }
 function moveColumn() {
@@ -1110,7 +1113,7 @@ const simpleName = ref(false)
 
 function buildXlsxRows(items) {
   return items.map(e => [
-    e.student_name, e.grade, e.essay_title, e.essay_number ? `第${e.essay_number}次` : '',
+    e.student_name, e.grade, e.essay_title, e.corrected_title || '', e.essay_number ? `第${e.essay_number}次` : '',
     e.teaching_mode, statusLabel(e.status), e.collector_name,
     e.collector_note || '', e.reviewer_note || '',
     e.created_at ? formatDateTime(e.created_at) : '', e.corrected_at ? formatDateTime(e.corrected_at) : '',
@@ -1121,7 +1124,7 @@ async function exportXlsx() {
   if (!list.value.length) { showToast('当前页没有数据可导出'); return }
   showLoadingToast({ message: '正在生成 Excel...', forbidClick: true, duration: 0 })
   try {
-    const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
+    const headers = ['学生','年级','作文','修改后标题','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
     const rows = buildXlsxRows(list.value)
     const ts = new Date().toISOString().slice(0, 10)
     await exportXlsxFile(`作文列表_${ts}.xlsx`, '作文列表', headers, rows)
@@ -1134,7 +1137,7 @@ async function exportXlsx() {
 }
 
 async function downloadXlsxFromItems(items) {
-  const headers = ['学生','年级','作文','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
+  const headers = ['学生','年级','作文','修改后标题','第几次','提交方式','状态','收集者','收集者备注','批改者备注','收集时间','修改时间']
   const rows = buildXlsxRows(items)
   const ts = new Date().toISOString().slice(0, 10)
   await exportXlsxFile(`作文已选_${ts}.xlsx`, '作文列表', headers, rows)

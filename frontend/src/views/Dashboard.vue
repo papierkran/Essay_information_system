@@ -81,7 +81,7 @@
           <tr v-for="e in recentList" :key="e.id">
             <td>{{ e.student_name }}</td>
             <td>{{ e.grade || '-' }}</td>
-            <td>{{ e.essay_title || '无标题' }}</td>
+            <td>{{ e.corrected_title || e.essay_title || '无标题' }}</td>
             <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
             <td>{{ formatDateTime(e.created_at) }}</td>
           </tr>
@@ -91,7 +91,7 @@
         <van-card
           v-for="e in recentList" :key="e.id"
           :title="e.student_name"
-          :desc="`第${e.essay_number}次 · ${e.essay_title || '无标题'}`"
+          :desc="`第${e.essay_number}次 · ${e.corrected_title || e.essay_title || '无标题'}`"
           :tag="statusLabel(e.status)"
         />
       </template>

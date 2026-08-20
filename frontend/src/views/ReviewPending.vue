@@ -77,6 +77,7 @@
         <th class="sortable" @click="toggleSort('corrected_word_count')">修改后字数 {{ sortIcon('corrected_word_count') }}</th>
         <th>收集者</th>
         <th>类型</th>
+        <th>补交</th>
         <th class="sortable" @click="toggleSort('created_at')">上传时间 {{ sortIcon('created_at') }}</th>
         <th>操作</th>
       </tr></thead>
@@ -86,6 +87,7 @@
           <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
           <td>{{ e.student_name }}</td>
           <td>{{ e.essay_title || '无标题' }}</td>
+          <td>{{ e.corrected_title || '-' }}</td>
           <td>{{ e.task_name || '-' }}</td>
           <td><span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span></td>
           <td><span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span></td>
@@ -93,6 +95,7 @@
           <td>{{ e.corrected_word_count || 0 }}</td>
           <td>{{ e.collector_name }}</td>
           <td>{{ e.file_type === 'image' ? '图片' : e.file_type === 'docx' ? '文档' : '文本' }}</td>
+          <td>{{ e.is_supplement ? '🔄' : '-' }}</td>
           <td>{{ formatDateTime(e.created_at) }}</td>
           <td style="white-space:nowrap">
             <router-link :to="`/review/detail/${e.id}?from=pending`" class="btn" style="font-size:12px;padding:4px 8px;text-decoration:none;color:#333">详情编辑</router-link>
@@ -180,10 +183,12 @@
           <span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span>
         </div>
         <div class="mobile-card-title" @click="goDetail(e)">{{ e.essay_title || '无标题' }}</div>
+        <div class="mobile-card-title" style="color:#1677ff" @click="goDetail(e)">{{ e.corrected_title || '' }}</div>
         <div class="mobile-card-meta" @click="goDetail(e)">
           <span class="badge-mini tag-grade">{{ e.grade || '未知' }}</span>
           <span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span>
           <span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span>
+          <span v-if="e.is_supplement" style="color:#fa8c16;font-size:12px">补交</span>
           <span>{{ e.task_name || '无任务' }}</span>
         </div>
         <div class="mobile-card-foot">

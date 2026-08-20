@@ -94,7 +94,8 @@ class Essay(Base):
     course_id = Column(Integer, ForeignKey("course.id"), nullable=True)  # 直接关联课程
     grade = Column(String(20), default="")
     essay_number = Column(Integer, default=1)
-    essay_title = Column(String(200), default="")
+    essay_title = Column(String(200), default="")  # 修改前标题
+    corrected_title = Column(String(200), default="")  # 修改后标题
     student_name = Column(String(50), nullable=False)
     is_supplement = Column(Boolean, default=False)
     teaching_mode = Column(String(10), default="线下")  # 线下/线上

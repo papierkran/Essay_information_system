@@ -79,7 +79,7 @@
             <template v-if="op.batch_id">
               <span class="batch-tag">批量</span>
             </template>
-            {{ op.essay_title || '无标题' }}<span v-if="op.essay_number"> #{{ op.essay_number }}</span>
+            {{ op.corrected_title || op.essay_title || '无标题' }}<span v-if="op.essay_number"> #{{ op.essay_number }}</span>
           </td>
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
           <td>{{ op.user_name }}</td>
@@ -109,7 +109,7 @@
     <van-list v-if="!isDesktop" v-model:loading="loading" :finished="finished" finished-text="没有更多了" @load="loadMore">
       <van-cell v-for="op in list" :key="op.id"
         :title="`${op.action} · ${op.student_name || '?'}`"
-        :label="op.essay_title || '无标题'"
+        :label="op.corrected_title || op.essay_title || '无标题'"
         :value="formatDateTime(op.created_at)"
         @click="goDetail(op)">
         <template #extra>

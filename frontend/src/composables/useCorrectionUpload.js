@@ -132,6 +132,7 @@ export function useCorrectionUpload(contextRef, { onResult, onFolderSelected } =
     fd.append('teaching_mode', ctx.form.teaching_mode)
     fd.append('student_name', item.studentName)
     fd.append('essay_title', item.title || '')
+    fd.append('corrected_title', item.correctedTitle || '')
     fd.append('content_text', item.before || '')
     fd.append('corrected_text', item.after || '')
     fd.append('is_supplement', ctx.form.is_supplement ? 'true' : 'false')

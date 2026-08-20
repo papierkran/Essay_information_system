@@ -279,7 +279,7 @@ def existing_students(
 
 def _build_download_filename(essay: Essay) -> str:
     """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交（第几次为0或空时省略）"""
-    title = essay.essay_title or "无标题"
+    title = essay.corrected_title or essay.essay_title or "无标题"
     student = essay.student_name or "未知"
     grade = essay.grade or ""
     mode = essay.teaching_mode or "线下"
@@ -351,7 +351,7 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
                 _set_para_format(p, is_title=False)
 
     if add_heading:
-        head_text = f"{essay.student_name or '未知'}《{essay.essay_title or '无标题'}》"
+        head_text = f"{essay.student_name or '未知'}《{essay.corrected_title or essay.essay_title or '无标题'}》"
         hp = doc.add_paragraph()
         hr = hp.add_run(head_text)
         _set_run_font(hr)
@@ -499,6 +499,7 @@ async def upload_essay(
     grade: str = Form(""),
     essay_number: int = Form(1),
     essay_title: str = Form(""),
+    corrected_title: str = Form(""),
     student_name: str = Form(...),
     is_supplement: bool = Form(False),
     teaching_mode: str = Form("线下"),
@@ -550,6 +551,7 @@ async def upload_essay(
         essay.grade = grade
         essay.essay_number = essay_number
         essay.essay_title = essay_title
+        essay.corrected_title = corrected_title
         essay.student_name = student_name
         essay.is_supplement = is_supplement
         essay.teaching_mode = teaching_mode
@@ -581,6 +583,7 @@ async def upload_essay(
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=essay_title,
+                corrected_title=corrected_title,
                 student_name=student_name,
                 is_supplement=is_supplement,
                 teaching_mode=teaching_mode,
@@ -714,6 +717,7 @@ async def upload_correction_docx(
     teaching_mode: str = Form("线下"),
     student_name: str = Form(...),
     essay_title: str = Form(""),
+    corrected_title: str = Form(""),
     content_text: str = Form(""),
     corrected_text: str = Form(""),
     collect_time: str = Form(None),
@@ -790,6 +794,8 @@ async def upload_correction_docx(
         if existing:
             # 更新已有记录
             existing.essay_title = essay_title or existing.essay_title
+            if corrected_title:
+                existing.corrected_title = corrected_title
             existing.content_text = content_text or existing.content_text
             existing.corrected_text = corrected_text if corrected_text else existing.corrected_text
             if mark_corrected:
@@ -818,6 +824,7 @@ async def upload_correction_docx(
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=essay_title,
+                corrected_title=corrected_title,
                 student_name=student_name,
                 is_supplement=is_supplement,
                 teaching_mode=teaching_mode,
@@ -951,7 +958,7 @@ def list_essays(
 
     # 排序
     from sqlalchemy import case
-    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark, "is_supplement": Essay.is_supplement}
+    allowed_sort = {"created_at": Essay.created_at, "corrected_at": Essay.corrected_at, "student_name": Essay.student_name, "grade": Essay.grade, "essay_number": Essay.essay_number, "status": Essay.status, "remark": Essay.remark, "is_supplement": Essay.is_supplement, "corrected_title": Essay.corrected_title}
     
     # 处理特殊排序字段
     if sort_by == "collector_name":
@@ -1064,6 +1071,8 @@ def pending_essays(
         "teaching_mode": Essay.teaching_mode,
         "word_count": _char_count_sql(Essay.content_text),
         "corrected_word_count": _char_count_sql(Essay.corrected_text),
+        "is_supplement": Essay.is_supplement,
+        "corrected_title": Essay.corrected_title,
     }
     order_col = allowed_sort.get(sort_by, Essay.created_at)
     if sort_order == "desc":
@@ -1959,6 +1968,7 @@ async def ai_correct_essay(
             "grade": essay.grade,
             "essay_number": essay.essay_number,
             "essay_title": essay.essay_title,
+            "corrected_title": essay.corrected_title,
             "teaching_mode": essay.teaching_mode,
             "task_name": essay.task.name if essay.task else None,
         }
@@ -1968,13 +1978,14 @@ async def ai_correct_essay(
         if not essay.essay_title or not essay.essay_title.strip():
             title = result.get("作文标题", "")
             if title and title != "未知":
-                essay.essay_title = title.strip()
+                essay.corrected_title = title.strip()
         _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正")
         db.commit()
         db.refresh(essay)
         return {
             "content_text": corrected_text,
             "essay_title": essay.essay_title,
+            "corrected_title": essay.corrected_title,
             "metadata": {
                 "title": result.get("作文标题", "未知"),
                 "author": result.get("作者", "未知"),
@@ -2870,6 +2881,7 @@ async def batch_upload_essays(
                 grade=grade,
                 essay_number=essay_number,
                 essay_title=item.get("essay_title", ""),
+                corrected_title=item.get("corrected_title", ""),
                 student_name=student_name,
                 is_supplement=item.get("is_supplement", False),
                 teaching_mode=teaching_mode,
@@ -2971,6 +2983,7 @@ def list_operations(
             essay_ids=log.essay_ids,
             student_name=essay.student_name if essay else "",
             essay_title=essay.essay_title if essay else "",
+            corrected_title=essay.corrected_title if essay else "",
             essay_number=essay.essay_number if essay else 0,
             created_at=log.created_at,
         ))
@@ -2996,6 +3009,7 @@ def update_essay(
     grade: str = "",
     essay_number: int = None,
     essay_title: str = "",
+    corrected_title: str = "",
     student_name: str = "",
     teaching_mode: str = "",
     remark: str = "",
@@ -3026,6 +3040,7 @@ def update_essay(
     old_student = essay.student_name
     old_mode = essay.teaching_mode
     old_title = essay.essay_title or ""
+    old_corrected_title = essay.corrected_title or ""
     old_supplement = essay.is_supplement or False
 
     if grade and can_edit:
@@ -3034,6 +3049,8 @@ def update_essay(
         essay.essay_number = essay_number
     if essay_title and can_edit:
         essay.essay_title = essay_title
+    if corrected_title and can_edit:
+        essay.corrected_title = corrected_title
     if student_name and can_edit:
         essay.student_name = student_name
     if teaching_mode and can_edit:
@@ -3106,6 +3123,8 @@ def update_essay(
         changes["teaching_mode"] = {"old": old_mode, "new": essay.teaching_mode}
     if essay_title and essay_title != essay.essay_title:
         changes["essay_title"] = {"old": essay.essay_title, "new": essay_title}
+    if corrected_title and corrected_title != essay.corrected_title:
+        changes["corrected_title"] = {"old": essay.corrected_title, "new": corrected_title}
     if remark is not None and remark != essay.remark:
         changes["remark"] = {"old": essay.remark, "new": remark}
     if is_supplement is not None and is_supplement != essay.is_supplement:
@@ -3150,6 +3169,7 @@ def _essay_to_out(essay: Essay, db: Session) -> EssayOut:
         grade=essay.grade or "",
         essay_number=essay.essay_number or 0,
         essay_title=essay.essay_title or "",
+        corrected_title=essay.corrected_title or "",
         student_name=essay.student_name,
         is_supplement=essay.is_supplement or False,
         teaching_mode=essay.teaching_mode or "线下",
@@ -3244,6 +3264,7 @@ def _essay_to_out_bulk(essays, db: Session) -> list:
             grade=e.grade or "",
             essay_number=e.essay_number or 0,
             essay_title=e.essay_title or "",
+            corrected_title=e.corrected_title or "",
             student_name=e.student_name,
             is_supplement=e.is_supplement or False,
             teaching_mode=e.teaching_mode or "线下",

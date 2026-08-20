@@ -6,7 +6,7 @@
       <div v-if="isDesktop" class="breadcrumb">
         <router-link :to="fromPending ? '/review/pending' : '/essay/list'" class="breadcrumb-link">{{ fromPending ? '未改列表' : '作文列表' }}</router-link>
         <span class="breadcrumb-sep">/</span>
-        <span class="breadcrumb-current">作文详情 - {{ essay.student_name }}《{{ essay.essay_title || '无标题' }}》</span>
+        <span class="breadcrumb-current">作文详情 - {{ essay.student_name }}《{{ essay.corrected_title || essay.essay_title || '无标题' }}》</span>
       </div>
       <div v-if="isDesktop" class="page-title">作文详情</div>
 
@@ -43,6 +43,7 @@
               </div>
               <div class="info-item"><span class="info-label">第几次</span><input v-model.number="editForm.essay_number" type="number" min="1" class="edit-input" :disabled="!canEdit" /></div>
               <div class="info-item"><span class="info-label">标题</span><input v-model="editForm.essay_title" class="edit-input" :disabled="!canEdit" /></div>
+              <div class="info-item"><span class="info-label">修改后标题</span><input v-model="editForm.corrected_title" class="edit-input" :disabled="!canEdit" /></div>
             </div>
           </div>
 
@@ -323,6 +324,7 @@
             <van-field v-model="editForm.grade" label="年级" placeholder="选择" @click="canEdit && (showMobileGrade = true)" is-link readonly :disabled="!canEdit" />
             <van-field v-model.number="editForm.essay_number" label="第几次" type="digit" :disabled="!canEdit" />
             <van-field v-model="editForm.essay_title" label="作文标题" :disabled="!canEdit" />
+            <van-field v-model="editForm.corrected_title" label="修改后标题" :disabled="!canEdit" />
             <van-field :model-value="selectedTaskName" label="任务" placeholder="选择" @click="canEdit && (showMobileTask = true)" is-link readonly />
             <van-field :model-value="essay.course_name || '-'" label="课程" readonly />
             <van-field v-model="editForm.collector_note" label="收集者备注" type="textarea" rows="2" :disabled="!canEdit" />
@@ -645,6 +647,7 @@ const isDirty = computed(() => {
     || f.grade !== (e.grade || '')
     || f.essay_number !== e.essay_number
     || f.essay_title !== (e.essay_title || '')
+    || f.corrected_title !== (e.corrected_title || '')
     || f.collector_note !== (e.collector_note || '')
     || f.teaching_mode !== (e.teaching_mode || '线下')
     || f.is_supplement !== (e.is_supplement || false)
@@ -1036,6 +1039,7 @@ async function loadEssay() {
       student_name: essay.value.student_name,
       grade: essay.value.grade,
       essay_title: essay.value.essay_title,
+      corrected_title: essay.value.corrected_title || '',
       essay_number: essay.value.essay_number,
       teaching_mode: essay.value.teaching_mode || '线下',
       collector_note: essay.value.collector_note || '',
@@ -1312,13 +1316,14 @@ async function saveEdit() {
   }
   savingEdit.value = true
   try {
-    const res = await api.put(`/essays/${route.params.id}`, null, { params: editForm.value })
+    const res = await api.put(`/essays/${route.params.id}`, null, { params: { ...editForm.value, corrected_title: editForm.value.corrected_title || essay.value.corrected_title || '' } })
     essay.value = { ...essay.value, ...res.data }
     // 同步 editForm 全部字段
     Object.assign(editForm.value, {
       student_name: res.data.student_name,
       grade: res.data.grade,
       essay_title: res.data.essay_title,
+      corrected_title: res.data.corrected_title || '',
       essay_number: res.data.essay_number,
       teaching_mode: res.data.teaching_mode || '线下',
       collector_note: res.data.collector_note || '',

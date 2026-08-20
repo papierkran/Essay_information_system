@@ -106,6 +106,7 @@ class EssayCreate(BaseModel):
     grade: str = ""
     essay_number: int = 1
     essay_title: str = ""
+    corrected_title: str = ""
     student_name: str
     is_supplement: bool = False
     teaching_mode: str = "线下"
@@ -123,6 +124,7 @@ class EssayOut(BaseModel):
     grade: str
     essay_number: int
     essay_title: str
+    corrected_title: str = ""
     student_name: str
     is_supplement: bool
     teaching_mode: str = "线下"
@@ -177,6 +179,7 @@ class OperationLogOut(BaseModel):
     essay_ids: Optional[str] = None
     student_name: str = ""
     essay_title: str = ""
+    corrected_title: str = ""
     essay_number: int = 0
     created_at: datetime
 

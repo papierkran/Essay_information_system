@@ -73,7 +73,7 @@
       <div v-if="recentOps.length" class="ops-list">
         <div v-for="op in recentOps" :key="op.id" class="op-item">
           <span class="tag" :class="opActionClass(op.action)">{{ op.action }}</span>
-          <span class="op-text">{{ op.student_name ? op.student_name + ' · ' : '' }}{{ op.essay_title || op.detail || '作文操作' }}</span>
+          <span class="op-text">{{ op.student_name ? op.student_name + ' · ' : '' }}{{ (op.corrected_title || op.essay_title) || op.detail || '作文操作' }}</span>
           <span class="op-time">{{ formatDateTime(op.created_at) }}</span>
         </div>
       </div>

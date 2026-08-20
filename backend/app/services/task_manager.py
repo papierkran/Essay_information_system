@@ -183,6 +183,7 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
             "grade": e.grade,
             "essay_number": e.essay_number,
             "essay_title": e.essay_title,
+            "corrected_title": e.corrected_title,
             "teaching_mode": e.teaching_mode,
             "task_name": e.task.name if e.task else None,
         }
@@ -192,7 +193,7 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
         if not e.essay_title or not e.essay_title.strip():
             title = result.get("作文标题", "")
             if title and title != "未知":
-                e.essay_title = title.strip()
+                e.corrected_title = title.strip()
         _log_operation(sdb, e.id, current_user_id, "编辑", "批量 AI 错别字修正")
 
     _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI错别字修正")
@@ -250,6 +251,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             "grade": e.grade,
             "essay_number": e.essay_number,
             "essay_title": e.essay_title,
+            "corrected_title": e.corrected_title,
             "teaching_mode": e.teaching_mode,
             "task_name": e.task.name if e.task else None,
         }
@@ -259,7 +261,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         if not e.essay_title or not e.essay_title.strip():
             title = result.get("作文标题", "")
             if title and title != "未知":
-                e.essay_title = title.strip()
+                e.corrected_title = title.strip()
         _log_operation(sdb, e.id, current_user_id, "编辑", "流水线 AI 错别字修正")
 
     def rewrite_worker(sdb, e):
