@@ -6,7 +6,10 @@ from urllib.parse import quote_plus
 import os
 import json
 import shutil
-from datetime import datetime
+import logging
+import threading
+import time
+from datetime import datetime, timedelta
 
 from ..database import get_db, SessionLocal
 from ..models.models import User, Course, Essay, EssayTask, SystemConfig
@@ -614,6 +617,12 @@ def trigger_backup(
     folder = os.path.abspath(folder)
     os.makedirs(folder, exist_ok=True)
 
+    full_name, light_name = _run_backup(folder)
+    return {"message": "备份成功", "files": [full_name, light_name]}
+
+
+def _run_backup(folder: str) -> tuple[str, str]:
+    """执行备份，返回 (完整版文件名, 精简版文件名)"""
     import subprocess
     from ..database import _load_db_settings
     DB_CONFIG = _load_db_settings()
@@ -623,7 +632,6 @@ def trigger_backup(
     host = DB_CONFIG["host"]
 
     def _run_pg_dump(extra_args: list) -> str:
-        """执行 pg_dump，返回 stdout 内容"""
         pg_dump_cmd = ["pg_dump", "-U", DB_CONFIG["user"], "-d", DB_CONFIG["database"],
                        "--no-owner", "--no-acl", "--no-sync",
                        "--rows-per-insert=1", "--no-security-labels", "--no-subscriptions",
@@ -652,17 +660,14 @@ def trigger_backup(
     full_name = f"essay_system_backup_{ts}.sql"
     light_name = f"essay_system_backup_{ts}_light.sql"
 
-    # 完整版（含图片）
     full_content = _run_pg_dump([])
     with open(os.path.join(folder, full_name), "w") as f:
         f.write(full_content)
 
-    # 精简版（不含图片）
     light_content = _run_pg_dump(["--exclude-table=essay_images"])
     with open(os.path.join(folder, light_name), "w") as f:
         f.write(light_content)
 
-    # 清理旧备份，每类最多保留 7 份
     def _cleanup(prefix: str):
         backups = []
         for f in os.listdir(folder):
@@ -675,7 +680,7 @@ def trigger_backup(
 
     _cleanup("essay_system_backup_")
 
-    return {"message": "备份成功", "files": [full_name, light_name]}
+    return full_name, light_name
 
 
 @router.get("/backup/list")
@@ -935,3 +940,85 @@ def deactivate_all_tasks(
     db.query(EssayTask).filter(EssayTask.is_active == True).update({"is_active": False})
     db.commit()
     return {"message": "已取消所有活跃任务"}
+
+
+# ===== 自动备份调度器 =====
+
+def _backup_scheduler_loop():
+    """后台线程：每分钟检查备份配置，按频率自动执行备份"""
+    from ..database import SessionLocal
+    from ..models.models import SystemConfig
+    from ..utils.crypto_utils import load_config_row_value
+
+    _last_check_date = None
+    _last_check_week = None
+
+    while True:
+        try:
+            sdb = SessionLocal()
+            try:
+                row = sdb.query(SystemConfig).filter(SystemConfig.config_key == "backup").first()
+                cfg = load_config_row_value(row.config_value) if row else {}
+            finally:
+                sdb.close()
+
+            frequency = cfg.get("frequency", "never")
+            if frequency in ("never", "manual"):
+                _last_check_date = None
+                _last_check_week = None
+                time.sleep(60)
+                continue
+
+            folder = cfg.get("folder", "")
+            if not folder or not os.path.isdir(folder):
+                time.sleep(60)
+                continue
+            folder = os.path.abspath(folder)
+
+            now = datetime.now()
+            today_str = now.strftime("%Y%m%d")
+            week_start = now - timedelta(days=now.weekday())
+            week_str = week_start.strftime("%Y%m%d")
+
+            # 检查是否需要执行备份
+            need_backup = False
+            if frequency == "daily":
+                if _last_check_date != today_str:
+                    # 检查今天是否已有备份文件
+                    has_today = any(
+                        f.startswith("essay_system_backup_") and f.endswith(".sql")
+                        for f in os.listdir(folder)
+                        if today_str in f
+                    )
+                    if not has_today:
+                        need_backup = True
+                    _last_check_date = today_str
+            elif frequency == "weekly":
+                if _last_check_week != week_str:
+                    has_this_week = any(
+                        f.startswith("essay_system_backup_") and f.endswith(".sql")
+                        for f in os.listdir(folder)
+                        if week_str in f
+                    )
+                    if not has_this_week:
+                        need_backup = True
+                    _last_check_week = week_str
+
+            if need_backup:
+                try:
+                    _run_backup(folder)
+                    logging.info("自动备份成功: %s", frequency)
+                except Exception as e:
+                    logging.error("自动备份失败: %s", e)
+
+        except Exception as e:
+            logging.error("备份调度器异常: %s", e)
+
+        time.sleep(60)
+
+
+def start_backup_scheduler():
+    """启动自动备份调度器（守护线程）"""
+    thread = threading.Thread(target=_backup_scheduler_loop, daemon=True)
+    thread.start()
+    logging.info("自动备份调度器已启动")

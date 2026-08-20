@@ -54,6 +54,7 @@ if os.environ.get("ESSAY_ENV", "development") == "production":
 @app.on_event("startup")
 def on_startup():
     init_db()
+    admin.start_backup_scheduler()
     # 启动时同步 file_saved 状态（分批处理，仅标记，不删除记录）
     db = SessionLocal()
     try:
