@@ -181,6 +181,7 @@ class OperationLog(Base):
         Index("idx_operation_logs_created_at", "created_at"),
         Index("idx_operation_logs_user_id", "user_id"),
         Index("idx_operation_logs_batch_id", "batch_id"),
+        Index("idx_operation_logs_user_created", "user_id", "created_at"),
     )
 
     essay = relationship("Essay", back_populates="operations", foreign_keys=[essay_id])

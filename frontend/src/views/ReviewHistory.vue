@@ -11,6 +11,12 @@
           <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
         </select>
       </div>
+      <div class="filter-row">
+        <select v-model="filters.detail" class="filter-input" @change="applyFilter">
+          <option value="">全部子类型</option>
+          <option v-for="d in detailOptions" :key="d" :value="d">{{ d }}</option>
+        </select>
+      </div>
       <div class="filter-row" v-if="isAdmin">
         <select v-model="filters.userId" class="filter-input" @change="applyFilter">
           <option value="">全部操作者</option>
@@ -38,6 +44,12 @@
           <select v-model="filters.action" class="m-filter-input" @change="applyFilter">
             <option value="">全部操作</option>
             <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </div>
+        <div class="m-filter-row">
+          <select v-model="filters.detail" class="m-filter-input" @change="applyFilter">
+            <option value="">全部子类型</option>
+            <option v-for="d in detailOptions" :key="d" :value="d">{{ d }}</option>
           </select>
         </div>
         <div class="m-filter-row" v-if="isAdmin">
@@ -124,6 +136,7 @@
       :show-cancel-button="true" @confirm="doUndo" :close-on-click-overlay="false">
       <div style="padding:16px;font-size:14px;line-height:1.8">
         <p>确定撤回「<strong>{{ undoDialog.action }}</strong>」操作吗？</p>
+        <p style="color:#e6a23c;margin-top:8px;font-weight:bold">{{ undoDialog.consequence }}</p>
         <p style="color:#999;margin-top:8px">{{ undoDialog.detail }}</p>
       </div>
     </van-dialog>
@@ -153,21 +166,22 @@ const undoingId = ref(null)
 const showMobileFilter = ref(false)
 const userList = ref([])
 
-const undoDialog = ref({ show: false, id: null, action: '', detail: '' })
+const undoDialog = ref({ show: false, id: null, action: '', detail: '', consequence: '' })
 
-const actionOptions = ['上传', '认领', '修改', '编辑', '删除', '恢复', '批改', 'OCR']
+const actionOptions = ['上传', '修改', '编辑', '删除', '恢复', '批改', 'OCR']
+const detailOptions = ['AI 错别字修正', 'AI 改写', '确认修改', '标记为重改']
 
-const filters = ref({ keyword: '', action: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' })
+const filters = ref({ keyword: '', action: '', detail: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' })
 
 const mobileFilterActive = computed(() => {
   const f = filters.value
-  return !!(f.keyword || f.action || f.userId || f.onlyMine || f.studentName || f.dateFrom || f.dateTo)
+  return !!(f.keyword || f.action || f.detail || f.userId || f.onlyMine || f.studentName || f.dateFrom || f.dateTo)
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
 function actionClass(action) {
-  const m = { '上传': 'tag-pending', '认领': 'tag-correcting', '修改': 'tag-corrected', '编辑': 'tag-correcting', '删除': 'tag-pending', '恢复': 'tag-corrected', '批改': 'tag-corrected', 'OCR': 'tag-correcting' }
+  const m = { '上传': 'tag-pending', '修改': 'tag-corrected', '编辑': 'tag-correcting', '删除': 'tag-pending', '恢复': 'tag-corrected', '批改': 'tag-corrected', 'OCR': 'tag-correcting' }
   return m[action] || ''
 }
 
@@ -175,6 +189,7 @@ function buildParams() {
   const p = { page: page.value, page_size: pageSize.value }
   if (filters.value.keyword) p.keyword = filters.value.keyword
   if (filters.value.action) p.action = filters.value.action
+  if (filters.value.detail) p.detail = filters.value.detail
   if (filters.value.userId) p.user_id = Number(filters.value.userId)
   else if (filters.value.onlyMine) p.user_id = currentUser.value.id
   if (filters.value.studentName) p.student_name = filters.value.studentName
@@ -192,7 +207,7 @@ function applyFilter() {
 }
 
 function clearFilter() {
-  filters.value = { keyword: '', action: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' }
+  filters.value = { keyword: '', action: '', detail: '', userId: '', onlyMine: false, studentName: '', dateFrom: '', dateTo: '' }
   applyFilter()
 }
 
@@ -227,12 +242,26 @@ function goDetail(op) {
   }
 }
 
+function undoConsequence(action) {
+  const m = {
+    '上传': '撤回上传将删除该作文（软删除，可在回收站恢复）',
+    '修改': '撤回修改将恢复批改前的原文内容',
+    '编辑': '撤回编辑将恢复修改前的字段值',
+    '删除': '撤回删除将恢复该作文',
+    '恢复': '撤回恢复将重新删除该作文',
+    '批改': '撤回批改将恢复批改前的原文内容',
+    'OCR': '撤回OCR将清除识别出的文字内容',
+  }
+  return m[action] || '撤回此操作将恢复操作前的状态'
+}
+
 function confirmUndo(op) {
   undoDialog.value = {
     show: true,
     id: op.id,
     action: op.action,
     detail: op.detail || (op.batch_id ? `批量操作，${op.essay_ids ? JSON.parse(op.essay_ids).length : '?'} 篇` : ''),
+    consequence: undoConsequence(op.action),
   }
 }
 

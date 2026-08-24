@@ -116,8 +116,10 @@ def _migrate_existing_columns():
         with engine.begin() as conn:
             if "batch_id" not in existing_cols and "idx_operation_logs_batch_id" not in existing_idx:
                 conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operation_logs_batch_id ON operation_logs(batch_id)"))
-    except Exception:
-        pass
+            if "idx_operation_logs_user_created" not in existing_idx:
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_operation_logs_user_created ON operation_logs(user_id, created_at)"))
+    except Exception as e:
+        print(f"[migrate] 创建 operation_logs 索引失败(可忽略): {e}")
 
     # course 表补充 classin_id 列（幂等）
     try:

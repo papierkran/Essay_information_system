@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from dataclasses import dataclass, field
@@ -93,7 +94,7 @@ def _cleanup_loop():
 threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
-def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):
+def run_batch_ocr(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):
     import asyncio
     import os
     from ..utils.ocr_utils import ocr_essay_images_with_fallback
@@ -107,16 +108,23 @@ def run_batch_ocr(task_id: str, essay_ids: list, current_user_id: int, ocr_confi
         meta = {}
         text = asyncio.run(ocr_essay_images_with_fallback(sdb, e.id, essay_dir, xfyun_cfg, meta=meta))
         e.content_text = text
-        op_text = "批量 OCR 识别完成"
-        if meta.get("image_corrected"):
-            op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
-        _log_operation(sdb, e.id, current_user_id, "OCR", op_text)
+        return e.id
 
-    _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "OCR识别")
+    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "OCR识别")
+    if success_ids:
+        from ..database import SessionLocal
+        sdb = SessionLocal()
+        try:
+            _log_operation(sdb, None, current_user_id, "OCR",
+                           f"批量 OCR 识别 {len(success_ids)} 篇", batch_id=batch_id,
+                           essay_ids=json.dumps(success_ids))
+            sdb.commit()
+        finally:
+            sdb.close()
 
 
 def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_label):
-    """用线程池(MAX_WORKERS)并发处理 essay_ids，每篇独立 DB session"""
+    """用线程池(MAX_WORKERS)并发处理 essay_ids，每篇独立 DB session，返回成功处理的 essay_id 列表"""
     from ..database import SessionLocal
 
     db = next(get_db())
@@ -130,8 +138,9 @@ def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_labe
 
     stats_lock = threading.Lock()
     success = 0
+    success_ids = []
     errors = []
-    active = set()  # 正在处理的学生名
+    active = set()
 
     def process(essay_id, name):
         nonlocal success
@@ -144,6 +153,7 @@ def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_labe
             sdb.commit()
             with stats_lock:
                 success += 1
+                success_ids.append(essay_id)
         except Exception as ex:
             sdb.rollback()
             with stats_lock:
@@ -169,9 +179,10 @@ def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_labe
                 pass
 
     update_task(task_id, status="completed" if not errors else "failed", message=f"完成 {success}/{total}")
+    return success_ids
 
 
-def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_ai_correct(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
     import asyncio
     from ..utils.ocr_utils import ai_correct_text
 
@@ -194,12 +205,22 @@ def run_batch_ai_correct(task_id: str, essay_ids: list, current_user_id: int, ll
             title = result.get("作文标题", "")
             if title and title != "未知":
                 e.corrected_title = title.strip()
-        _log_operation(sdb, e.id, current_user_id, "编辑", "批量 AI 错别字修正")
+        return e.id
 
-    _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI错别字修正")
+    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI错别字修正")
+    if success_ids:
+        from ..database import SessionLocal
+        sdb = SessionLocal()
+        try:
+            _log_operation(sdb, None, current_user_id, "编辑",
+                           f"批量 AI 错别字修正 {len(success_ids)} 篇", batch_id=batch_id,
+                           essay_ids=json.dumps(success_ids))
+            sdb.commit()
+        finally:
+            sdb.close()
 
 
-def run_batch_ai_rewrite(task_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_ai_rewrite(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
     import asyncio
     from datetime import datetime
     from ..utils.ocr_utils import ai_rewrite_text
@@ -213,9 +234,19 @@ def run_batch_ai_rewrite(task_id: str, essay_ids: list, current_user_id: int, ll
             e.status = "confirming"
         e.corrected_at = datetime.now()
         e.reviewer_id = current_user_id
-        _log_operation(sdb, e.id, current_user_id, "批改", "批量 AI 改写")
+        return e.id
 
-    _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI一键修改")
+    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI一键修改")
+    if success_ids:
+        from ..database import SessionLocal
+        sdb = SessionLocal()
+        try:
+            _log_operation(sdb, None, current_user_id, "批改",
+                           f"批量 AI 改写 {len(success_ids)} 篇", batch_id=batch_id,
+                           essay_ids=json.dumps(success_ids))
+            sdb.commit()
+        finally:
+            sdb.close()
 
 
 def _get_upload_dir(db):
@@ -224,10 +255,11 @@ def _get_upload_dir(db):
     return _f_get_upload_dir()
 
 
-def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
     import asyncio
     from datetime import datetime
     import os
+    from ..database import SessionLocal
     from ..utils.ocr_utils import ocr_essay_images_with_fallback, ai_correct_text, ai_rewrite_text
 
     def ocr_worker(sdb, e):
@@ -236,12 +268,9 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             meta = {}
             text = asyncio.run(ocr_essay_images_with_fallback(sdb, e.id, essay_dir, ocr_config.get("xfyun", {}), meta=meta))
             e.content_text = text
-            op_text = "流水线 OCR 识别完成"
-            if meta.get("image_corrected"):
-                op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
-            _log_operation(sdb, e.id, current_user_id, "OCR", op_text)
         elif not e.content_text or not e.content_text.strip():
             raise RuntimeError("无文字内容")
+        return e.id
 
     def correct_worker(sdb, e):
         if not e.content_text or not e.content_text.strip():
@@ -262,7 +291,7 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             title = result.get("作文标题", "")
             if title and title != "未知":
                 e.corrected_title = title.strip()
-        _log_operation(sdb, e.id, current_user_id, "编辑", "流水线 AI 错别字修正")
+        return e.id
 
     def rewrite_worker(sdb, e):
         if not e.content_text or not e.content_text.strip():
@@ -273,14 +302,38 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
             e.status = "confirming"
         e.corrected_at = datetime.now()
         e.reviewer_id = current_user_id
-        _log_operation(sdb, e.id, current_user_id, "批改", "流水线 AI 修改")
+        return e.id
+
+    def _log_batch(sdb, action, detail, ids):
+        _log_operation(sdb, None, current_user_id, action, detail, batch_id=batch_id, essay_ids=json.dumps(ids))
+        sdb.commit()
 
     try:
         update_task(ocr_task_id, status="running")
-        _run_batch_parallel(ocr_task_id, essay_ids, ocr_worker, get_db, Essay, "OCR识别")
+        ocr_ids = _run_batch_parallel(ocr_task_id, essay_ids, ocr_worker, get_db, Essay, "OCR识别")
+        if ocr_ids:
+            sdb = SessionLocal()
+            try:
+                _log_batch(sdb, "OCR", f"流水线 OCR 识别 {len(ocr_ids)} 篇", ocr_ids)
+            finally:
+                sdb.close()
+
         update_task(correct_task_id, status="running")
-        _run_batch_parallel(correct_task_id, essay_ids, correct_worker, get_db, Essay, "AI错别字修正")
+        correct_ids = _run_batch_parallel(correct_task_id, essay_ids, correct_worker, get_db, Essay, "AI错别字修正")
+        if correct_ids:
+            sdb = SessionLocal()
+            try:
+                _log_batch(sdb, "编辑", f"流水线 AI 错别字修正 {len(correct_ids)} 篇", correct_ids)
+            finally:
+                sdb.close()
+
         update_task(rewrite_task_id, status="running")
-        _run_batch_parallel(rewrite_task_id, essay_ids, rewrite_worker, get_db, Essay, "AI一键修改")
+        rewrite_ids = _run_batch_parallel(rewrite_task_id, essay_ids, rewrite_worker, get_db, Essay, "AI一键修改")
+        if rewrite_ids:
+            sdb = SessionLocal()
+            try:
+                _log_batch(sdb, "批改", f"流水线 AI 修改 {len(rewrite_ids)} 篇", rewrite_ids)
+            finally:
+                sdb.close()
     except Exception as ex:
         update_task(rewrite_task_id, status="failed", message=str(ex))

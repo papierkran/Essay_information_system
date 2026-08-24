@@ -165,7 +165,7 @@ const savingProfile = ref(false)
 const savingPwd = ref(false)
 
 function opActionClass(action) {
-  const m = { '上传': 'tag-pending', '认领': 'tag-correcting', '修改': 'tag-corrected', '编辑': 'tag-correcting', '删除': 'tag-pending', '恢复': 'tag-corrected', '批改': 'tag-corrected', 'OCR': 'tag-correcting' }
+  const m = { '上传': 'tag-pending', '修改': 'tag-corrected', '编辑': 'tag-correcting', '删除': 'tag-pending', '恢复': 'tag-corrected', '批改': 'tag-corrected', 'OCR': 'tag-correcting' }
   return m[action] || ''
 }
 

@@ -5,12 +5,15 @@ import tempfile
 import zipfile
 import uuid
 import threading
+import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
 from sqlalchemy.exc import IntegrityError
+
+logger = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models.models import User, Essay, Course, EssayTask, OperationLog, SystemConfig, EssayImage
@@ -482,8 +485,8 @@ def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail
             essay_ids=essay_ids or None,
         )
         db.add(log)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("记录操作日志失败: action=%s essay_id=%s user_id=%s error=%s", action, essay_id, user_id, e)
 
 
 def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
@@ -1615,8 +1618,10 @@ def batch_delete_essays(
     if not ids or not isinstance(ids, list):
         raise HTTPException(status_code=400, detail="参数错误")
 
+    batch_uuid = uuid.uuid4().hex[:12]
     done = 0
     errors = []
+    deleted_ids = []
     for essay_id in ids:
         essay = db.query(Essay).filter(Essay.id == essay_id).first()
         if not essay:
@@ -1637,11 +1642,14 @@ def batch_delete_essays(
                 continue
             db.query(EssayImage).filter(EssayImage.essay_id == essay_id).delete()
             db.delete(essay)
-            _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
         else:
             essay.deleted_at = datetime.now()
-            _log_operation(db, essay_id, current_user.id, "删除", essay.student_name)
+        deleted_ids.append(essay_id)
         done += 1
+    if deleted_ids:
+        _log_operation(db, None, current_user.id, "删除",
+                       f"批量删除 {len(deleted_ids)} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(deleted_ids))
     db.commit()
     return {"success": done, "errors": errors, "total": len(ids)}
 
@@ -2128,28 +2136,34 @@ def batch_update_essays(
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
     updated = 0
     skipped = 0
+    update_fields = []
     if "collected_by" in data and data["collected_by"]:
         for e in essays:
             e.collected_by = data["collected_by"]
             updated += 1
+        update_fields.append("收集者")
     if "grade" in data and data["grade"]:
         for e in essays:
             e.grade = data["grade"]
             updated += 1
+        update_fields.append("年级")
     if "essay_number" in data and data["essay_number"] is not None:
         num = int(data["essay_number"])
         for e in essays:
             e.essay_number = num
             updated += 1
+        update_fields.append("第几次")
     if "teaching_mode" in data and data["teaching_mode"]:
         for e in essays:
             e.teaching_mode = data["teaching_mode"]
             updated += 1
+        update_fields.append("提交方式")
     if "is_supplement" in data:
         supp = bool(data["is_supplement"])
         for e in essays:
             e.is_supplement = supp
             updated += 1
+        update_fields.append("补交标记")
     if "collector_note" in data and data["collector_note"]:
         note = data["collector_note"].strip()
         for e in essays:
@@ -2159,6 +2173,7 @@ def batch_update_essays(
             else:
                 e.collector_note = note
             updated += 1
+        update_fields.append("备注")
     if "task_id" in data:
         from sqlalchemy.exc import IntegrityError
         new_task_id = data["task_id"] if data["task_id"] else None
@@ -2168,7 +2183,6 @@ def batch_update_essays(
         for e in essays:
             savepoint = db.begin_nested()
             e.task_id = new_task_id
-            # 更换任务时同步年级/第几次/课程为新任务的值（任务无值则清空）
             e.grade = (new_task.grade or "") if new_task else ""
             e.essay_number = (new_task.essay_number or 0) if new_task else 0
             e.course_id = (new_task.course_id or None) if new_task else None
@@ -2179,6 +2193,12 @@ def batch_update_essays(
             except IntegrityError:
                 savepoint.rollback()
                 skipped += 1
+        update_fields.append("任务")
+    if updated:
+        batch_uuid = uuid.uuid4().hex[:12]
+        _log_operation(db, None, current_user.id, "编辑",
+                       f"批量修改 {','.join(update_fields)} 共 {updated} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(essay_ids))
     db.commit()
     msg = f"已更新 {updated} 条记录，{skipped} 条略过（重复冲突）" if skipped else f"已更新 {updated} 条记录"
     return {"message": msg, "count": updated, "skipped": skipped}
@@ -2454,8 +2474,10 @@ def batch_ocr_essays(
     if not xfyun_cfg.get("url") or not xfyun_cfg.get("appid") or not xfyun_cfg.get("api_key"):
         raise HTTPException(status_code=400, detail="讯飞 OCR 配置不完整")
 
+    batch_uuid = uuid.uuid4().hex[:12]
     success = 0
     errors = []
+    ocr_ids = []
     for e in essays:
         if e.file_type != "image" or not e.content_file:
             errors.append({"id": e.id, "student": e.student_name, "reason": "非图片类型或无文件"})
@@ -2465,13 +2487,14 @@ def batch_ocr_essays(
             meta = {}
             text = asyncio.run(ocr_essay_images_with_fallback(db, e.id, essay_dir, xfyun_cfg, meta=meta))
             e.content_text = text
-            op_text = "批量 OCR 识别完成"
-            if meta.get("image_corrected"):
-                op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
-            _log_operation(db, e.id, current_user.id, "OCR", op_text)
+            ocr_ids.append(e.id)
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
+    if ocr_ids:
+        _log_operation(db, None, current_user.id, "OCR",
+                       f"批量 OCR 识别 {len(ocr_ids)} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(ocr_ids))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2502,8 +2525,10 @@ def batch_ai_correct_essays(
     if not llm_cfg.get("enabled", False):
         raise HTTPException(status_code=400, detail="AI 错别字修正未启用，请在系统设置的「修改前-AI错别字修正」中勾选启用并保存")
 
+    batch_uuid = uuid.uuid4().hex[:12]
     success = 0
     errors = []
+    corrected_ids = []
     for e in essays:
         if not e.content_text or not e.content_text.strip():
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
@@ -2512,10 +2537,14 @@ def batch_ai_correct_essays(
             result = asyncio.run(ai_correct_text(e.content_text, llm_cfg))
             corrected_text = result.get("修改后内容", e.content_text)
             e.content_text = corrected_text
-            _log_operation(db, e.id, current_user.id, "编辑", "批量 AI 错别字修正")
+            corrected_ids.append(e.id)
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
+    if corrected_ids:
+        _log_operation(db, None, current_user.id, "编辑",
+                       f"批量 AI 错别字修正 {len(corrected_ids)} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(corrected_ids))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2547,8 +2576,10 @@ def batch_ai_rewrite_essays(
     if not llm_cfg.get("enabled", False):
         raise HTTPException(status_code=400, detail="AI 改作文未启用，请在系统设置的「修改后-AI改作文」中勾选启用并保存")
 
+    batch_uuid = uuid.uuid4().hex[:12]
     success = 0
     errors = []
+    rewrite_ids = []
     for e in essays:
         if not e.content_text or not e.content_text.strip():
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
@@ -2560,10 +2591,14 @@ def batch_ai_rewrite_essays(
                 e.status = "confirming"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
-            _log_operation(db, e.id, current_user.id, "批改", "批量 AI 改写")
+            rewrite_ids.append(e.id)
             success += 1
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
+    if rewrite_ids:
+        _log_operation(db, None, current_user.id, "批改",
+                       f"批量 AI 改写 {len(rewrite_ids)} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(rewrite_ids))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2583,14 +2618,20 @@ def batch_confirm_essays(
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
     if not essays:
         raise HTTPException(status_code=404, detail="未找到选中的作文")
+    batch_uuid = uuid.uuid4().hex[:12]
     count = 0
+    confirmed_ids = []
     for e in essays:
         if e.status == "confirming":
             e.status = "corrected"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
-            _log_operation(db, e.id, current_user.id, "批改", "确认修改")
+            confirmed_ids.append(e.id)
             count += 1
+    if confirmed_ids:
+        _log_operation(db, None, current_user.id, "批改",
+                       f"批量确认修改 {len(confirmed_ids)} 篇", batch_id=batch_uuid,
+                       essay_ids=json.dumps(confirmed_ids))
     db.commit()
     return {"success": count, "total": len(essays)}
 
@@ -2633,12 +2674,13 @@ def start_batch_ocr(
         raise HTTPException(status_code=400, detail="OCR 功能未启用")
 
     task_id = str(uuid.uuid4())[:8]
+    batch_id = uuid.uuid4().hex[:12]
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
     from ..services.task_manager import create_task, run_batch_ocr, update_task
 
     task = create_task(task_id, "ocr", len(essays))
     thread = threading.Thread(target=run_batch_ocr, args=(
-        task_id, essay_ids, current_user.id, ocr_cfg,
+        task_id, batch_id, essay_ids, current_user.id, ocr_cfg,
         get_db, Essay, _log_operation,
     ), daemon=True)
     thread.start()
@@ -2662,12 +2704,13 @@ def start_batch_ai_correct(
         raise HTTPException(status_code=400, detail="AI 错别字修正未启用")
 
     task_id = str(uuid.uuid4())[:8]
+    batch_id = uuid.uuid4().hex[:12]
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
     from ..services.task_manager import create_task, run_batch_ai_correct
 
     create_task(task_id, "ai_correct", len(essays))
     thread = threading.Thread(target=run_batch_ai_correct, args=(
-        task_id, essay_ids, current_user.id, llm_cfg,
+        task_id, batch_id, essay_ids, current_user.id, llm_cfg,
         get_db, Essay, _log_operation,
     ), daemon=True)
     thread.start()
@@ -2691,12 +2734,13 @@ def start_batch_ai_rewrite(
         raise HTTPException(status_code=400, detail="AI 改作文未启用")
 
     task_id = str(uuid.uuid4())[:8]
+    batch_id = uuid.uuid4().hex[:12]
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
     from ..services.task_manager import create_task, run_batch_ai_rewrite
 
     create_task(task_id, "ai_rewrite", len(essays))
     thread = threading.Thread(target=run_batch_ai_rewrite, args=(
-        task_id, essay_ids, current_user.id, llm_cfg,
+        task_id, batch_id, essay_ids, current_user.id, llm_cfg,
         get_db, Essay, _log_operation,
     ), daemon=True)
     thread.start()
@@ -2727,6 +2771,7 @@ def start_batch_pipeline(
         raise HTTPException(status_code=400, detail="AI 改作文未启用")
 
     base = str(uuid.uuid4())[:8]
+    batch_id = uuid.uuid4().hex[:12]
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None, Essay.status == "pending").all()
     total = len(essays)
     if not total:
@@ -2742,7 +2787,7 @@ def start_batch_pipeline(
     create_task(correct_task_id, "ai_correct", total)
     create_task(rewrite_task_id, "ai_rewrite", total)
     thread = threading.Thread(target=run_batch_pipeline, args=(
-        ocr_task_id, correct_task_id, rewrite_task_id, pending_ids,
+        ocr_task_id, correct_task_id, rewrite_task_id, batch_id, pending_ids,
         current_user.id, ocr_cfg, typo_cfg, editor_cfg,
         get_db, Essay, _log_operation,
     ), daemon=True)
@@ -2816,6 +2861,13 @@ def undo_operation(
             undone_count += 1
 
         elif action_str in ("上传", "UPLOAD"):
+            other_logs = db.query(OperationLog).filter(
+                OperationLog.essay_id == eid,
+                OperationLog.action == action_str,
+                OperationLog.id != log_id,
+            ).count()
+            if other_logs > 0:
+                continue
             essay.deleted_at = datetime.now()
             _log_operation(db, eid, current_user.id, "删除",
                            f"撤回上传操作", batch_id=log.batch_id)
@@ -2832,7 +2884,7 @@ def undo_operation(
             essay.corrected_at = None
             essay.reviewer_id = None
             essay.status = "pending"
-            _log_operation(db, eid, current_user.id, "编辑",
+            _log_operation(db, eid, current_user.id, "恢复",
                            f"撤回修改操作", batch_id=log.batch_id)
             undone_count += 1
 
@@ -2842,16 +2894,19 @@ def undo_operation(
                     data = json.loads(log.old_value)
                     for field, val in data.items():
                         if hasattr(essay, field) and isinstance(val, dict) and "old" in val:
-                            setattr(essay, field, val["old"])
-                except Exception:
-                    pass
-            _log_operation(db, eid, current_user.id, "编辑",
+                            val_old = val["old"]
+                            if isinstance(getattr(essay, field, None), bool) and isinstance(val_old, str):
+                                val_old = val_old.lower() in ("true", "1", "yes")
+                            setattr(essay, field, val_old)
+                except Exception as e:
+                    logger.warning("撤回编辑操作解析 old_value 失败: id=%s error=%s", log_id, e)
+            _log_operation(db, eid, current_user.id, "恢复",
                            f"撤回编辑操作", batch_id=log.batch_id)
             undone_count += 1
 
         elif action_str in ("OCR",):
             essay.content_text = ""
-            _log_operation(db, eid, current_user.id, "编辑",
+            _log_operation(db, eid, current_user.id, "恢复",
                            f"撤回OCR操作", batch_id=log.batch_id)
             undone_count += 1
 
@@ -2984,6 +3039,7 @@ def list_operations(
     page_size: int = 50,
     keyword: str = None,
     action: str = None,
+    detail: str = None,
     user_id: int = None,
     student_name: str = None,
     date_from: str = None,
@@ -2991,8 +3047,11 @@ def list_operations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取操作历史列表，支持按关键词/操作类型/操作者/学生/日期筛选。"""
-    q = db.query(OperationLog)
+    """获取操作历史列表，支持按关键词/操作类型/操作详情/操作者/学生/日期筛选。"""
+    q = db.query(OperationLog).options(
+        joinedload(OperationLog.user),
+        joinedload(OperationLog.essay),
+    )
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter(
@@ -3000,6 +3059,8 @@ def list_operations(
         )
     if action:
         q = q.filter(OperationLog.action == action)
+    if detail:
+        q = q.filter(OperationLog.detail.like(f"%{detail}%"))
     if user_id:
         q = q.filter(OperationLog.user_id == user_id)
     if student_name:
@@ -3016,8 +3077,8 @@ def list_operations(
 
     result = []
     for log in logs:
-        user = db.query(User).filter(User.id == log.user_id).first()
-        essay = db.query(Essay).filter(Essay.id == log.essay_id).first() if log.essay_id else None
+        user = log.user
+        essay = log.essay
         result.append(OperationLogOut(
             id=log.id,
             essay_id=log.essay_id,
