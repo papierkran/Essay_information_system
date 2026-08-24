@@ -83,9 +83,7 @@
       <template v-if="!isGuest && isDesktop">
         <span style="color:#d9d9d9">|</span>
         <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条<span v-if="selectedIds.length > list.length" style="color:#999">（含其他页/筛选）</span></span>
-        <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchDelete">批量删除</button>
-        <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchCollector = true">修改收集者</button>
-        <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchOps = true">批量操作</button>
         <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="clearSelection">取消选择</button>
       </template>
       <span v-if="isDesktop" style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
@@ -109,10 +107,7 @@
     <div v-if="!isGuest && !isDesktop" class="mobile-batch-bar">
       <label class="m-sel-all"><input type="checkbox" :checked="allSelected" @change="toggleAll" style="width:auto" /> 全选本页</label>
       <span class="m-sel-count">已选 {{ selectedIds.length }} 条</span>
-      <button class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 导出docx</button>
-      <button class="btn" style="font-size:12px;padding:3px 8px;color:#ff4d4f" :disabled="!selectedIds.length" @click="batchDelete">删除</button>
-      <button v-if="isAdmin" class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="showBatchCollector = true">改收集者</button>
-      <button v-if="isAdmin" class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="showBatchTask = true">改任务</button>
+      <button class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="showBatchOps = true">批量操作</button>
       <button class="btn" style="font-size:12px;padding:3px 8px" :disabled="!selectedIds.length" @click="clearSelection">取消</button>
     </div>
 
@@ -279,6 +274,25 @@
         </div>
       </template>
     </van-dialog>
+
+    <!-- 批量操作 -->
+    <van-action-sheet v-model:show="showBatchOps" title="批量操作">
+      <div class="batch-ops-list">
+        <div class="batch-ops-item" @click="doBatchDelete">
+          <span class="batch-ops-icon" style="color:#ff4d4f">🗑️</span>
+          <span class="batch-ops-name">批量删除</span>
+        </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchCollector = true; showBatchOps = false">
+          <span class="batch-ops-icon">👤</span>
+          <span class="batch-ops-name">修改收集者</span>
+        </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchTask = true; showBatchOps = false">
+          <span class="batch-ops-icon">📋</span>
+          <span class="batch-ops-name">修改任务</span>
+        </div>
+        <div class="batch-ops-cancel" @click="showBatchOps = false">取消</div>
+      </div>
+    </van-action-sheet>
 
     <!-- 导出docx设置 -->
     <van-dialog v-model:show="showDocxSettings" title="导出docx设置" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
@@ -644,6 +658,7 @@ const allColumns = ref([
   { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: false },
 ])
 const showColumnSettings = ref(false)
+const showBatchOps = ref(false)
 const showDocxSettings = ref(false)
 const DOCX_SETTINGS_KEY = 'essay_list_docx_settings'
 const defaultDocxSettings = {
@@ -996,6 +1011,11 @@ async function exportSingleDocx(e) {
     closeToast()
     showFailToast(err.response?.data?.detail || '导出失败')
   }
+}
+
+async function doBatchDelete() {
+  showBatchOps.value = false
+  setTimeout(() => batchDelete(), 200)
 }
 
 async function batchDelete() {
@@ -1562,4 +1582,10 @@ onUnmounted(() => {
 .pagination-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
 .page-info { font-size: 12px; color: #666; }
 .settings-section-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; }
+.batch-ops-list { padding: 8px 0 12px; }
+.batch-ops-item { display: flex; align-items: center; gap: 10px; padding: 14px 20px; font-size: 14px; color: #333; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
+.batch-ops-item:active { background: #f5f8ff; }
+.batch-ops-icon { font-size: 18px; }
+.batch-ops-name { flex: 1; }
+.batch-ops-cancel { text-align: center; padding: 14px 0 4px; font-size: 14px; color: #999; cursor: pointer; }
 </style>
