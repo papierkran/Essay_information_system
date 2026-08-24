@@ -117,7 +117,9 @@ def run_batch_ocr(task_id: str, batch_id: str, essay_ids: list, current_user_id:
         try:
             _log_operation(sdb, None, current_user_id, "OCR",
                            f"批量 OCR 识别 {len(success_ids)} 篇", batch_id=batch_id,
-                           essay_ids=json.dumps(success_ids))
+                           essay_ids=json.dumps(success_ids),
+                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                           new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
             sdb.commit()
         finally:
             sdb.close()
@@ -214,7 +216,9 @@ def run_batch_ai_correct(task_id: str, batch_id: str, essay_ids: list, current_u
         try:
             _log_operation(sdb, None, current_user_id, "编辑",
                            f"批量 AI 错别字修正 {len(success_ids)} 篇", batch_id=batch_id,
-                           essay_ids=json.dumps(success_ids))
+                           essay_ids=json.dumps(success_ids),
+                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                           new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
             sdb.commit()
         finally:
             sdb.close()
@@ -243,7 +247,9 @@ def run_batch_ai_rewrite(task_id: str, batch_id: str, essay_ids: list, current_u
         try:
             _log_operation(sdb, None, current_user_id, "批改",
                            f"批量 AI 改写 {len(success_ids)} 篇", batch_id=batch_id,
-                           essay_ids=json.dumps(success_ids))
+                           essay_ids=json.dumps(success_ids),
+                           old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
+                           new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
             sdb.commit()
         finally:
             sdb.close()
@@ -304,8 +310,9 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         e.reviewer_id = current_user_id
         return e.id
 
-    def _log_batch(sdb, action, detail, ids):
-        _log_operation(sdb, None, current_user_id, action, detail, batch_id=batch_id, essay_ids=json.dumps(ids))
+    def _log_batch(sdb, action, detail, ids, old_value="", new_value=""):
+        _log_operation(sdb, None, current_user_id, action, detail, batch_id=batch_id,
+                       essay_ids=json.dumps(ids), old_value=old_value, new_value=new_value)
         sdb.commit()
 
     try:
@@ -314,7 +321,9 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         if ocr_ids:
             sdb = SessionLocal()
             try:
-                _log_batch(sdb, "OCR", f"流水线 OCR 识别 {len(ocr_ids)} 篇", ocr_ids)
+                _log_batch(sdb, "OCR", f"流水线 OCR 识别 {len(ocr_ids)} 篇", ocr_ids,
+                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                           new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
             finally:
                 sdb.close()
 
@@ -323,7 +332,9 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         if correct_ids:
             sdb = SessionLocal()
             try:
-                _log_batch(sdb, "编辑", f"流水线 AI 错别字修正 {len(correct_ids)} 篇", correct_ids)
+                _log_batch(sdb, "编辑", f"流水线 AI 错别字修正 {len(correct_ids)} 篇", correct_ids,
+                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                           new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
             finally:
                 sdb.close()
 
@@ -332,7 +343,9 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
         if rewrite_ids:
             sdb = SessionLocal()
             try:
-                _log_batch(sdb, "批改", f"流水线 AI 修改 {len(rewrite_ids)} 篇", rewrite_ids)
+                _log_batch(sdb, "批改", f"流水线 AI 修改 {len(rewrite_ids)} 篇", rewrite_ids,
+                           old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
+                           new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
             finally:
                 sdb.close()
     except Exception as ex:

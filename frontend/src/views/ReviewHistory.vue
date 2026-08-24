@@ -96,7 +96,8 @@
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
           <td>{{ op.user_name }}</td>
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
-          <td v-if="isAdmin">
+          <td v-if="isAdmin" style="white-space:nowrap">
+            <button class="btn btn-change" v-if="hasChange(op)" @click="showChange(op)" style="margin-right:4px">📋 变更</button>
             <button class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
               {{ undoingId === op.id ? '撤回中...' : '↩ 撤回' }}
             </button>
@@ -126,6 +127,7 @@
         @click="goDetail(op)">
         <template #extra>
           <span class="tag" :class="actionClass(op.action)" style="font-size:11px">{{ op.action }}</span>
+          <button v-if="isAdmin && hasChange(op)" class="btn btn-change-mobile" @click.stop="showChange(op)">📋</button>
           <button v-if="isAdmin" class="btn btn-undo btn-undo-mobile" @click.stop="confirmUndo(op)">↩</button>
         </template>
       </van-cell>
@@ -138,6 +140,27 @@
         <p>确定撤回「<strong>{{ undoDialog.action }}</strong>」操作吗？</p>
         <p style="color:#e6a23c;margin-top:8px;font-weight:bold">{{ undoDialog.consequence }}</p>
         <p style="color:#999;margin-top:8px">{{ undoDialog.detail }}</p>
+      </div>
+    </van-dialog>
+
+    <!-- 变更内容弹窗 -->
+    <van-dialog v-model:show="changeDialog.show" title="变更内容"
+      :show-confirm-button="true" confirm-button-text="关闭" :close-on-click-overlay="true">
+      <div style="padding:12px 16px;font-size:13px;line-height:1.6;max-height:60vh;overflow-y:auto">
+        <div v-if="!changeDialog.fields.length" style="color:#999;text-align:center;padding:16px">无详细变更数据</div>
+        <div v-for="(field, idx) in changeDialog.fields" :key="idx" style="margin-bottom:12px;border-bottom:1px solid #f0f0f0;padding-bottom:8px">
+          <div style="font-weight:bold;color:#333;margin-bottom:4px">{{ fieldLabel(field.name) }}</div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;background:#fff2f0;padding:6px 8px;border-radius:4px;border:1px solid #ffccc7">
+              <div style="font-size:11px;color:#999;margin-bottom:2px">修改前</div>
+              <div style="color:#333;word-break:break-all;white-space:pre-wrap">{{ field.old }}</div>
+            </div>
+            <div style="flex:1;background:#f6ffed;padding:6px 8px;border-radius:4px;border:1px solid #b7eb8f">
+              <div style="font-size:11px;color:#999;margin-bottom:2px">修改后</div>
+              <div style="color:#333;word-break:break-all;white-space:pre-wrap">{{ field.new }}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </van-dialog>
   </div>
@@ -167,6 +190,7 @@ const showMobileFilter = ref(false)
 const userList = ref([])
 
 const undoDialog = ref({ show: false, id: null, action: '', detail: '', consequence: '' })
+const changeDialog = ref({ show: false, fields: [] })
 
 const actionOptions = ['上传', '修改', '编辑', '删除', '恢复', '批改', 'OCR']
 const detailOptions = ['AI 错别字修正', 'AI 改写', '确认修改', '标记为重改']
@@ -240,6 +264,31 @@ function goDetail(op) {
   if (op.essay_id) {
     router.push(`/review/detail/${op.essay_id}`)
   }
+}
+
+function hasChange(op) {
+  return !!(op.old_value || op.new_value)
+}
+
+function fieldLabel(name) {
+  const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'content_text': '正文内容', 'corrected_text': '批改内容', 'status': '状态' }
+  return m[name] || name
+}
+
+function showChange(op) {
+  const fields = []
+  try {
+    const oldData = op.old_value ? JSON.parse(op.old_value) : {}
+    const newData = op.new_value ? JSON.parse(op.new_value) : {}
+    for (const key of Object.keys({ ...oldData, ...newData })) {
+      const oldVal = oldData[key]?.old ?? oldData[key] ?? ''
+      const newVal = newData[key]?.new ?? newData[key] ?? ''
+      if (oldVal !== newVal) {
+        fields.push({ name: key, old: String(oldVal), new: String(newVal) })
+      }
+    }
+  } catch {}
+  changeDialog.value = { show: true, fields }
 }
 
 function undoConsequence(action) {
@@ -348,6 +397,22 @@ onMounted(async () => {
 .btn-undo-mobile {
   margin-left: 8px;
   padding: 2px 8px;
+}
+
+.btn-change {
+  font-size: 12px;
+  padding: 3px 10px;
+  color: #1677ff;
+  border-color: #91caff;
+}
+.btn-change:hover { border-color: #1677ff; background: #e6f4ff; }
+
+.btn-change-mobile {
+  margin-left: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #1677ff;
+  border-color: #91caff;
 }
 
 /* ===== 手机端筛选 ===== */

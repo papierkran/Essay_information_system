@@ -1944,12 +1944,15 @@ async def ocr_essay(
     essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
     meta = {}
     try:
+        old_content = essay.content_text or ""
         text = await ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg, meta=meta)
         essay.content_text = text
         op_text = "OCR 识别完成"
         if meta.get("image_corrected"):
             op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
-        _log_operation(db, essay.id, current_user.id, "OCR", op_text)
+        _log_operation(db, essay.id, current_user.id, "OCR", op_text,
+                       old_value=json.dumps({"content_text": {"old": old_content}}),
+                       new_value=json.dumps({"content_text": {"new": text}}))
         db.commit()
         db.refresh(essay)
         return {
@@ -1997,6 +2000,7 @@ async def ai_correct_essay(
             "teaching_mode": essay.teaching_mode,
             "task_name": essay.task.name if essay.task else None,
         }
+        old_content = essay.content_text or ""
         result = await ai_correct_text(essay.content_text, llm_cfg, essay_info=essay_info)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
@@ -2004,7 +2008,9 @@ async def ai_correct_essay(
             title = result.get("作文标题", "")
             if title and title != "未知":
                 essay.corrected_title = title.strip()
-        _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正")
+        _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正",
+                       old_value=json.dumps({"content_text": {"old": old_content}}),
+                       new_value=json.dumps({"content_text": {"new": corrected_text}}))
         db.commit()
         db.refresh(essay)
         return {
@@ -2058,6 +2064,8 @@ async def ai_rewrite_essay(
         except: count_max = None
 
     try:
+        old_corrected = essay.corrected_text or ""
+        old_status = essay.status
         rewritten = await ai_rewrite_text(
             essay.content_text, llm_cfg,
             prompt_template=llm_cfg.get("prompt"),
@@ -2068,7 +2076,9 @@ async def ai_rewrite_essay(
             essay.status = "confirming"
         essay.corrected_at = datetime.now()
         essay.reviewer_id = current_user.id
-        _log_operation(db, essay.id, current_user.id, "批改", "AI 改写")
+        _log_operation(db, essay.id, current_user.id, "批改", "AI 改写",
+                       old_value=json.dumps({"corrected_text": {"old": old_corrected}, "status": {"old": old_status}}),
+                       new_value=json.dumps({"corrected_text": {"new": rewritten}, "status": {"new": essay.status}}))
         db.commit()
         db.refresh(essay)
         return {"corrected_text": rewritten, "char_count": count_cjk_chars(rewritten)}
@@ -2090,10 +2100,13 @@ def confirm_essay(
         raise HTTPException(status_code=404, detail="作文不存在")
     if essay.status != "confirming":
         raise HTTPException(status_code=400, detail="当前状态不是待确认，无法确认")
+    old_status = essay.status
     essay.status = "corrected"
     essay.corrected_at = datetime.now()
     essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "批改", "确认修改")
+    _log_operation(db, essay.id, current_user.id, "批改", "确认修改",
+                   old_value=json.dumps({"status": {"old": old_status}}),
+                   new_value=json.dumps({"status": {"new": "corrected"}}))
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -2113,9 +2126,12 @@ def rework_essay(
         raise HTTPException(status_code=404, detail="作文不存在")
     if essay.status != "confirming":
         raise HTTPException(status_code=400, detail="当前状态不是待确认，无法标记为重改")
+    old_status = essay.status
     essay.status = "rework"
     essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "批改", "标记为重改")
+    _log_operation(db, essay.id, current_user.id, "批改", "标记为重改",
+                   old_value=json.dumps({"status": {"old": old_status}}),
+                   new_value=json.dumps({"status": {"new": "rework"}}))
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -2196,9 +2212,24 @@ def batch_update_essays(
         update_fields.append("任务")
     if updated:
         batch_uuid = uuid.uuid4().hex[:12]
+        batch_changes = {}
+        if "collected_by" in data and data["collected_by"]:
+            batch_changes["collected_by"] = {"old": essays[0].collected_by if essays else None, "new": data["collected_by"]}
+        if "grade" in data and data["grade"]:
+            batch_changes["grade"] = {"old": essays[0].grade if essays else "", "new": data["grade"]}
+        if "essay_number" in data and data["essay_number"] is not None:
+            batch_changes["essay_number"] = {"old": essays[0].essay_number if essays else 0, "new": int(data["essay_number"])}
+        if "teaching_mode" in data and data["teaching_mode"]:
+            batch_changes["teaching_mode"] = {"old": essays[0].teaching_mode if essays else "", "new": data["teaching_mode"]}
+        if "is_supplement" in data:
+            batch_changes["is_supplement"] = {"old": essays[0].is_supplement if essays else False, "new": bool(data["is_supplement"])}
+        if "task_id" in data:
+            batch_changes["task_id"] = {"old": essays[0].task_id if essays else None, "new": data["task_id"] if data["task_id"] else None}
         _log_operation(db, None, current_user.id, "编辑",
                        f"批量修改 {','.join(update_fields)} 共 {updated} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(essay_ids))
+                       essay_ids=json.dumps(essay_ids),
+                       old_value=json.dumps({k: {"old": v["old"]} for k, v in batch_changes.items()}, ensure_ascii=False) if batch_changes else "",
+                       new_value=json.dumps({k: {"new": v["new"]} for k, v in batch_changes.items()}, ensure_ascii=False) if batch_changes else "")
     db.commit()
     msg = f"已更新 {updated} 条记录，{skipped} 条略过（重复冲突）" if skipped else f"已更新 {updated} 条记录"
     return {"message": msg, "count": updated, "skipped": skipped}
@@ -2494,7 +2525,9 @@ def batch_ocr_essays(
     if ocr_ids:
         _log_operation(db, None, current_user.id, "OCR",
                        f"批量 OCR 识别 {len(ocr_ids)} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(ocr_ids))
+                       essay_ids=json.dumps(ocr_ids),
+                       old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                       new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2544,7 +2577,9 @@ def batch_ai_correct_essays(
     if corrected_ids:
         _log_operation(db, None, current_user.id, "编辑",
                        f"批量 AI 错别字修正 {len(corrected_ids)} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(corrected_ids))
+                       essay_ids=json.dumps(corrected_ids),
+                       old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
+                       new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2598,7 +2633,9 @@ def batch_ai_rewrite_essays(
     if rewrite_ids:
         _log_operation(db, None, current_user.id, "批改",
                        f"批量 AI 改写 {len(rewrite_ids)} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(rewrite_ids))
+                       essay_ids=json.dumps(rewrite_ids),
+                       old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
+                       new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2631,7 +2668,9 @@ def batch_confirm_essays(
     if confirmed_ids:
         _log_operation(db, None, current_user.id, "批改",
                        f"批量确认修改 {len(confirmed_ids)} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(confirmed_ids))
+                       essay_ids=json.dumps(confirmed_ids),
+                       old_value=json.dumps({"status": {"old": "confirming"}}),
+                       new_value=json.dumps({"status": {"new": "corrected"}}))
     db.commit()
     return {"success": count, "total": len(essays)}
 
@@ -3241,8 +3280,9 @@ def update_essay(
     if is_supplement is not None and is_supplement != essay.is_supplement:
         changes["is_supplement"] = {"old": essay.is_supplement, "new": is_supplement}
 
-    old_value = json.dumps(changes, ensure_ascii=False) if changes else ""
-    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name, old_value=old_value, new_value=old_value)
+    old_value = json.dumps({k: {"old": v["old"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
+    new_value = json.dumps({k: {"new": v["new"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
+    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name, old_value=old_value, new_value=new_value)
     try:
         db.commit()
     except Exception as e:
