@@ -96,8 +96,8 @@
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
           <td>{{ op.user_name }}</td>
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
-          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'old')">{{ formatChange(op, 'old') }}</td>
-          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'new')">{{ formatChange(op, 'new') }}</td>
+          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'old')">{{ formatChangeDisplay(op, 'old') }}</td>
+          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChangeDisplay(op, 'new')">{{ formatChangeDisplay(op, 'new') }}</td>
           <td style="white-space:nowrap">
             <button class="btn btn-detail" @click="showChange(op)" style="margin-right:4px">查看详情</button>
             <button v-if="isAdmin" class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
@@ -287,6 +287,14 @@ function formatChange(op, side) {
   return parseChange(op, side) || '-'
 }
 
+function formatChangeDisplay(op, side) {
+  const raw = parseChange(op, side)
+  if (!raw) return '-'
+  return raw.replace(/(\w+):\s*([^|]+)/g, (_, label, val) => {
+    return `${label}: ${formatValue(val.trim())}`
+  })
+}
+
 function hasChange(op) {
   return !!(op.old_value || op.new_value)
 }
@@ -294,6 +302,11 @@ function hasChange(op) {
 function fieldLabel(name) {
   const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'content_text': '正文内容', 'corrected_text': '批改内容', 'status': '状态' }
   return m[name] || name
+}
+
+function formatValue(val) {
+  const m = { 'pending': '未修改', 'confirming': '待确认', 'corrected': '已修改', 'rework': '待重改', 'true': '是', 'false': '否' }
+  return m[val] ?? val
 }
 
 function showChange(op) {
@@ -305,7 +318,7 @@ function showChange(op) {
       const oldVal = oldData[key]?.old ?? oldData[key] ?? ''
       const newVal = newData[key]?.new ?? newData[key] ?? ''
       if (oldVal !== newVal) {
-        fields.push({ name: key, old: String(oldVal), new: String(newVal) })
+        fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
       }
     }
   } catch {}
