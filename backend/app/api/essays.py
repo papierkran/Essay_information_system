@@ -277,16 +277,25 @@ def existing_students(
     return {"students": names}
 
 
-def _build_download_filename(essay: Essay) -> str:
+def _build_download_filename(essay: Essay, **kwargs) -> str:
     """构建规范的下载文件名：标题——学生姓名年级第N次线上/线下补交（第几次为0或空时省略）"""
-    title = essay.corrected_title or essay.essay_title or "无标题"
-    student = essay.student_name or "未知"
-    grade = essay.grade or ""
-    mode = essay.teaching_mode or "线下"
-    supp = "补交" if essay.is_supplement else ""
-    if essay.essay_number:
-        return f"{title}——{student}{grade}第{essay.essay_number}次{mode}{supp}"
-    return f"{title}——{student}{grade}{mode}{supp}"
+    parts = []
+    if kwargs.get('filenameTitle', True):
+        parts.append(essay.corrected_title or essay.essay_title or "无标题")
+    sep = "——" if parts else ""
+    name_parts = []
+    if kwargs.get('filenameStudent', True):
+        name_parts.append(essay.student_name or "未知")
+    if kwargs.get('filenameGrade', True):
+        name_parts.append(essay.grade or "")
+    if kwargs.get('filenameNumber', True) and essay.essay_number:
+        name_parts.append(f"第{essay.essay_number}次")
+    if kwargs.get('filenameMode', True):
+        name_parts.append(essay.teaching_mode or "线下")
+    if kwargs.get('filenameSupplement', True) and essay.is_supplement:
+        name_parts.append("补交")
+    name_str = "".join(name_parts)
+    return f"{parts[0] if parts else '无标题'}{sep}{name_str}" if name_str else (parts[0] if parts else "无标题")
 
 
 def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
@@ -303,7 +312,7 @@ def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
     return tmp_path
 
 
-def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_heading: bool = False, corrected_only: bool = False, original_only: bool = False) -> None:
+def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_heading: bool = False, corrected_only: bool = False, original_only: bool = False, include_student_name: bool = True) -> None:
     """把一篇作文的修改前后内容写入已有的 docx 文档。add_heading=True 时先加学生+标题行；corrected_only=True 时仅输出修改后内容；original_only=True 时仅输出修改前内容。"""
     from docx import Document
     from docx.shared import Pt, Cm
@@ -351,7 +360,8 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
                 _set_para_format(p, is_title=False)
 
     if add_heading:
-        head_text = f"{essay.student_name or '未知'}《{essay.corrected_title or essay.essay_title or '无标题'}》"
+        student_part = f"{essay.student_name or '未知'}" if include_student_name else ""
+        head_text = f"{student_part}《{essay.corrected_title or essay.essay_title or '无标题'}》"
         hp = doc.add_paragraph()
         hr = hp.add_run(head_text)
         _set_run_font(hr)
@@ -1862,6 +1872,7 @@ def download_correction(
 @router.get("/{essay_id}/export-docx")
 def export_docx(
     essay_id: int,
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1873,7 +1884,7 @@ def export_docx(
         raise HTTPException(status_code=404, detail="作文不存在")
 
     tmp_path = _generate_docx(essay, show_corrected=True)
-    dl_name = _build_download_filename(essay)
+    dl_name = _build_download_filename(essay, filenameTitle=filenameTitle, filenameStudent=filenameStudent, filenameGrade=filenameGrade, filenameNumber=filenameNumber, filenameMode=filenameMode, filenameSupplement=filenameSupplement)
 
     from starlette.background import BackgroundTask
 
@@ -2146,6 +2157,7 @@ def batch_update_essays(
 def batch_export_docx(
     essay_ids: list[int],
     simple_name: bool = False,
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2171,7 +2183,7 @@ def batch_export_docx(
                     dl_name = (f"{safe_component(essay.essay_title or '无标题', '无标题')}"
                                f"——{safe_component(essay.student_name or '未知', '未知')}")
                 else:
-                    dl_name = _build_download_filename(essay)
+                    dl_name = _build_download_filename(essay, filenameTitle=filenameTitle, filenameStudent=filenameStudent, filenameGrade=filenameGrade, filenameNumber=filenameNumber, filenameMode=filenameMode, filenameSupplement=filenameSupplement)
                 # 将docx文件添加到zip中
                 zf.write(tmp_docx, f"改_{dl_name}.docx")
                 # 删除临时docx文件
@@ -2206,6 +2218,7 @@ def batch_export_docx(
 @router.post("/batch-export-docx-merged")
 def batch_export_docx_merged(
     essay_ids: list[int],
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2240,7 +2253,7 @@ def batch_export_docx_merged(
     for idx, essay in enumerate(essays):
         if idx > 0:
             doc.add_page_break()
-        _append_essay_to_doc(doc, essay, show_corrected=True)
+        _append_essay_to_doc(doc, essay, show_corrected=True, include_student_name=includeStudentName)
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = tmp.name
@@ -2267,6 +2280,7 @@ def batch_export_docx_merged(
 @router.post("/batch-export-docx-corrected-merged")
 def batch_export_docx_corrected_merged(
     essay_ids: list[int],
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2300,7 +2314,7 @@ def batch_export_docx_corrected_merged(
     for idx, essay in enumerate(essays):
         if idx > 0:
             doc.add_page_break()
-        _append_essay_to_doc(doc, essay, show_corrected=True, add_heading=True, corrected_only=True)
+        _append_essay_to_doc(doc, essay, show_corrected=True, add_heading=True, corrected_only=True, include_student_name=includeStudentName)
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = tmp.name
@@ -2327,6 +2341,7 @@ def batch_export_docx_corrected_merged(
 @router.post("/batch-export-docx-original-merged")
 def batch_export_docx_original_merged(
     essay_ids: list[int],
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2360,7 +2375,7 @@ def batch_export_docx_original_merged(
     for idx, essay in enumerate(essays):
         if idx > 0:
             doc.add_page_break()
-        _append_essay_to_doc(doc, essay, add_heading=True, original_only=True)
+        _append_essay_to_doc(doc, essay, add_heading=True, original_only=True, include_student_name=includeStudentName)
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = tmp.name

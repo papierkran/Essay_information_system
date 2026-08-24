@@ -90,6 +90,7 @@
         <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="clearSelection">取消选择</button>
       </template>
       <span v-if="isDesktop" style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
+        <button class="btn" style="font-size:12px;padding:4px 10px" @click="showDocxSettings = true">📄 导出docx设置</button>
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="showColumnSettings = true">⚙️ 列设置</button>
         每页
         <select v-model.number="pageSize" @change="applyFilter" style="padding:4px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px">
@@ -275,6 +276,31 @@
         <div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
           <button class="btn" @click="resetColumns">恢复默认</button>
           <button class="btn btn-primary" @click="saveColumns">确定</button>
+        </div>
+      </template>
+    </van-dialog>
+
+    <!-- 导出docx设置 -->
+    <van-dialog v-model:show="showDocxSettings" title="导出docx设置" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
+      <div style="padding:16px">
+        <div class="settings-section">
+          <div class="settings-section-title">文件名包含</div>
+          <van-checkbox v-model="docxSettings.filenameTitle" shape="square" style="margin-bottom:8px">标题</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameStudent" shape="square" style="margin-bottom:8px">学生姓名</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameGrade" shape="square" style="margin-bottom:8px">年级</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameNumber" shape="square" style="margin-bottom:8px">第几次</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameMode" shape="square" style="margin-bottom:8px">提交方式</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameSupplement" shape="square">补交标记</van-checkbox>
+        </div>
+        <div class="settings-section" style="margin-top:16px">
+          <div class="settings-section-title">文档内容</div>
+          <van-checkbox v-model="docxSettings.includeStudentName" shape="square">包含学生姓名</van-checkbox>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
+          <button class="btn" @click="resetDocxSettings">恢复默认</button>
+          <button class="btn btn-primary" @click="saveDocxSettings">确定</button>
         </div>
       </template>
     </van-dialog>
@@ -609,6 +635,34 @@ const allColumns = ref([
   { key: 'file_saved', label: '文件', field: 'file_saved', sortable: false, visible: false },
 ])
 const showColumnSettings = ref(false)
+const showDocxSettings = ref(false)
+const DOCX_SETTINGS_KEY = 'essay_list_docx_settings'
+const defaultDocxSettings = {
+  filenameTitle: true,
+  filenameStudent: true,
+  filenameGrade: true,
+  filenameNumber: true,
+  filenameMode: true,
+  filenameSupplement: true,
+  includeStudentName: true,
+}
+const docxSettings = ref(loadDocxSettings())
+
+function loadDocxSettings() {
+  try {
+    const saved = localStorage.getItem(DOCX_SETTINGS_KEY)
+    return saved ? { ...defaultDocxSettings, ...JSON.parse(saved) } : { ...defaultDocxSettings }
+  } catch { return { ...defaultDocxSettings } }
+}
+
+function saveDocxSettings() {
+  localStorage.setItem(DOCX_SETTINGS_KEY, JSON.stringify(docxSettings.value))
+  showDocxSettings.value = false
+}
+
+function resetDocxSettings() {
+  docxSettings.value = { ...defaultDocxSettings }
+}
 const dragColIndex = ref(-1)
 const dragOverColIndex = ref(-1)
 const dragColKey = ref('')
@@ -901,7 +955,8 @@ function dragEnd() {
 async function exportSingleDocx(e) {
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
-    const res = await api.get(`/essays/${e.id}/export-docx`, { responseType: 'blob' })
+    const params = { ...docxSettings.value }
+    const res = await api.get(`/essays/${e.id}/export-docx`, { params, responseType: 'blob' })
     const disposition = res.headers['content-disposition']
     let filename = '作文导出.docx'
     if (disposition) {
@@ -993,10 +1048,11 @@ async function onExportModeChosen(action) {
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
     let res
-    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: simpleName.value } })
-    else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob' })
-    else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob' })
-    else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob' })
+    const bp = { ...docxSettings.value }
+    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: simpleName.value, ...bp } })
+    else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob', params: bp })
+    else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
+    else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob', params: bp })
     downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
     if (action === 'zip') {
       // 勾选后附带下载一份已选作文 xlsx
@@ -1486,4 +1542,5 @@ onUnmounted(() => {
 .task-select-btn:hover { border-color: #1677ff; }
 .pagination-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; }
 .page-info { font-size: 12px; color: #666; }
+.settings-section-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; }
 </style>
