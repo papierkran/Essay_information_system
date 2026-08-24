@@ -355,7 +355,7 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
             p = doc.add_paragraph()
             run = p.add_run(line_text)
             _set_run_font(run)
-            _set_para_format(p, is_title=(idx == 0))
+            _set_para_format(p, is_title=(idx == 0 or (idx == 1 and not filter_name_line)))
 
     if add_heading:
         student_part = f"{essay.student_name or '未知'}" if include_student_name else ""
