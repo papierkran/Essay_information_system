@@ -83,13 +83,13 @@
       <template v-if="!isGuest && isDesktop">
         <span style="color:#d9d9d9">|</span>
         <span style="font-size:13px;color:#666">已选 {{ selectedIds.length }} 条<span v-if="selectedIds.length > list.length" style="color:#999">（含其他页/筛选）</span></span>
-        <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
         <button class="btn btn-danger" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="batchDelete">批量删除</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchCollector = true">修改收集者</button>
         <button v-if="isAdmin" class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="showBatchTask = true">修改任务</button>
         <button class="btn" style="font-size:12px;padding:4px 12px" :disabled="!selectedIds.length" @click="clearSelection">取消选择</button>
       </template>
       <span v-if="isDesktop" style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:13px;color:#666">
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 10px" :disabled="!selectedIds.length" @click="batchExportDocx">📥 批量导出docx</button>
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="showDocxSettings = true">📄 导出docx设置</button>
         <button class="btn" style="font-size:12px;padding:4px 10px" @click="showColumnSettings = true">⚙️ 列设置</button>
         每页
@@ -284,6 +284,15 @@
     <van-dialog v-model:show="showDocxSettings" title="导出docx设置" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
       <div style="padding:16px">
         <div class="settings-section">
+          <div class="settings-section-title">导出方式</div>
+          <van-radio-group v-model="docxSettings.exportMode" direction="vertical">
+            <van-radio name="zip" shape="square" style="margin-bottom:8px">修改前后 · 单独docx（ZIP 打包）</van-radio>
+            <van-radio name="merged" shape="square" style="margin-bottom:8px">修改前后 · 合并为一个docx</van-radio>
+            <van-radio name="corrected" shape="square" style="margin-bottom:8px">仅修改后 · 合并为一个docx</van-radio>
+            <van-radio name="original" shape="square">仅修改前 · 合并为一个docx</van-radio>
+          </van-radio-group>
+        </div>
+        <div class="settings-section" style="margin-top:16px">
           <div class="settings-section-title">文件名包含</div>
           <van-checkbox v-model="docxSettings.filenameTitle" shape="square" style="margin-bottom:8px">标题</van-checkbox>
           <van-checkbox v-model="docxSettings.filenameStudent" shape="square" style="margin-bottom:8px">学生姓名</van-checkbox>
@@ -402,9 +411,7 @@
       </div>
     </van-action-sheet>
 
-    <!-- 批量导出方式选择 -->
-    <ExportModeSheet :show="showExportSheet" title="选择导出方式" @update:show="showExportSheet = $event" @confirm="onExportModeChosen" />
-  </div>
+    </div>
 </template>
 
 <script setup>
@@ -416,7 +423,6 @@ import { useScreen } from '../composables/useScreen'
 import { formatDateTime } from '../utils/format'
 import { exportXlsxFile } from '../utils/xlsx'
 import { downloadBlobResponse } from '../utils/download'
-import ExportModeSheet from '../components/ExportModeSheet.vue'
 
 const { getAuth } = useAuth()
 const { isDesktop } = useScreen()
@@ -435,7 +441,6 @@ const showBatchCollector = ref(false)
 const batchCollectorId = ref('')
 const showBatchTask = ref(false)
 const batchTaskId = ref('')
-const showExportSheet = ref(false)
 const batchTaskSearch = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
@@ -638,6 +643,7 @@ const showColumnSettings = ref(false)
 const showDocxSettings = ref(false)
 const DOCX_SETTINGS_KEY = 'essay_list_docx_settings'
 const defaultDocxSettings = {
+  exportMode: 'zip',
   filenameTitle: true,
   filenameStudent: true,
   filenameGrade: true,
@@ -996,10 +1002,7 @@ async function batchDelete() {
 
 async function batchExportDocx() {
   if (!selectedIds.value.length) return
-  showExportSheet.value = true
-}
-
-async function onExportModeChosen(action) {
+  const action = docxSettings.value.exportMode
   if ((action === 'merged' || action === 'corrected' || action === 'original') && selectedIds.value.length > 200) {
     showToast('合并导出一次最多 200 篇，请分批选择导出')
     return
@@ -1010,35 +1013,11 @@ async function onExportModeChosen(action) {
     corrected: '仅修改后 · 合并为一个docx',
     original: '仅修改前 · 合并为一个docx',
   }[action]
-  includeXlsx.value = false
-  simpleName.value = false
   const msgChildren = [
     h('div', {}, `导出方式：${modeLabel}`),
     h('div', {}, `将导出已选的 ${selectedIds.value.length} 篇作文：`),
     h('div', { style: { color: '#999', whiteSpace: 'pre-line' } }, previewText()),
   ]
-  if (action === 'zip') {
-    msgChildren.push(
-      h('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', cursor: 'pointer', fontSize: '14px' } }, [
-        h('input', {
-          type: 'checkbox',
-          checked: includeXlsx.value,
-          onChange: (e) => { includeXlsx.value = e.target.checked },
-          style: { width: 'auto' },
-        }),
-        h('span', {}, '同时下载「导出已选xlsx」'),
-      ]),
-      h('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', cursor: 'pointer', fontSize: '14px' } }, [
-        h('input', {
-          type: 'checkbox',
-          checked: simpleName.value,
-          onChange: (e) => { simpleName.value = e.target.checked },
-          style: { width: 'auto' },
-        }),
-        h('span', {}, 'docx文件名只保留标题和姓名'),
-      ]),
-    )
-  }
   const confirmed = await showDialog({
     title: '确认导出',
     message: h('div', { style: { textAlign: 'left', fontSize: '13px', lineHeight: '1.8' } }, msgChildren),
@@ -1049,22 +1028,13 @@ async function onExportModeChosen(action) {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
     let res
     const bp = { ...docxSettings.value }
-    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: simpleName.value, ...bp } })
+    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: false, ...bp } })
     else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob', params: bp })
     else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
     else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob', params: bp })
     downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
-    if (action === 'zip') {
-      // 勾选后附带下载一份已选作文 xlsx
-      if (includeXlsx.value) {
-        try { await downloadXlsxFromItems(selectedPreviewList()) } catch {}
-      }
-      closeToast()
-      showSuccessToast(includeXlsx.value ? '导出成功（docx + 已选xlsx）' : '导出成功')
-    } else {
-      closeToast()
-      showSuccessToast('导出成功')
-    }
+    closeToast()
+    showSuccessToast('导出成功')
   } catch (err) {
     closeToast()
     showFailToast(err.response?.data?.detail || '导出失败')
@@ -1163,9 +1133,6 @@ async function doDelete() {
 }
 
 function goDetail(e) { router.push(`/review/detail/${e.id}`) }
-
-const includeXlsx = ref(false)
-const simpleName = ref(false)
 
 function buildXlsxRows(items) {
   return items.map(e => [
