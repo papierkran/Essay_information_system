@@ -2119,7 +2119,7 @@ def batch_update_essays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量修改选中作文的收集者或任务"""
+    """批量修改选中作文的收集者、任务、年级、第几次、提交方式、补交标记、备注等"""
     if "admin" not in current_user.role:
         raise HTTPException(status_code=403, detail="仅管理员可批量修改")
     essay_ids = data.get("ids", [])
@@ -2131,6 +2131,33 @@ def batch_update_essays(
     if "collected_by" in data and data["collected_by"]:
         for e in essays:
             e.collected_by = data["collected_by"]
+            updated += 1
+    if "grade" in data and data["grade"]:
+        for e in essays:
+            e.grade = data["grade"]
+            updated += 1
+    if "essay_number" in data and data["essay_number"] is not None:
+        num = int(data["essay_number"])
+        for e in essays:
+            e.essay_number = num
+            updated += 1
+    if "teaching_mode" in data and data["teaching_mode"]:
+        for e in essays:
+            e.teaching_mode = data["teaching_mode"]
+            updated += 1
+    if "is_supplement" in data:
+        supp = bool(data["is_supplement"])
+        for e in essays:
+            e.is_supplement = supp
+            updated += 1
+    if "collector_note" in data and data["collector_note"]:
+        note = data["collector_note"].strip()
+        for e in essays:
+            existing = (e.collector_note or "").strip()
+            if existing:
+                e.collector_note = existing + "\n" + note
+            else:
+                e.collector_note = note
             updated += 1
     if "task_id" in data:
         from sqlalchemy.exc import IntegrityError

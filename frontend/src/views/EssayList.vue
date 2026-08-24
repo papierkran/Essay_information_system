@@ -282,6 +282,22 @@
           <span class="batch-ops-icon" style="color:#ff4d4f">🗑️</span>
           <span class="batch-ops-name">批量删除</span>
         </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchGrade = true; showBatchOps = false">
+          <span class="batch-ops-icon">📚</span>
+          <span class="batch-ops-name">修改年级/第几次</span>
+        </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchMode = true; showBatchOps = false">
+          <span class="batch-ops-icon">📡</span>
+          <span class="batch-ops-name">修改提交方式</span>
+        </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchSupplement = true; showBatchOps = false">
+          <span class="batch-ops-icon">🔄</span>
+          <span class="batch-ops-name">修改补交标记</span>
+        </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchNote = true; showBatchOps = false">
+          <span class="batch-ops-icon">📝</span>
+          <span class="batch-ops-name">批量添加备注</span>
+        </div>
         <div v-if="isAdmin" class="batch-ops-item" @click="showBatchCollector = true; showBatchOps = false">
           <span class="batch-ops-icon">👤</span>
           <span class="batch-ops-name">修改收集者</span>
@@ -429,7 +445,66 @@
       </div>
     </van-action-sheet>
 
-    </div>
+    <!-- 批量修改年级/第几次 -->
+    <van-dialog v-model:show="showBatchGrade" title="修改年级/第几次" :show-cancel-button="true" @confirm="doBatchGrade">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的年级/第次数修改为：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <select v-model="batchGrade" style="flex:1;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
+            <option value="">不修改年级</option>
+            <option v-for="g in grades" :key="g" :value="g">{{ g }}</option>
+          </select>
+          <input v-model.number="batchEssayNumber" type="number" min="0" placeholder="第几次（留空不修改）" style="flex:1;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px" />
+        </div>
+      </div>
+    </van-dialog>
+
+    <!-- 批量修改提交方式 -->
+    <van-dialog v-model:show="showBatchMode" title="修改提交方式" :show-cancel-button="true" @confirm="doBatchMode">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的提交方式修改为：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
+        <van-radio-group v-model="batchMode" direction="horizontal">
+          <van-radio name="线上" shape="square" style="margin-right:20px">线上</van-radio>
+          <van-radio name="线下" shape="square">线下</van-radio>
+        </van-radio-group>
+      </div>
+    </van-dialog>
+
+    <!-- 批量修改补交标记 -->
+    <van-dialog v-model:show="showBatchSupplement" title="修改补交标记" :show-cancel-button="true" @confirm="doBatchSupplement">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的补交标记修改为：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
+        <van-radio-group v-model="batchSupplement" direction="horizontal">
+          <van-radio name="true" shape="square" style="margin-right:20px">标记为补交</van-radio>
+          <van-radio name="false" shape="square">取消补交</van-radio>
+        </van-radio-group>
+      </div>
+    </van-dialog>
+
+    <!-- 批量添加备注 -->
+    <van-dialog v-model:show="showBatchNote" title="批量添加备注" :show-cancel-button="true" @confirm="doBatchNote">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">为 {{ selectedIds.length }} 条作文添加收集者备注（已有备注不会覆盖，会追加）：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
+        <textarea v-model="batchNoteText" rows="3" placeholder="输入要添加的备注内容..." style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
+    </van-dialog>
+  </div>
 </template>
 
 <script setup>
@@ -460,6 +535,15 @@ const batchCollectorId = ref('')
 const showBatchTask = ref(false)
 const batchTaskId = ref('')
 const batchTaskSearch = ref('')
+const showBatchGrade = ref(false)
+const batchGrade = ref('')
+const batchEssayNumber = ref('')
+const showBatchMode = ref(false)
+const batchMode = ref('线上')
+const showBatchSupplement = ref(false)
+const batchSupplement = ref('true')
+const showBatchNote = ref(false)
+const batchNoteText = ref('')
 const taskList = ref([])
 const reviewerList = ref([])
 const filterTaskSearch = ref('')
@@ -1150,6 +1234,69 @@ async function doBatchTask() {
     showSuccessToast('修改成功')
     clearSelection()
     batchTaskId.value = ''
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchGrade() {
+  const payload = { ids: selectedIds.value }
+  if (batchGrade.value) payload.grade = batchGrade.value
+  if (batchEssayNumber.value !== '' && batchEssayNumber.value !== null) payload.essay_number = batchEssayNumber.value
+  if (!payload.grade && !payload.essay_number) { showToast('请填写要修改的年级或第几次'); return }
+  try {
+    await api.post('/essays/batch-update', payload)
+    showSuccessToast('修改成功')
+    clearSelection()
+    batchGrade.value = ''
+    batchEssayNumber.value = ''
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchMode() {
+  const confirmed = await showDialog({
+    title: '确认修改提交方式',
+    message: `确定将 ${selectedIds.value.length} 条作文的提交方式修改为「${batchMode.value}」吗？`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    await api.post('/essays/batch-update', { ids: selectedIds.value, teaching_mode: batchMode.value })
+    showSuccessToast('修改成功')
+    clearSelection()
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchSupplement() {
+  const label = batchSupplement.value === 'true' ? '标记为补交' : '取消补交'
+  const confirmed = await showDialog({
+    title: '确认修改补交标记',
+    message: `确定将 ${selectedIds.value.length} 条作文${label}吗？`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    await api.post('/essays/batch-update', { ids: selectedIds.value, is_supplement: batchSupplement.value === 'true' })
+    showSuccessToast('修改成功')
+    clearSelection()
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchNote() {
+  if (!batchNoteText.value.trim()) { showToast('请输入备注内容'); return }
+  const confirmed = await showDialog({
+    title: '确认添加备注',
+    message: `确定为 ${selectedIds.value.length} 条作文添加备注「${batchNoteText.value.trim()}」吗？\n已有备注不会被覆盖，会追加在新行。`,
+    showCancelButton: true,
+  }).catch(() => false)
+  if (!confirmed) return
+  try {
+    await api.post('/essays/batch-update', { ids: selectedIds.value, collector_note: batchNoteText.value.trim() })
+    showSuccessToast('添加成功')
+    clearSelection()
+    batchNoteText.value = ''
     await loadData()
   } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
 }
