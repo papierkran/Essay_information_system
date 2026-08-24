@@ -1558,8 +1558,11 @@ def claim_essay(
     if essay.reviewer_id:
         raise HTTPException(status_code=400, detail="该作文已被其他人认领")
 
+    old_reviewer = essay.reviewer_id
     essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
+    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name,
+                   old_value=json.dumps({"reviewer_id": {"old": old_reviewer}}),
+                   new_value=json.dumps({"reviewer_id": {"new": current_user.id}}))
     db.commit()
     return {"message": "认领成功"}
 
@@ -1697,11 +1700,16 @@ async def upload_correction(
     if reviewer_note.strip():
         essay.reviewer_note = reviewer_note.strip()
 
+    old_corrected = essay.corrected_text or ""
+    old_status = essay.status
+    old_reviewer = essay.reviewer_id
     essay.reviewer_id = current_user.id
     if essay.status in ("pending", "rework") and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
     essay.corrected_at = datetime.now()
-    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name)
+    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name,
+                   old_value=json.dumps({"corrected_text": {"old": old_corrected}, "status": {"old": old_status}, "reviewer_id": {"old": old_reviewer}}),
+                   new_value=json.dumps({"corrected_text": {"new": essay.corrected_text}, "status": {"new": essay.status}, "reviewer_id": {"new": current_user.id}}))
     db.commit()
 
     return {"message": "修改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
@@ -2913,37 +2921,43 @@ def undo_operation(
             undone_count += 1
 
         elif action_str in ("修改", "UPDATE", "批改", "CORRECT"):
-            data = {}
-            if log.old_value:
-                try:
-                    data = json.loads(log.old_value)
-                except Exception:
-                    data = {"corrected_text": "", "status": "pending"}
-            essay.corrected_text = data.get("corrected_text", "")
-            essay.corrected_at = None
-            essay.reviewer_id = None
-            essay.status = "pending"
-            _log_operation(db, eid, current_user.id, "恢复",
-                           f"撤回修改操作", batch_id=log.batch_id)
-            undone_count += 1
+            if not log.old_value:
+                continue
+            try:
+                data = json.loads(log.old_value)
+                if "corrected_text" in data:
+                    essay.corrected_text = data["corrected_text"].get("old", "")
+                if "status" in data:
+                    essay.status = data["status"].get("old", "pending")
+                if "reviewer_id" in data:
+                    essay.reviewer_id = data["reviewer_id"].get("old")
+                essay.corrected_at = None
+                _log_operation(db, eid, current_user.id, "恢复",
+                               f"撤回修改操作", batch_id=log.batch_id)
+                undone_count += 1
+            except Exception as e:
+                logger.warning("撤回修改操作解析 old_value 失败: id=%s error=%s", log_id, e)
 
         elif action_str in ("编辑", "EDIT"):
-            if log.old_value:
-                try:
-                    data = json.loads(log.old_value)
-                    for field, val in data.items():
-                        if hasattr(essay, field) and isinstance(val, dict) and "old" in val:
-                            val_old = val["old"]
-                            if isinstance(getattr(essay, field, None), bool) and isinstance(val_old, str):
-                                val_old = val_old.lower() in ("true", "1", "yes")
-                            setattr(essay, field, val_old)
-                except Exception as e:
-                    logger.warning("撤回编辑操作解析 old_value 失败: id=%s error=%s", log_id, e)
-            _log_operation(db, eid, current_user.id, "恢复",
-                           f"撤回编辑操作", batch_id=log.batch_id)
-            undone_count += 1
+            if not log.old_value:
+                continue
+            try:
+                data = json.loads(log.old_value)
+                for field, val in data.items():
+                    if hasattr(essay, field) and isinstance(val, dict) and "old" in val:
+                        val_old = val["old"]
+                        if isinstance(getattr(essay, field, None), bool) and isinstance(val_old, str):
+                            val_old = val_old.lower() in ("true", "1", "yes")
+                        setattr(essay, field, val_old)
+                _log_operation(db, eid, current_user.id, "恢复",
+                               f"撤回编辑操作", batch_id=log.batch_id)
+                undone_count += 1
+            except Exception as e:
+                logger.warning("撤回编辑操作解析 old_value 失败: id=%s error=%s", log_id, e)
 
         elif action_str in ("OCR",):
+            if not log.old_value:
+                continue
             essay.content_text = ""
             _log_operation(db, eid, current_user.id, "恢复",
                            f"撤回OCR操作", batch_id=log.batch_id)
@@ -3282,7 +3296,9 @@ def update_essay(
 
     old_value = json.dumps({k: {"old": v["old"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
     new_value = json.dumps({k: {"new": v["new"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
-    _log_operation(db, essay.id, current_user.id, "编辑", essay.student_name, old_value=old_value, new_value=new_value)
+    changed_fields = "、".join({"grade": "年级", "essay_number": "第几次", "student_name": "姓名", "teaching_mode": "提交方式", "essay_title": "标题", "corrected_title": "修改后标题", "remark": "备注", "is_supplement": "补交标记"}.get(k, k) for k in changes.keys())
+    detail_text = f"{essay.student_name}（修改{changed_fields}）" if changed_fields else essay.student_name
+    _log_operation(db, essay.id, current_user.id, "编辑", detail_text, old_value=old_value, new_value=new_value)
     try:
         db.commit()
     except Exception as e:
