@@ -81,7 +81,7 @@
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
-        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th v-if="isAdmin">操作</th>
+        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th>操作前</th><th>操作后</th><th v-if="isAdmin">操作</th>
       </tr></thead>
       <tbody>
         <tr v-for="op in list" :key="op.id">
@@ -96,8 +96,9 @@
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
           <td>{{ op.user_name }}</td>
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
+          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'old')">{{ formatChange(op, 'old') }}</td>
+          <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'new')">{{ formatChange(op, 'new') }}</td>
           <td v-if="isAdmin" style="white-space:nowrap">
-            <button class="btn btn-change" v-if="hasChange(op)" @click="showChange(op)" style="margin-right:4px">📋 变更</button>
             <button class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
               {{ undoingId === op.id ? '撤回中...' : '↩ 撤回' }}
             </button>
@@ -264,6 +265,25 @@ function goDetail(op) {
   if (op.essay_id) {
     router.push(`/review/detail/${op.essay_id}`)
   }
+}
+
+function parseChange(op, side) {
+  const key = side === 'old' ? 'old_value' : 'new_value'
+  try {
+    const data = op[key] ? JSON.parse(op[key]) : {}
+    const parts = []
+    for (const [k, v] of Object.entries(data)) {
+      const val = v?.[side] ?? v ?? ''
+      const label = fieldLabel(k)
+      const s = String(val).substring(0, 30)
+      parts.push(`${label}: ${s}${String(val).length > 30 ? '…' : ''}`)
+    }
+    return parts.join(' | ')
+  } catch { return '' }
+}
+
+function formatChange(op, side) {
+  return parseChange(op, side) || '-'
 }
 
 function hasChange(op) {
