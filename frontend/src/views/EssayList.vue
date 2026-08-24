@@ -293,6 +293,14 @@
           <van-checkbox v-model="docxSettings.filenameSupplement" shape="square">补交标记</van-checkbox>
         </div>
         <div class="settings-section" style="margin-top:16px">
+          <div class="settings-section-title">下载方式</div>
+          <van-radio-group v-model="docxSettings.downloadMode" direction="vertical" style="margin-bottom:8px">
+            <van-radio name="zip" shape="square" style="margin-bottom:6px">打成zip包（每个作文一个docx）</van-radio>
+            <van-radio name="merged" shape="square" style="margin-bottom:6px">合并为一个docx</van-radio>
+            <van-radio name="queue" shape="square">排队逐个下载</van-radio>
+          </van-radio-group>
+        </div>
+        <div class="settings-section" style="margin-top:16px">
           <div class="settings-section-title">文档内容</div>
           <van-radio-group v-model="docxSettings.exportMode" direction="vertical" style="margin-bottom:8px">
             <van-radio name="both" shape="square" style="margin-bottom:6px">修改前后</van-radio>
@@ -640,6 +648,7 @@ const showDocxSettings = ref(false)
 const DOCX_SETTINGS_KEY = 'essay_list_docx_settings'
 const defaultDocxSettings = {
   exportMode: 'both',
+  downloadMode: 'zip',
   filenameTitle: true,
   filenameStudent: true,
   filenameGrade: true,
@@ -999,18 +1008,23 @@ async function batchDelete() {
 async function batchExportDocx() {
   if (!selectedIds.value.length) return
   const action = docxSettings.value.exportMode
-  if (action !== 'both' && selectedIds.value.length > 200) {
+  const downloadMode = docxSettings.value.downloadMode
+  if (downloadMode !== 'queue' && action !== 'both' && selectedIds.value.length > 200) {
     showToast('合并导出一次最多 200 篇，请分批选择导出')
     return
   }
-  const apiAction = action === 'both' ? 'zip' : action
   const modeLabel = {
-    both: '修改前后 · 单独docx（ZIP 打包）',
-    corrected: '仅修改后 · 合并为一个docx',
-    original: '仅修改前 · 合并为一个docx',
+    both: '修改前后',
+    corrected: '仅修改后',
+    original: '仅修改前',
   }[action]
+  const downloadLabel = {
+    zip: '打成zip包（每个作文一个docx）',
+    merged: '合并为一个docx',
+    queue: '排队逐个下载',
+  }[downloadMode]
   const msgChildren = [
-    h('div', {}, `导出方式：${modeLabel}`),
+    h('div', {}, `文档内容：${modeLabel} · 下载方式：${downloadLabel}`),
     h('div', {}, `将导出已选的 ${selectedIds.value.length} 篇作文：`),
     h('div', { style: { color: '#999', whiteSpace: 'pre-line' } }, previewText()),
   ]
@@ -1022,17 +1036,60 @@ async function batchExportDocx() {
   if (!confirmed) return
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
-    let res
     const bp = { includeStudentName: docxSettings.value.includeStudentName, filenameTitle: docxSettings.value.filenameTitle, filenameStudent: docxSettings.value.filenameStudent, filenameGrade: docxSettings.value.filenameGrade, filenameNumber: docxSettings.value.filenameNumber, filenameMode: docxSettings.value.filenameMode, filenameSupplement: docxSettings.value.filenameSupplement }
-    if (apiAction === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: false, ...bp } })
-    else if (apiAction === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
-    else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob', params: bp })
-    downloadBlobResponse(res, action === 'both' ? '作文导出.zip' : '作文导出.docx')
+    if (downloadMode === 'queue') {
+      await exportDocxQueue(selectedIds.value, action, bp)
+      closeToast()
+      showSuccessToast('导出成功')
+      return
+    }
+    let res
+    if (downloadMode === 'zip' || action === 'both') {
+      res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: false, ...bp } })
+    } else if (action === 'corrected') {
+      res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
+    } else {
+      res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob', params: bp })
+    }
+    downloadBlobResponse(res, downloadMode === 'zip' ? '作文导出.zip' : '作文导出.docx')
     closeToast()
     showSuccessToast('导出成功')
   } catch (err) {
     closeToast()
     showFailToast(err.response?.data?.detail || '导出失败')
+  }
+}
+
+async function exportDocxQueue(ids, exportMode, bp) {
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i]
+    showLoadingToast({ message: `正在导出 ${i + 1}/${ids.length}...`, forbidClick: true, duration: 0 })
+    const params = { exportMode, ...bp }
+    try {
+      const res = await api.get(`/essays/${id}/export-docx`, { params, responseType: 'blob' })
+      const disposition = res.headers['content-disposition']
+      let filename = `作文${i + 1}.docx`
+      if (disposition) {
+        const p = disposition.split(';')
+        for (const part of p) {
+          const trim = part.trim()
+          if (trim.startsWith('filename*=')) {
+            const val = trim.split("''").pop()
+            if (val) filename = decodeURIComponent(val.replace(/"/g, ''))
+            break
+          } else if (trim.startsWith('filename=')) {
+            const val = trim.split('=')[1]
+            if (val) filename = val.replace(/"/g, '')
+          }
+        }
+      }
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+      window.URL.revokeObjectURL(url)
+      await new Promise(r => setTimeout(r, 500))
+    } catch (err) {
+      showToast(`第 ${i + 1} 篇导出失败`)
+    }
   }
 }
 
