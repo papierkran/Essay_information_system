@@ -1542,31 +1542,6 @@ def download_by_course(
 # ===== 以下所有 /{essay_id}/xxx 具名路由必须在 /{essay_id} 通用路由之前 =====
 
 
-@router.post("/{essay_id}/claim")
-def claim_essay(
-    essay_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """修改者认领作文"""
-    if "reviewer" not in current_user.role and "admin" not in current_user.role:
-        raise HTTPException(status_code=403, detail="无权限")
-
-    essay = db.query(Essay).filter(Essay.id == essay_id).first()
-    if not essay:
-        raise HTTPException(status_code=404, detail="作文不存在")
-    if essay.reviewer_id:
-        raise HTTPException(status_code=400, detail="该作文已被其他人认领")
-
-    old_reviewer = essay.reviewer_id
-    essay.reviewer_id = current_user.id
-    _log_operation(db, essay.id, current_user.id, "修改", essay.student_name,
-                   old_value=json.dumps({"reviewer_id": {"old": old_reviewer}}),
-                   new_value=json.dumps({"reviewer_id": {"new": current_user.id}}))
-    db.commit()
-    return {"message": "认领成功"}
-
-
 @router.delete("/{essay_id}")
 def delete_essay(
     essay_id: int,
