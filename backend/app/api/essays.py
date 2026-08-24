@@ -339,7 +339,7 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
             fmt.first_line_indent = Cm(0)
             fmt.alignment = 1  # CENTER
 
-    def _add_block(text, label):
+    def _add_block(text, label, filter_name_line=False):
         h = doc.add_paragraph()
         h_run = h.add_run(label)
         _set_run_font(h_run)
@@ -349,6 +349,8 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
             return
         lines = [l.strip() for l in text.split('\n')]
         non_empty = [l for l in lines if l]
+        if filter_name_line:
+            non_empty = [l for l in non_empty if not (l.startswith('——') or l.startswith('—'))]
         for idx, line_text in enumerate(non_empty):
             p = doc.add_paragraph()
             run = p.add_run(line_text)
@@ -368,22 +370,24 @@ def _append_essay_to_doc(doc, essay: Essay, show_corrected: bool = False, add_he
         hr.bold = True
         _set_para_format(hp, is_title=True)
 
+    filter_name = not include_student_name
+
     if corrected_only:
-        _add_block(corrected, "修改后：")
+        _add_block(corrected, "修改后：", filter_name_line=filter_name)
         return
 
     if original_only:
-        _add_block(content, "修改前：")
+        _add_block(content, "修改前：", filter_name_line=filter_name)
         return
 
     # 修改前
-    _add_block(content, "修改前：")
+    _add_block(content, "修改前：", filter_name_line=filter_name)
 
     if show_corrected:
         # 分页符
         doc.add_page_break()
         # 修改后
-        _add_block(corrected, "修改后：")
+        _add_block(corrected, "修改后：", filter_name_line=filter_name)
 
 
 @router.get("/courses")
@@ -2161,7 +2165,7 @@ def batch_update_essays(
 def batch_export_docx(
     essay_ids: list[int],
     simple_name: bool = False,
-    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True,
+    filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2182,7 +2186,7 @@ def batch_export_docx(
     try:
         with zipfile.ZipFile(tmp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for essay in essays:
-                tmp_docx = _generate_docx(essay, show_corrected=True)
+                tmp_docx = _generate_docx(essay, show_corrected=True, include_student_name=includeStudentName)
                 if simple_name:
                     dl_name = (f"{safe_component(essay.essay_title or '无标题', '无标题')}"
                                f"——{safe_component(essay.student_name or '未知', '未知')}")
