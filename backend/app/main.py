@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import init_db, SessionLocal
+from .database import init_db, SessionLocal, cleanup_old_operation_logs
+from .utils.crypto_utils import load_config_row_value
 from .models.models import Essay, OperationLog
 from .utils.file_utils import get_upload_dir
 from .api import auth, admin, essays
@@ -51,9 +52,28 @@ if os.environ.get("ESSAY_ENV", "development") == "production":
         print("警告: 生产环境未设置 ESSAY_CORS_ORIGINS，跨域请求将被拒绝，请配置前端来源白名单")
 
 
+def _cleanup_logs_on_startup():
+    """读取备份配置中的日志保留天数，清理过期操作日志"""
+    try:
+        db = SessionLocal()
+        try:
+            from .models.models import SystemConfig
+            row = db.query(SystemConfig).filter(SystemConfig.config_key == "backup").first()
+            if row:
+                cfg = load_config_row_value(row.config_value)
+                days = cfg.get("log_retention_days", 0)
+                if days and int(days) > 0:
+                    cleanup_old_operation_logs(retention_days=int(days))
+        finally:
+            db.close()
+    except Exception as e:
+        logging.warning("启动时清理操作日志失败(可忽略): %s", e)
+
+
 @app.on_event("startup")
 def on_startup():
     init_db()
+    _cleanup_logs_on_startup()
     admin.start_backup_scheduler()
     # 启动时同步 file_saved 状态（分批处理，仅标记，不删除记录）
     db = SessionLocal()

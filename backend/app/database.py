@@ -160,3 +160,21 @@ def _migrate_existing_columns():
                     conn.execute(text("ALTER TABLE essays ADD COLUMN IF NOT EXISTS corrected_title VARCHAR(200) DEFAULT ''"))
     except Exception:
         pass
+
+
+def cleanup_old_operation_logs(retention_days: int = 180):
+    """清理超过 retention_days 天的操作日志，防止表无限增长"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import text
+    try:
+        cutoff = datetime.now() - timedelta(days=retention_days)
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("DELETE FROM operation_logs WHERE created_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
+            deleted = result.rowcount
+            if deleted:
+                print(f"[cleanup] 已清理 {deleted} 条过期操作日志（保留 {retention_days} 天）")
+    except Exception as e:
+        print(f"[cleanup] 清理操作日志失败(可忽略): {e}")

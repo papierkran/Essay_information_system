@@ -259,6 +259,12 @@
           </p>
         </div>
 
+        <div class="form-group">
+          <label>日志保留天数</label>
+          <input v-model="logRetentionDays" type="number" min="0" placeholder="例如 180" />
+          <p class="hint-text">自动清理超过此天数的操作历史记录，0 或留空表示不清理</p>
+        </div>
+
         <div class="form-actions" style="justify-content:flex-start">
           <button class="btn btn-primary" @click="saveBackupConfig" :disabled="backupSaving">
             {{ backupSaving ? '保存中...' : '💾 保存备份配置' }}
@@ -396,6 +402,7 @@ const editSaving = ref(false)
 
 const backupFrequency = ref('never')
 const backupFolder = ref('')
+const logRetentionDays = ref('')
 const resolvedBackupPath = ref('')
 const resolvingFolder = ref(false)
 const backupSaving = ref(false)
@@ -593,6 +600,7 @@ async function loadBackupConfig() {
     backupFrequency.value = cfg.frequency || 'never'
     backupFolder.value = cfg.folder || ''
     backupExcludeImages.value = !!cfg.exclude_images
+    logRetentionDays.value = cfg.log_retention_days !== undefined ? String(cfg.log_retention_days) : ''
   } catch {}
 }
 
@@ -605,6 +613,7 @@ async function saveBackupConfig() {
         frequency: backupFrequency.value,
         folder: backupFolder.value,
         exclude_images: backupExcludeImages.value,
+        log_retention_days: logRetentionDays.value ? parseInt(logRetentionDays.value, 10) : 0,
       },
     })
     backupSaved.value = true; showToast('备份配置已保存')
