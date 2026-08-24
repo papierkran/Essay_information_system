@@ -1,6 +1,12 @@
 <template>
   <div class="page">
-    <div v-if="isDesktop" class="page-title">批量上传</div>
+    <div v-if="isDesktop" class="page-title">
+      批量上传
+      <span v-if="isAdmin" class="corrected-toggle" @click="isCorrectedMode = !isCorrectedMode" :class="{ active: isCorrectedMode }">
+        {{ isCorrectedMode ? '✅ 已改作文上传' : '📝 已改作文上传' }}
+      </span>
+    </div>
+    <div v-if="isCorrectedMode" class="page-hint" style="margin-top:8px">✅ 本页上传的作文将直接标记为「已修改」，收集时间与修改时间统一为收集时间</div>
 
     <!-- 模板选择区域 -->
     <van-cell-group inset style="margin-bottom:12px">
@@ -73,6 +79,11 @@
           <template #input><van-switch v-model="activeForm.is_supplement" size="24" /></template>
         </van-field>
         <van-field v-model="activeForm.collector_note" label="统一收集者备注" placeholder="应用到本批所有作文（可选）" />
+        <van-field v-if="isCorrectedMode" v-model="activeForm.collect_time" label="收集时间" type="datetime-local" placeholder="留空 = 当前时间">
+          <template #button>
+            <button v-if="activeForm.collect_time" class="btn" style="font-size:12px;padding:2px 8px" @click="activeForm.collect_time = ''">清除</button>
+          </template>
+        </van-field>
         <van-field v-if="isAdmin" :model-value="selectedCollectorName" is-link readonly label="收集者" placeholder="默认当前用户"
           @click="showCollectorPicker = true" />
         <van-field name="pre_check_existing" label="跳过已存在的学生">
@@ -328,12 +339,13 @@ const { getAuth } = useAuth()
 const currentUser = computed(() => getAuth()?.user || {})
 const isAdmin = computed(() => (currentUser.value.role || '').includes('admin'))
 const isGuest = computed(() => (currentUser.value.role || '').includes('guest'))
+const isCorrectedMode = ref(false)
 
 const mode = ref('essay')
 
 // 共用表单
-const form = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '' })
-const corForm = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '' })
+const form = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '', collect_time: '' })
+const corForm = ref({ grade: '', essay_number: '', teaching_mode: '线上', is_supplement: false, collector_note: '', collect_time: '' })
 const activeForm = computed(() => mode.value === 'essay' ? form.value : corForm.value)
 const selectedGrade = ref('')
 const selectedTaskName = ref('')
@@ -358,7 +370,7 @@ const checkingExisting = ref(false)
 const checkedExisting = ref(false)
 
 // 上传上下文（供组合式函数读取）
-const ctx = ref({ taskId: null, courseId: null, collectorId: null, form: form.value, existingNames: [], preCheckExisting: false })
+const ctx = ref({ taskId: null, courseId: null, collectorId: null, form: form.value, existingNames: [], preCheckExisting: false, markCorrected: false })
 
 function syncCtx() {
   ctx.value = {
@@ -368,10 +380,11 @@ function syncCtx() {
     form: activeForm.value,
     existingNames: existingNames.value,
     preCheckExisting: preCheckExisting.value,
+    markCorrected: isCorrectedMode.value,
   }
 }
 
-watch([selectedTaskId, selectedCourseId, selectedCollector, mode, form, corForm, existingNames, preCheckExisting], syncCtx, { deep: true })
+watch([selectedTaskId, selectedCourseId, selectedCollector, mode, form, corForm, existingNames, preCheckExisting, isCorrectedMode], syncCtx, { deep: true })
 
 // 结果弹窗
 const resultDialog = ref({ show: false, title: '', body: '', canRetry: false, retryCount: 0, retryMode: '', retryNames: [] })
@@ -992,4 +1005,18 @@ function copyResult() {
   font-size: 13px;
   line-height: 1.7;
 }
+.corrected-toggle {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #999;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  vertical-align: middle;
+  user-select: none;
+}
+.corrected-toggle:hover { border-color: #1677ff; color: #1677ff; }
+.corrected-toggle.active { background: #1677ff; color: #fff; border-color: #1677ff; }
 </style>
