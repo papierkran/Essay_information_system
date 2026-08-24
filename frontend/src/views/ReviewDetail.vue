@@ -482,6 +482,36 @@
     </div>
 
     <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" :closeable="true" close-icon-position="top-right" />
+
+    <!-- 导出docx设置 -->
+    <van-dialog v-model:show="showDocxSettings" title="导出docx设置" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
+      <div style="padding:16px">
+        <div class="settings-section">
+          <div class="settings-section-title">文件名包含</div>
+          <van-checkbox v-model="docxSettings.filenameTitle" shape="square" style="margin-bottom:8px">标题</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameStudent" shape="square" style="margin-bottom:8px">学生姓名</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameGrade" shape="square" style="margin-bottom:8px">年级</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameNumber" shape="square" style="margin-bottom:8px">第几次</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameMode" shape="square" style="margin-bottom:8px">提交方式</van-checkbox>
+          <van-checkbox v-model="docxSettings.filenameSupplement" shape="square">补交标记</van-checkbox>
+        </div>
+        <div class="settings-section" style="margin-top:16px">
+          <div class="settings-section-title">文档内容</div>
+          <van-radio-group v-model="docxSettings.exportMode" direction="vertical" style="margin-bottom:8px">
+            <van-radio name="both" shape="square" style="margin-bottom:6px">修改前后</van-radio>
+            <van-radio name="corrected" shape="square" style="margin-bottom:6px">仅修改后</van-radio>
+            <van-radio name="original" shape="square">仅修改前</van-radio>
+          </van-radio-group>
+          <van-checkbox v-model="docxSettings.includeStudentName" shape="square">包含学生姓名</van-checkbox>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
+          <button class="btn" @click="resetDocxSettings">恢复默认</button>
+          <button class="btn btn-primary" @click="confirmDocxExport">确认导出</button>
+        </div>
+      </template>
+    </van-dialog>
   </div>
 </template>
 
@@ -552,6 +582,34 @@ const showMobileGrade = ref(false)
 const showMobileTask = ref(false)
 const mobileTab = ref(0)
 const loading = ref(true)
+const showDocxSettings = ref(false)
+const DOCX_SETTINGS_KEY = 'review_detail_docx_settings'
+const defaultDocxSettings = {
+  exportMode: 'both',
+  filenameTitle: true,
+  filenameStudent: true,
+  filenameGrade: true,
+  filenameNumber: true,
+  filenameMode: true,
+  filenameSupplement: true,
+  includeStudentName: true,
+}
+const docxSettings = ref(loadDocxSettings())
+
+function loadDocxSettings() {
+  try {
+    const saved = localStorage.getItem(DOCX_SETTINGS_KEY)
+    return saved ? { ...defaultDocxSettings, ...JSON.parse(saved) } : { ...defaultDocxSettings }
+  } catch { return { ...defaultDocxSettings } }
+}
+
+function saveDocxSettings() {
+  localStorage.setItem(DOCX_SETTINGS_KEY, JSON.stringify(docxSettings.value))
+}
+
+function resetDocxSettings() {
+  docxSettings.value = { ...defaultDocxSettings }
+}
 const reuploadFileList = ref([])
 const reuploadText = ref('')
 const reuploading = ref(false)
@@ -1124,8 +1182,15 @@ async function downloadCorrection() {
 }
 
 async function exportDocx() {
+  showDocxSettings.value = true
+}
+
+async function confirmDocxExport() {
+  saveDocxSettings()
+  showDocxSettings.value = false
   try {
-    const res = await api.get(`/essays/${route.params.id}/export-docx`, { responseType: 'blob' })
+    const params = { exportMode: docxSettings.value.exportMode, includeStudentName: docxSettings.value.includeStudentName, filenameTitle: docxSettings.value.filenameTitle, filenameStudent: docxSettings.value.filenameStudent, filenameGrade: docxSettings.value.filenameGrade, filenameNumber: docxSettings.value.filenameNumber, filenameMode: docxSettings.value.filenameMode, filenameSupplement: docxSettings.value.filenameSupplement }
+    const res = await api.get(`/essays/${route.params.id}/export-docx`, { params, responseType: 'blob' })
     const disposition = res.headers['content-disposition']
     let filename = '导出.docx'
     if (disposition) {
@@ -1723,4 +1788,5 @@ async function doReupload() {
   .essay-split { grid-template-columns: 1fr; }
   .fullscreen-split { grid-template-columns: 1fr; }
 }
+.settings-section-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px; }
 </style>

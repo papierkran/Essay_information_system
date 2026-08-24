@@ -298,12 +298,12 @@ def _build_download_filename(essay: Essay, **kwargs) -> str:
     return f"{parts[0] if parts else '无标题'}{sep}{name_str}" if name_str else (parts[0] if parts else "无标题")
 
 
-def _generate_docx(essay: Essay, show_corrected: bool = False) -> str:
+def _generate_docx(essay: Essay, show_corrected: bool = False, corrected_only: bool = False, original_only: bool = False, include_student_name: bool = True) -> str:
     """从 DB 生成 docx，返回临时文件路径。show_corrected=True 时包含修改后内容。"""
     from docx import Document
 
     doc = Document()
-    _append_essay_to_doc(doc, essay, show_corrected=show_corrected)
+    _append_essay_to_doc(doc, essay, show_corrected=show_corrected, corrected_only=corrected_only, original_only=original_only, include_student_name=include_student_name)
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = tmp.name
@@ -1872,6 +1872,7 @@ def download_correction(
 @router.get("/{essay_id}/export-docx")
 def export_docx(
     essay_id: int,
+    exportMode: str = "both",
     filenameTitle: bool = True, filenameStudent: bool = True, filenameGrade: bool = True, filenameNumber: bool = True, filenameMode: bool = True, filenameSupplement: bool = True, includeStudentName: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1883,7 +1884,10 @@ def export_docx(
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
 
-    tmp_path = _generate_docx(essay, show_corrected=True)
+    show_corrected = exportMode in ("both", "corrected")
+    corrected_only = exportMode == "corrected"
+    original_only = exportMode == "original"
+    tmp_path = _generate_docx(essay, show_corrected=show_corrected, corrected_only=corrected_only, original_only=original_only, include_student_name=includeStudentName)
     dl_name = _build_download_filename(essay, filenameTitle=filenameTitle, filenameStudent=filenameStudent, filenameGrade=filenameGrade, filenameNumber=filenameNumber, filenameMode=filenameMode, filenameSupplement=filenameSupplement)
 
     from starlette.background import BackgroundTask

@@ -284,15 +284,6 @@
     <van-dialog v-model:show="showDocxSettings" title="导出docx设置" :show-cancel-button="false" :show-confirm-button="false" :close-on-click-overlay="true">
       <div style="padding:16px">
         <div class="settings-section">
-          <div class="settings-section-title">导出方式</div>
-          <van-radio-group v-model="docxSettings.exportMode" direction="vertical">
-            <van-radio name="zip" shape="square" style="margin-bottom:8px">修改前后 · 单独docx（ZIP 打包）</van-radio>
-            <van-radio name="merged" shape="square" style="margin-bottom:8px">修改前后 · 合并为一个docx</van-radio>
-            <van-radio name="corrected" shape="square" style="margin-bottom:8px">仅修改后 · 合并为一个docx</van-radio>
-            <van-radio name="original" shape="square">仅修改前 · 合并为一个docx</van-radio>
-          </van-radio-group>
-        </div>
-        <div class="settings-section" style="margin-top:16px">
           <div class="settings-section-title">文件名包含</div>
           <van-checkbox v-model="docxSettings.filenameTitle" shape="square" style="margin-bottom:8px">标题</van-checkbox>
           <van-checkbox v-model="docxSettings.filenameStudent" shape="square" style="margin-bottom:8px">学生姓名</van-checkbox>
@@ -303,6 +294,11 @@
         </div>
         <div class="settings-section" style="margin-top:16px">
           <div class="settings-section-title">文档内容</div>
+          <van-radio-group v-model="docxSettings.exportMode" direction="vertical" style="margin-bottom:8px">
+            <van-radio name="both" shape="square" style="margin-bottom:6px">修改前后</van-radio>
+            <van-radio name="corrected" shape="square" style="margin-bottom:6px">仅修改后</van-radio>
+            <van-radio name="original" shape="square">仅修改前</van-radio>
+          </van-radio-group>
           <van-checkbox v-model="docxSettings.includeStudentName" shape="square">包含学生姓名</van-checkbox>
         </div>
       </div>
@@ -643,7 +639,7 @@ const showColumnSettings = ref(false)
 const showDocxSettings = ref(false)
 const DOCX_SETTINGS_KEY = 'essay_list_docx_settings'
 const defaultDocxSettings = {
-  exportMode: 'zip',
+  exportMode: 'both',
   filenameTitle: true,
   filenameStudent: true,
   filenameGrade: true,
@@ -1003,13 +999,13 @@ async function batchDelete() {
 async function batchExportDocx() {
   if (!selectedIds.value.length) return
   const action = docxSettings.value.exportMode
-  if ((action === 'merged' || action === 'corrected' || action === 'original') && selectedIds.value.length > 200) {
+  if (action !== 'both' && selectedIds.value.length > 200) {
     showToast('合并导出一次最多 200 篇，请分批选择导出')
     return
   }
+  const apiAction = action === 'both' ? 'zip' : action
   const modeLabel = {
-    zip: '修改前后 · 单独docx（ZIP 打包）',
-    merged: '修改前后 · 合并为一个docx',
+    both: '修改前后 · 单独docx（ZIP 打包）',
     corrected: '仅修改后 · 合并为一个docx',
     original: '仅修改前 · 合并为一个docx',
   }[action]
@@ -1027,12 +1023,11 @@ async function batchExportDocx() {
   try {
     showLoadingToast({ message: '正在导出...', forbidClick: true, duration: 0 })
     let res
-    const bp = { ...docxSettings.value }
-    if (action === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: false, ...bp } })
-    else if (action === 'merged') res = await api.post('/essays/batch-export-docx-merged', selectedIds.value, { responseType: 'blob', params: bp })
-    else if (action === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
+    const bp = { includeStudentName: docxSettings.value.includeStudentName, filenameTitle: docxSettings.value.filenameTitle, filenameStudent: docxSettings.value.filenameStudent, filenameGrade: docxSettings.value.filenameGrade, filenameNumber: docxSettings.value.filenameNumber, filenameMode: docxSettings.value.filenameMode, filenameSupplement: docxSettings.value.filenameSupplement }
+    if (apiAction === 'zip') res = await api.post('/essays/batch-export-docx', selectedIds.value, { responseType: 'blob', params: { simple_name: false, ...bp } })
+    else if (apiAction === 'corrected') res = await api.post('/essays/batch-export-docx-corrected-merged', selectedIds.value, { responseType: 'blob', params: bp })
     else res = await api.post('/essays/batch-export-docx-original-merged', selectedIds.value, { responseType: 'blob', params: bp })
-    downloadBlobResponse(res, action === 'zip' ? '作文导出.zip' : '作文导出.docx')
+    downloadBlobResponse(res, action === 'both' ? '作文导出.zip' : '作文导出.docx')
     closeToast()
     showSuccessToast('导出成功')
   } catch (err) {
