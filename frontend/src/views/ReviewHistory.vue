@@ -290,8 +290,8 @@ function formatChange(op, side) {
 function formatChangeDisplay(op, side) {
   const raw = parseChange(op, side)
   if (!raw) return '-'
-  return raw.replace(/(\w+):\s*([^|]+)/g, (_, label, val) => {
-    return `${label}: ${formatValue(val.trim())}`
+  return raw.replace(/([^:]+):\s*([^|]+)/g, (_, label, val) => {
+    return `${label.trim()}: ${formatValue(val.trim())}`
   })
 }
 
