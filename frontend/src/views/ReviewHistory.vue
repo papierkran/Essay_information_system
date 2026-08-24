@@ -81,7 +81,7 @@
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
-        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th>操作前</th><th>操作后</th><th v-if="isAdmin">操作</th>
+        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th>操作前</th><th>操作后</th><th>操作</th>
       </tr></thead>
       <tbody>
         <tr v-for="op in list" :key="op.id">
@@ -98,8 +98,9 @@
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
           <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'old')">{{ formatChange(op, 'old') }}</td>
           <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'new')">{{ formatChange(op, 'new') }}</td>
-          <td v-if="isAdmin" style="white-space:nowrap">
-            <button class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
+          <td style="white-space:nowrap">
+            <button class="btn btn-detail" @click="showChange(op)" style="margin-right:4px">查看详情</button>
+            <button v-if="isAdmin" class="btn btn-undo" @click="confirmUndo(op)" :disabled="undoingId === op.id">
               {{ undoingId === op.id ? '撤回中...' : '↩ 撤回' }}
             </button>
           </td>
@@ -128,7 +129,7 @@
         @click="goDetail(op)">
         <template #extra>
           <span class="tag" :class="actionClass(op.action)" style="font-size:11px">{{ op.action }}</span>
-          <button v-if="isAdmin && hasChange(op)" class="btn btn-change-mobile" @click.stop="showChange(op)">📋</button>
+          <button class="btn btn-detail-mobile" @click.stop="showChange(op)">详情</button>
           <button v-if="isAdmin" class="btn btn-undo btn-undo-mobile" @click.stop="confirmUndo(op)">↩</button>
         </template>
       </van-cell>
@@ -419,18 +420,18 @@ onMounted(async () => {
   padding: 2px 8px;
 }
 
-.btn-change {
+.btn-detail {
   font-size: 12px;
   padding: 3px 10px;
   color: #1677ff;
   border-color: #91caff;
 }
-.btn-change:hover { border-color: #1677ff; background: #e6f4ff; }
+.btn-detail:hover { border-color: #1677ff; background: #e6f4ff; }
 
-.btn-change-mobile {
+.btn-detail-mobile {
   margin-left: 4px;
   padding: 2px 6px;
-  font-size: 12px;
+  font-size: 11px;
   color: #1677ff;
   border-color: #91caff;
 }
