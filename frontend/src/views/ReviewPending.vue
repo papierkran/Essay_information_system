@@ -87,7 +87,6 @@
           <td><span class="tag" :class="'tag-' + e.status">{{ statusLabel(e.status) }}</span></td>
           <td>{{ e.student_name }}</td>
           <td>{{ e.essay_title || '无标题' }}</td>
-          <td>{{ e.corrected_title || '-' }}</td>
           <td>{{ e.task_name || '-' }}</td>
           <td><span class="badge-mini" :class="e.teaching_mode === '线上' ? 'tag-mode-online' : 'tag-mode-offline'">{{ e.teaching_mode || '-' }}</span></td>
           <td><span class="badge-mini tag-number">{{ e.essay_number ? '第' + e.essay_number + '次' : '-' }}</span></td>
