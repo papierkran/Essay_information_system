@@ -307,6 +307,8 @@ body {
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag-pending { background: #fff7e6; color: #d46b08; }
 .tag-correcting { background: #e6f4ff; color: #1677ff; }
+.tag-confirming { background: #e6f4ff; color: #1677ff; }
+.tag-rework { background: #fff1f0; color: #ff4d4f; }
 .tag-corrected { background: #f6ffed; color: #52c41a; }
 
 /* 迷你徽标：年级/第几次/线上线下 可读性区分 */

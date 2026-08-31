@@ -81,7 +81,7 @@
     <!-- 桌面端：表格 -->
     <table v-if="isDesktop && list.length" class="desktop-table">
       <thead><tr>
-        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>操作者</th><th>详情</th><th>操作前</th><th>操作后</th><th>操作</th>
+        <th>时间</th><th>学生</th><th>作文</th><th>操作</th><th>状态</th><th>操作者</th><th>详情</th><th>操作前</th><th>操作后</th><th>操作</th>
       </tr></thead>
       <tbody>
         <tr v-for="op in list" :key="op.id">
@@ -94,6 +94,7 @@
             {{ op.corrected_title || op.essay_title || '无标题' }}<span v-if="op.essay_number"> #{{ op.essay_number }}</span>
           </td>
           <td><span class="tag" :class="actionClass(op.action)">{{ op.action }}</span></td>
+          <td><span v-if="opStatus(op)" class="tag" :class="'tag-' + opStatus(op)">{{ statusText(opStatus(op)) }}</span><span v-else>-</span></td>
           <td>{{ op.user_name }}</td>
           <td style="cursor:pointer" @click="goDetail(op)">{{ op.detail || '-' }}</td>
           <td style="font-size:12px;color:#999;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="formatChange(op, 'old')">{{ formatChangeDisplay(op, 'old') }}</td>
@@ -296,6 +297,23 @@ function formatChangeDisplay(op, side) {
   return raw.replace(/([^:]+):\s*([^|]+)/g, (_, label, val) => {
     return `${label.trim()}: ${formatValue(val.trim())}`
   })
+}
+
+function opStatus(op) {
+  try {
+    const data = op.new_value ? JSON.parse(op.new_value) : {}
+    const isBatch = Object.keys(data).some(k => /^\d+$/.test(k))
+    if (isBatch) {
+      const first = Object.values(data)[0]
+      return first?.status || ''
+    }
+    return data.status || ''
+  } catch { return '' }
+}
+
+function statusText(s) {
+  const m = { 'pending': '未修改', 'confirming': '待确认', 'corrected': '已修改', 'rework': '待重改' }
+  return m[s] || s
 }
 
 function hasChange(op) {
