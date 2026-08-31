@@ -299,15 +299,26 @@ function formatChangeDisplay(op, side) {
   })
 }
 
+function extractStatus(val) {
+  if (val == null) return ''
+  if (typeof val === 'string') return val
+  if (typeof val === 'object') {
+    if ('new' in val) return extractStatus(val.new)
+    if ('old' in val) return extractStatus(val.old)
+    if ('status' in val) return extractStatus(val.status)
+  }
+  return ''
+}
+
 function opStatus(op) {
   try {
     const data = op.new_value ? JSON.parse(op.new_value) : {}
     const isBatch = Object.keys(data).some(k => /^\d+$/.test(k))
     if (isBatch) {
       const first = Object.values(data)[0]
-      return first?.status || ''
+      return extractStatus(first)
     }
-    return data.status || ''
+    return extractStatus(data.status)
   } catch { return '' }
 }
 
