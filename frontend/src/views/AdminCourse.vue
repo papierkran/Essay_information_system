@@ -99,7 +99,7 @@
     </van-cell-group>
 
     <!-- 课程弹窗 -->
-    <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose">
+    <van-dialog v-model:show="showCourseDialog" :title="editingCourse.id ? '编辑课程' : '创建课程'" show-cancel-button :before-close="onCourseClose" class="course-dialog">
       <van-form ref="courseFormRef">
         <van-field v-model="courseForm.name" label="课程名称" maxlength="30" :rules="[{required:true}]" />
         <van-field label="年级（可多选）">
@@ -110,10 +110,14 @@
           </template>
         </van-field>
         <van-field v-model="courseForm.classin_id" label="ClassIn班级ID" maxlength="50" placeholder="可选，如 C001" />
-        <van-field :model-value="courseForm.start_date || ''" is-link readonly label="开课时间" placeholder="选择开课时间（可选）" @click="showDatePicker = true" />
-        <van-action-sheet v-model:show="showDatePicker" title="选择开课时间">
-          <van-date-picker v-if="showDatePicker" type="date" :min-date="minDate" :max-date="maxDate" @confirm="onDateConfirm" @cancel="showDatePicker = false" />
-        </van-action-sheet>
+        <van-field label="开课时间">
+          <template #input>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input v-model="courseForm.start_date" type="date" class="start-date-input" />
+              <button v-if="courseForm.start_date" type="button" class="btn" style="font-size:12px;padding:2px 8px" @click="courseForm.start_date = ''">清除</button>
+            </div>
+          </template>
+        </van-field>
         <div v-if="editingCourse.id" style="padding:0 16px 12px;font-size:13px;color:#999">
           当前关联：{{ editingCourse.task_count || 0 }} 个任务 / {{ editingCourse.essay_count || 0 }} 篇作文
         </div>
@@ -171,9 +175,6 @@ const courseFormRef = ref(null)
 const editingCourse = ref({})
 const courseForm = ref({ name: '', grades: [], start_date: '' })
 const gradeOptions = ['初一','初二','初三','高一','高二','高三']
-const showDatePicker = ref(false)
-const minDate = new Date(2020, 0, 1)
-const maxDate = new Date(2030, 11, 31)
 const importing = ref(false)
 const showImportPreview = ref(false)
 const previewCourses = ref([])
@@ -209,11 +210,6 @@ function selectNewOnly() { selectedNames.value = previewCourses.value.filter(c =
 function parseGrades(val) {
   if (!val) return []
   try { const g = JSON.parse(val); return Array.isArray(g) ? g : [val] } catch { return [val] }
-}
-
-function onDateConfirm({ selectedValues }) {
-  courseForm.value.start_date = selectedValues.join('-')
-  showDatePicker.value = false
 }
 
 function openCourseDialog(cls) {
@@ -319,5 +315,20 @@ async function confirmImport() {
   min-width: 160px;
 }
 .filter-input:focus { border-color: #4096ff; }
-@media (max-width: 767px) { .page { min-height: 100vh; } }
+.start-date-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+  color: #333;
+}
+.start-date-input:focus { border-color: #4096ff; }
+.course-dialog { width: 480px; }
+@media (max-width: 767px) {
+  .page { min-height: 100vh; }
+  .course-dialog { width: 90%; }
+}
 </style>
