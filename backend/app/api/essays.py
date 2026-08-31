@@ -3174,7 +3174,11 @@ def update_essay(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
-    old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
+    try:
+        old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.warning("捕获编辑前快照失败: %s", e)
+        old_snap = ""
     # 收集者可修改大部分字段，批改者可修改 reviewer_note，修改后内容仅批改者/管理员可改
     can_edit = "admin" in current_user.role or essay.collected_by == current_user.id
     can_edit_review_note = can_edit or essay.reviewer_id == current_user.id
@@ -3282,7 +3286,11 @@ def update_essay(
 
     changed_fields = "、".join({"grade": "年级", "essay_number": "第几次", "student_name": "姓名", "teaching_mode": "提交方式", "essay_title": "标题", "corrected_title": "修改后标题", "remark": "备注", "is_supplement": "补交标记"}.get(k, k) for k in changes.keys())
     detail_text = f"{essay.student_name}（修改{changed_fields}）" if changed_fields else essay.student_name
-    new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
+    try:
+        new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.warning("捕获编辑后快照失败: %s", e)
+        new_snap = ""
     _log_operation(db, essay.id, current_user.id, "编辑", detail_text, old_value=old_snap, new_value=new_snap)
     try:
         db.commit()
