@@ -302,6 +302,10 @@
           <span class="batch-ops-icon">👤</span>
           <span class="batch-ops-name">修改收集者</span>
         </div>
+        <div v-if="isAdmin" class="batch-ops-item" @click="showBatchReviewer = true; showBatchOps = false">
+          <span class="batch-ops-icon">✏️</span>
+          <span class="batch-ops-name">修改批改者</span>
+        </div>
         <div v-if="isAdmin" class="batch-ops-item" @click="showBatchTask = true; showBatchOps = false">
           <span class="batch-ops-icon">📋</span>
           <span class="batch-ops-name">修改任务</span>
@@ -359,6 +363,22 @@
         <select v-model.number="batchCollectorId" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
           <option value="">请选择</option>
           <option v-for="c in collectorList" :key="c.id" :value="c.id">{{ c.nickname }}</option>
+        </select>
+      </div>
+    </van-dialog>
+
+    <!-- 批量修改批改者 -->
+    <van-dialog v-model:show="showBatchReviewer" title="修改批改者" :show-cancel-button="true" @confirm="doBatchReviewer">
+      <div style="padding:16px">
+        <p style="font-size:13px;color:#666;margin-bottom:8px">将 {{ selectedIds.length }} 条作文的批改者修改为：</p>
+        <div class="batch-preview" style="margin-bottom:8px">
+          <div class="batch-preview-title">涉及作文：</div>
+          <div class="batch-preview-body">{{ previewText() }}</div>
+        </div>
+        <select v-model="batchReviewerId" style="width:100%;padding:8px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
+          <option value="">请选择</option>
+          <option value="clear">清空批改者</option>
+          <option v-for="r in reviewerList" :key="r.id" :value="r.id">{{ r.nickname || r.username }}</option>
         </select>
       </div>
     </van-dialog>
@@ -532,6 +552,8 @@ const deleteFileChecked = ref(false)
 
 const showBatchCollector = ref(false)
 const batchCollectorId = ref('')
+const showBatchReviewer = ref(false)
+const batchReviewerId = ref('')
 const showBatchTask = ref(false)
 const batchTaskId = ref('')
 const batchTaskSearch = ref('')
@@ -1204,6 +1226,23 @@ async function doBatchCollector() {
     showSuccessToast('修改成功')
     clearSelection()
     batchCollectorId.value = ''
+    await loadData()
+  } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
+}
+
+async function doBatchReviewer() {
+  if (batchReviewerId.value === '' || batchReviewerId.value === null) { showToast('请选择批改者'); return }
+  const payload = { ids: selectedIds.value }
+  if (batchReviewerId.value === 'clear') {
+    payload.reviewer_id = null
+  } else {
+    payload.reviewer_id = Number(batchReviewerId.value)
+  }
+  try {
+    await api.post('/essays/batch-update', payload)
+    showSuccessToast('修改成功')
+    clearSelection()
+    batchReviewerId.value = ''
     await loadData()
   } catch (err) { showFailToast(err.response?.data?.detail || '修改失败') }
 }

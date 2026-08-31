@@ -2234,6 +2234,12 @@ def batch_update_essays(
                 savepoint.rollback()
                 skipped += 1
         update_fields.append("任务")
+    if "reviewer_id" in data:
+        new_rid = data["reviewer_id"] if data["reviewer_id"] else None
+        for e in essays:
+            e.reviewer_id = new_rid
+            updated += 1
+        update_fields.append("批改者")
     if updated:
         batch_uuid = uuid.uuid4().hex[:12]
         new_snaps = {e.id: _snapshot_essay(e) for e in essays}
