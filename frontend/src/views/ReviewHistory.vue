@@ -288,12 +288,16 @@ function parseChange(op, side) {
     const data = op[key] ? JSON.parse(op[key]) : {}
     const isBatch = Object.keys(data).some(k => /^\d+$/.test(k))
     if (isBatch) return `批量操作（${Object.keys(data).length} 篇）`
+    const idFieldMap = { 'task_id': '_task_name', 'course_id': '_course_name', 'collected_by': '_collector_name', 'reviewer_id': '_reviewer_name' }
+    const dateFields = ['corrected_at', 'deleted_at']
     const parts = []
     for (const [k, v] of Object.entries(data)) {
       if (k.startsWith('_')) continue
-      const val = v?.[side] ?? v ?? ''
+      const displayKey = idFieldMap[k]
+      let val = displayKey ? (data[displayKey] ?? '') : (v?.[side] ?? v ?? '')
       if (val === '' || val == null) continue
       const label = fieldLabel(k)
+      val = dateFields.includes(k) ? formatDateTime(val) : formatValue(String(val))
       const s = String(val).substring(0, 30)
       parts.push(`${label}: ${s}${String(val).length > 30 ? '…' : ''}`)
     }
@@ -346,7 +350,7 @@ function hasChange(op) {
 }
 
 function fieldLabel(name) {
-  const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'course_id': '课程', 'content_text': '原文内容', 'corrected_text': '修改后文章', 'status': '状态', 'reviewer_id': '批改者', 'file_type': '文件类型' }
+  const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'course_id': '课程', 'content_text': '原文内容', 'corrected_text': '修改后文章', 'status': '状态', 'reviewer_id': '批改者', 'file_type': '文件类型', 'corrected_at': '批改时间', 'deleted_at': '删除时间' }
   return m[name] || name
 }
 
@@ -378,15 +382,18 @@ function showChange(op) {
       }
       // 其他字段（跳过正文、_开头的内部字段、status 单独处理、id 类字段）
       const idFieldMap = { 'task_id': '_task_name', 'course_id': '_course_name', 'collected_by': '_collector_name', 'reviewer_id': '_reviewer_name' }
+      const dateFields = ['corrected_at', 'deleted_at']
       for (const key of Object.keys({ ...oldRaw, ...newRaw })) {
         if (key.startsWith('_')) continue
         if (contentKeys.includes(key) && hasContentChange) continue
         if (key === 'status') continue
         const displayKey = idFieldMap[key]
-        const oldVal = displayKey ? (oldRaw[displayKey] || oldRaw[key] || '') : (oldRaw[key]?.old ?? oldRaw[key] ?? '')
-        const newVal = displayKey ? (newRaw[displayKey] || newRaw[key] || '') : (newRaw[key]?.new ?? newRaw[key] ?? '')
+        const rawOld = displayKey ? (oldRaw[displayKey] ?? '') : (oldRaw[key]?.old ?? oldRaw[key] ?? '')
+        const rawNew = displayKey ? (newRaw[displayKey] ?? '') : (newRaw[key]?.new ?? newRaw[key] ?? '')
+        const oldVal = dateFields.includes(key) ? formatDateTime(rawOld) : formatValue(String(rawOld))
+        const newVal = dateFields.includes(key) ? formatDateTime(rawNew) : formatValue(String(rawNew))
         if (String(oldVal) !== String(newVal)) {
-          fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
+          fields.push({ name: key, old: oldVal, new: newVal })
         }
       }
       // status 放最后
