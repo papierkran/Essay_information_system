@@ -383,8 +383,8 @@ function showChange(op) {
         if (contentKeys.includes(key) && hasContentChange) continue
         if (key === 'status') continue
         const displayKey = idFieldMap[key]
-        const oldVal = displayKey ? (oldRaw[displayKey] || oldRaw[key] ?? '') : (oldRaw[key]?.old ?? oldRaw[key] ?? '')
-        const newVal = displayKey ? (newRaw[displayKey] || newRaw[key] ?? '') : (newRaw[key]?.new ?? newRaw[key] ?? '')
+        const oldVal = displayKey ? (oldRaw[displayKey] || oldRaw[key] || '') : (oldRaw[key]?.old ?? oldRaw[key] ?? '')
+        const newVal = displayKey ? (newRaw[displayKey] || newRaw[key] || '') : (newRaw[key]?.new ?? newRaw[key] ?? '')
         if (String(oldVal) !== String(newVal)) {
           fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
         }
