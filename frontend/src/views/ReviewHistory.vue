@@ -147,25 +147,38 @@
     </van-dialog>
 
     <!-- 变更内容弹窗 -->
-    <van-dialog v-model:show="changeDialog.show" title="变更内容"
-      :show-confirm-button="true" confirm-button-text="关闭" :close-on-click-overlay="true">
-      <div style="padding:12px 16px;font-size:13px;line-height:1.6;max-height:60vh;overflow-y:auto">
-        <div v-if="!changeDialog.fields.length" style="color:#999;text-align:center;padding:16px">无详细变更数据</div>
-        <div v-for="(field, idx) in changeDialog.fields" :key="idx" style="margin-bottom:12px;border-bottom:1px solid #f0f0f0;padding-bottom:8px">
-          <div style="font-weight:bold;color:#333;margin-bottom:4px">{{ fieldLabel(field.name) }}</div>
-          <div style="display:flex;gap:8px">
-            <div style="flex:1;background:#fff2f0;padding:6px 8px;border-radius:4px;border:1px solid #ffccc7">
-              <div style="font-size:11px;color:#999;margin-bottom:2px">修改前</div>
-              <div style="color:#333;word-break:break-all;white-space:pre-wrap">{{ field.old }}</div>
+    <van-popup v-model:show="changeDialog.show" position="center" class="change-popup" :style="{ width: 'min(760px, 94vw)', borderRadius: '10px' }" @click-overlay="changeDialog.show = false">
+      <div class="change-header">
+        <div class="change-header-title">变更内容</div>
+        <button class="change-close" @click="changeDialog.show = false">✕</button>
+      </div>
+      <div class="change-meta">
+        <span v-if="changeDialog.action" class="tag" :class="actionClass(changeDialog.action)">{{ changeDialog.action }}</span>
+        <span v-if="changeDialog.studentName" style="margin-left:6px">{{ changeDialog.studentName }}</span>
+        <span v-if="changeDialog.essayTitle" style="color:#999;margin-left:6px">{{ changeDialog.essayTitle }}</span>
+        <span v-if="changeDialog.detail" style="color:#666;margin-left:6px">{{ changeDialog.detail }}</span>
+      </div>
+      <div class="change-body">
+        <div v-if="!changeDialog.fields.length" style="color:#999;text-align:center;padding:32px 0">无详细变更数据</div>
+        <div v-for="(field, idx) in changeDialog.fields" :key="idx" class="change-field">
+          <div class="change-field-name">{{ fieldLabel(field.name) }}</div>
+          <div class="change-field-row">
+            <div class="change-col change-col-old">
+              <div class="change-col-label">修改前</div>
+              <div class="change-col-value">{{ field.old }}</div>
             </div>
-            <div style="flex:1;background:#f6ffed;padding:6px 8px;border-radius:4px;border:1px solid #b7eb8f">
-              <div style="font-size:11px;color:#999;margin-bottom:2px">修改后</div>
-              <div style="color:#333;word-break:break-all;white-space:pre-wrap">{{ field.new }}</div>
+            <div class="change-arrow">→</div>
+            <div class="change-col change-col-new">
+              <div class="change-col-label">修改后</div>
+              <div class="change-col-value">{{ field.new }}</div>
             </div>
           </div>
         </div>
       </div>
-    </van-dialog>
+      <div class="change-footer">
+        <button class="btn btn-primary" style="font-size:13px;padding:6px 24px" @click="changeDialog.show = false">关闭</button>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -193,7 +206,7 @@ const showMobileFilter = ref(false)
 const userList = ref([])
 
 const undoDialog = ref({ show: false, id: null, action: '', detail: '', consequence: '' })
-const changeDialog = ref({ show: false, fields: [] })
+const changeDialog = ref({ show: false, fields: [], action: '', detail: '', studentName: '', essayTitle: '' })
 
 const actionOptions = ['上传', '修改', '编辑', '删除', '恢复', '批改', 'OCR']
 const detailOptions = ['AI 错别字修正', 'AI 改写', '确认修改', '标记为重改']
@@ -361,7 +374,7 @@ function showChange(op) {
       }
     }
   } catch {}
-  changeDialog.value = { show: true, fields }
+  changeDialog.value = { show: true, fields, action: op.action || '', detail: op.detail || '', studentName: op.student_name || '', essayTitle: op.corrected_title || op.essay_title || '' }
 }
 
 function undoConsequence(action) {
@@ -515,4 +528,36 @@ onMounted(async () => {
 .m-filter-check { font-size: 13px; color: #666; white-space: nowrap; }
 
 @media (max-width: 767px) { .page { min-height: 100vh; } }
+</style>
+
+<style>
+/* 变更内容弹窗 — 非 scoped，适配 Vant popup teleport 到 body */
+.change-popup { overflow: hidden; }
+.change-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px; border-bottom: 1px solid #f0f0f0;
+}
+.change-header-title { font-size: 16px; font-weight: 600; color: #222; }
+.change-close { background: none; border: none; font-size: 18px; color: #999; cursor: pointer; padding: 0 4px; }
+.change-close:hover { color: #333; }
+.change-meta {
+  padding: 10px 18px; font-size: 13px; color: #555;
+  background: #fafafa; border-bottom: 1px solid #f0f0f0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+}
+.change-body {
+  padding: 12px 18px; max-height: 55vh; overflow-y: auto;
+  font-size: 13px; line-height: 1.6;
+}
+.change-field { margin-bottom: 14px; border-bottom: 1px solid #f0f0f0; padding-bottom: 12px; }
+.change-field:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.change-field-name { font-weight: 600; color: #333; margin-bottom: 6px; font-size: 14px; }
+.change-field-row { display: flex; align-items: flex-start; gap: 8px; }
+.change-col { flex: 1; min-width: 0; border-radius: 6px; padding: 8px 10px; }
+.change-col-old { background: #fff2f0; border: 1px solid #ffccc7; }
+.change-col-new { background: #f6ffed; border: 1px solid #b7eb8f; }
+.change-col-label { font-size: 11px; color: #999; margin-bottom: 4px; }
+.change-col-value { color: #333; word-break: break-all; white-space: pre-wrap; font-size: 13px; }
+.change-arrow { flex-shrink: 0; color: #ccc; font-size: 18px; line-height: 36px; user-select: none; }
+.change-footer { padding: 10px 18px 14px; text-align: center; border-top: 1px solid #f0f0f0; }
 </style>
