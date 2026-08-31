@@ -55,7 +55,7 @@ def list_courses(
     current_user: User = Depends(get_current_user),
 ):
     require_admin(current_user)
-    q = db.query(Course).filter(Course.deleted_at == None)
+    q = db.query(Course).filter(Course.deleted_at == None).order_by(Course.start_date.desc().nullslast(), Course.created_at.desc())
     courses = q.all()
     task_counts = dict(
         db.query(EssayTask.course_id, func.count(EssayTask.id))
