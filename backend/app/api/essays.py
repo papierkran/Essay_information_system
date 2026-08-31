@@ -498,13 +498,20 @@ _SNAPSHOT_FIELDS = [
 
 
 def _snapshot_essay(essay) -> dict:
-    """捕获作文全部可变字段，用于操作日志与撤回恢复"""
+    """捕获作文全部可变字段，用于操作日志与撤回恢复；附带可读名称仅供展示"""
     snap = {}
     for f in _SNAPSHOT_FIELDS:
         val = getattr(essay, f, None)
         if isinstance(val, datetime):
             val = val.isoformat()
         snap[f] = val
+    try:
+        snap["_task_name"] = essay.task.name if essay.task and essay.task_id else ""
+        snap["_course_name"] = essay.course.name if essay.course and essay.course_id else ""
+        snap["_collector_name"] = essay.collector.nickname or essay.collector.username if essay.collector and essay.collected_by else ""
+        snap["_reviewer_name"] = essay.reviewer.nickname or essay.reviewer.username if essay.reviewer and essay.reviewer_id else ""
+    except Exception:
+        pass
     return snap
 
 

@@ -290,6 +290,7 @@ function parseChange(op, side) {
     if (isBatch) return `批量操作（${Object.keys(data).length} 篇）`
     const parts = []
     for (const [k, v] of Object.entries(data)) {
+      if (k.startsWith('_')) continue
       const val = v?.[side] ?? v ?? ''
       if (val === '' || val == null) continue
       const label = fieldLabel(k)
@@ -345,12 +346,13 @@ function hasChange(op) {
 }
 
 function fieldLabel(name) {
-  const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'content_text': '正文内容', 'corrected_text': '批改内容', 'status': '状态' }
+  const m = { 'grade': '年级', 'essay_number': '第几次', 'student_name': '学生姓名', 'teaching_mode': '提交方式', 'essay_title': '标题', 'corrected_title': '修改后标题', 'remark': '备注', 'is_supplement': '补交标记', 'collected_by': '收集者', 'task_id': '任务', 'course_id': '课程', 'content_text': '原文内容', 'corrected_text': '修改后文章', 'status': '状态', 'reviewer_id': '批改者', 'file_type': '文件类型' }
   return m[name] || name
 }
 
 function formatValue(val) {
-  const m = { 'pending': '未修改', 'confirming': '待确认', 'corrected': '已修改', 'rework': '待重改', 'true': '是', 'false': '否' }
+  if (val == null || val === '') return '(空)'
+  const m = { 'pending': '未修改', 'confirming': '待确认', 'corrected': '已修改', 'rework': '待重改', 'true': '是', 'false': '否', 'image': '图片', 'docx': '文档', 'text': '文本' }
   return m[val] ?? val
 }
 
@@ -359,18 +361,37 @@ function showChange(op) {
   try {
     const oldRaw = op.old_value ? JSON.parse(op.old_value) : {}
     const newRaw = op.new_value ? JSON.parse(op.new_value) : {}
-    // 判断是否为批量快照格式（key 是数字 essay_id）
     const isBatch = Object.keys(oldRaw).some(k => /^\d+$/.test(k))
     if (isBatch) {
       const count = Object.keys(oldRaw).length
       fields.push({ name: '批量操作', old: `${count} 篇作文`, new: `${count} 篇作文` })
     } else {
+      // 正文相关字段成对展示（原文内容 + 修改后文章）
+      const contentKeys = ['content_text', 'corrected_text']
+      const hasContentChange = contentKeys.some(k => String(oldRaw[k] ?? '') !== String(newRaw[k] ?? ''))
+      if (hasContentChange) {
+        for (const k of contentKeys) {
+          const oldV = String(oldRaw[k] ?? '')
+          const newV = String(newRaw[k] ?? '')
+          fields.push({ name: k, old: oldV || '(空)', new: newV || '(空)' })
+        }
+      }
+      // 其他字段（跳过正文、_开头的内部字段、status 单独处理、id 类字段）
+      const idFieldMap = { 'task_id': '_task_name', 'course_id': '_course_name', 'collected_by': '_collector_name', 'reviewer_id': '_reviewer_name' }
       for (const key of Object.keys({ ...oldRaw, ...newRaw })) {
-        const oldVal = oldRaw[key]?.old ?? oldRaw[key] ?? ''
-        const newVal = newRaw[key]?.new ?? newRaw[key] ?? ''
+        if (key.startsWith('_')) continue
+        if (contentKeys.includes(key) && hasContentChange) continue
+        if (key === 'status') continue
+        const displayKey = idFieldMap[key]
+        const oldVal = displayKey ? (oldRaw[displayKey] || oldRaw[key] ?? '') : (oldRaw[key]?.old ?? oldRaw[key] ?? '')
+        const newVal = displayKey ? (newRaw[displayKey] || newRaw[key] ?? '') : (newRaw[key]?.new ?? newRaw[key] ?? '')
         if (String(oldVal) !== String(newVal)) {
           fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
         }
+      }
+      // status 放最后
+      if (oldRaw.status !== undefined && String(oldRaw.status) !== String(newRaw.status)) {
+        fields.push({ name: 'status', old: formatValue(String(oldRaw.status)), new: formatValue(String(newRaw.status)) })
       }
     }
   } catch {}
