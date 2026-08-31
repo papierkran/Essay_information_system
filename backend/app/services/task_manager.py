@@ -94,9 +94,10 @@ def _cleanup_loop():
 threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
-def run_batch_ocr(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation):
+def run_batch_ocr(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, get_db, Essay, _log_operation, snapshot_fn):
     import asyncio
     import os
+    from ..database import SessionLocal
     from ..utils.ocr_utils import ocr_essay_images_with_fallback
 
     xfyun_cfg = ocr_config.get("xfyun", {})
@@ -110,28 +111,30 @@ def run_batch_ocr(task_id: str, batch_id: str, essay_ids: list, current_user_id:
         e.content_text = text
         return e.id
 
-    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "OCR识别")
+    success_ids, old_snaps = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "OCR识别", snapshot_fn)
     if success_ids:
-        from ..database import SessionLocal
         sdb = SessionLocal()
         try:
+            new_essays = sdb.query(Essay).filter(Essay.id.in_(success_ids)).all()
+            new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
             _log_operation(sdb, None, current_user_id, "OCR",
                            f"批量 OCR 识别 {len(success_ids)} 篇", batch_id=batch_id,
                            essay_ids=json.dumps(success_ids),
-                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                           new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
+                           old_value=json.dumps({k: old_snaps[k] for k in success_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             sdb.commit()
         finally:
             sdb.close()
 
 
-def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_label):
-    """用线程池(MAX_WORKERS)并发处理 essay_ids，每篇独立 DB session，返回成功处理的 essay_id 列表"""
+def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_label, snapshot_fn=None):
+    """用线程池(MAX_WORKERS)并发处理 essay_ids，每篇独立 DB session，返回 (成功 essay_id 列表, 旧快照 dict)"""
     from ..database import SessionLocal
 
     db = next(get_db())
     try:
         essays = db.query(Essay).filter(Essay.id.in_(essay_ids), Essay.deleted_at == None).all()
+        old_snaps = {e.id: snapshot_fn(e) for e in essays} if snapshot_fn else {}
     finally:
         db.close()
 
@@ -181,11 +184,12 @@ def _run_batch_parallel(task_id, essay_ids, worker_fn, get_db, Essay, stage_labe
                 pass
 
     update_task(task_id, status="completed" if not errors else "failed", message=f"完成 {success}/{total}")
-    return success_ids
+    return success_ids, old_snaps
 
 
-def run_batch_ai_correct(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_ai_correct(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation, snapshot_fn):
     import asyncio
+    from ..database import SessionLocal
     from ..utils.ocr_utils import ai_correct_text
 
     def worker(sdb, e):
@@ -209,24 +213,26 @@ def run_batch_ai_correct(task_id: str, batch_id: str, essay_ids: list, current_u
                 e.corrected_title = title.strip()
         return e.id
 
-    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI错别字修正")
+    success_ids, old_snaps = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI错别字修正", snapshot_fn)
     if success_ids:
-        from ..database import SessionLocal
         sdb = SessionLocal()
         try:
+            new_essays = sdb.query(Essay).filter(Essay.id.in_(success_ids)).all()
+            new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
             _log_operation(sdb, None, current_user_id, "编辑",
                            f"批量 AI 错别字修正 {len(success_ids)} 篇", batch_id=batch_id,
                            essay_ids=json.dumps(success_ids),
-                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                           new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
+                           old_value=json.dumps({k: old_snaps[k] for k in success_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             sdb.commit()
         finally:
             sdb.close()
 
 
-def run_batch_ai_rewrite(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_ai_rewrite(task_id: str, batch_id: str, essay_ids: list, current_user_id: int, llm_cfg: dict, get_db, Essay, _log_operation, snapshot_fn):
     import asyncio
     from datetime import datetime
+    from ..database import SessionLocal
     from ..utils.ocr_utils import ai_rewrite_text
 
     def worker(sdb, e):
@@ -240,16 +246,17 @@ def run_batch_ai_rewrite(task_id: str, batch_id: str, essay_ids: list, current_u
         e.reviewer_id = current_user_id
         return e.id
 
-    success_ids = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI一键修改")
+    success_ids, old_snaps = _run_batch_parallel(task_id, essay_ids, worker, get_db, Essay, "AI一键修改", snapshot_fn)
     if success_ids:
-        from ..database import SessionLocal
         sdb = SessionLocal()
         try:
+            new_essays = sdb.query(Essay).filter(Essay.id.in_(success_ids)).all()
+            new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
             _log_operation(sdb, None, current_user_id, "批改",
                            f"批量 AI 改写 {len(success_ids)} 篇", batch_id=batch_id,
                            essay_ids=json.dumps(success_ids),
-                           old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
-                           new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
+                           old_value=json.dumps({k: old_snaps[k] for k in success_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             sdb.commit()
         finally:
             sdb.close()
@@ -261,7 +268,7 @@ def _get_upload_dir(db):
     return _f_get_upload_dir()
 
 
-def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation):
+def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: str, batch_id: str, essay_ids: list, current_user_id: int, ocr_config: dict, typo_cfg: dict, editor_cfg: dict, get_db, Essay, _log_operation, snapshot_fn):
     import asyncio
     from datetime import datetime
     import os
@@ -317,35 +324,41 @@ def run_batch_pipeline(ocr_task_id: str, correct_task_id: str, rewrite_task_id: 
 
     try:
         update_task(ocr_task_id, status="running")
-        ocr_ids = _run_batch_parallel(ocr_task_id, essay_ids, ocr_worker, get_db, Essay, "OCR识别")
+        ocr_ids, old_ocr = _run_batch_parallel(ocr_task_id, essay_ids, ocr_worker, get_db, Essay, "OCR识别", snapshot_fn)
         if ocr_ids:
             sdb = SessionLocal()
             try:
+                new_essays = sdb.query(Essay).filter(Essay.id.in_(ocr_ids)).all()
+                new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
                 _log_batch(sdb, "OCR", f"流水线 OCR 识别 {len(ocr_ids)} 篇", ocr_ids,
-                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                           new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
+                           old_value=json.dumps({k: old_ocr[k] for k in ocr_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             finally:
                 sdb.close()
 
         update_task(correct_task_id, status="running")
-        correct_ids = _run_batch_parallel(correct_task_id, essay_ids, correct_worker, get_db, Essay, "AI错别字修正")
+        correct_ids, old_correct = _run_batch_parallel(correct_task_id, essay_ids, correct_worker, get_db, Essay, "AI错别字修正", snapshot_fn)
         if correct_ids:
             sdb = SessionLocal()
             try:
+                new_essays = sdb.query(Essay).filter(Essay.id.in_(correct_ids)).all()
+                new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
                 _log_batch(sdb, "编辑", f"流水线 AI 错别字修正 {len(correct_ids)} 篇", correct_ids,
-                           old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                           new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
+                           old_value=json.dumps({k: old_correct[k] for k in correct_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             finally:
                 sdb.close()
 
         update_task(rewrite_task_id, status="running")
-        rewrite_ids = _run_batch_parallel(rewrite_task_id, essay_ids, rewrite_worker, get_db, Essay, "AI一键修改")
+        rewrite_ids, old_rewrite = _run_batch_parallel(rewrite_task_id, essay_ids, rewrite_worker, get_db, Essay, "AI一键修改", snapshot_fn)
         if rewrite_ids:
             sdb = SessionLocal()
             try:
+                new_essays = sdb.query(Essay).filter(Essay.id.in_(rewrite_ids)).all()
+                new_snaps = {e.id: snapshot_fn(e) for e in new_essays}
                 _log_batch(sdb, "批改", f"流水线 AI 修改 {len(rewrite_ids)} 篇", rewrite_ids,
-                           old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
-                           new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
+                           old_value=json.dumps({k: old_rewrite[k] for k in rewrite_ids}, ensure_ascii=False, default=str),
+                           new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
             finally:
                 sdb.close()
     except Exception as ex:

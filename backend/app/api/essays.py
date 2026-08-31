@@ -489,6 +489,39 @@ def _log_operation(db: Session, essay_id: int, user_id: int, action: str, detail
         logger.error("记录操作日志失败: action=%s essay_id=%s user_id=%s error=%s", action, essay_id, user_id, e)
 
 
+_SNAPSHOT_FIELDS = [
+    "task_id", "course_id", "grade", "essay_number", "essay_title", "corrected_title",
+    "student_name", "is_supplement", "teaching_mode", "remark", "collector_note",
+    "reviewer_note", "content_text", "content_file", "file_type", "collected_by",
+    "status", "corrected_text", "reviewer_id", "corrected_at", "deleted_at",
+]
+
+
+def _snapshot_essay(essay) -> dict:
+    """捕获作文全部可变字段，用于操作日志与撤回恢复"""
+    snap = {}
+    for f in _SNAPSHOT_FIELDS:
+        val = getattr(essay, f, None)
+        if isinstance(val, datetime):
+            val = val.isoformat()
+        snap[f] = val
+    return snap
+
+
+def _restore_from_snapshot(essay, snap: dict):
+    """将作文恢复到快照状态，ISO 时间字符串自动转回 datetime"""
+    dt_fields = {"corrected_at", "deleted_at"}
+    for f, val in snap.items():
+        if f not in _SNAPSHOT_FIELDS:
+            continue
+        if f in dt_fields and isinstance(val, str) and val:
+            try:
+                val = datetime.fromisoformat(val)
+            except ValueError:
+                pass
+        setattr(essay, f, val)
+
+
 def build_file_path(db: Session, essay_data: dict) -> tuple[str, str, str, str]:
     """构建文件路径，返回 (dir_path, filename, year, month)"""
     now = datetime.now()
@@ -1600,6 +1633,7 @@ def batch_delete_essays(
     done = 0
     errors = []
     deleted_ids = []
+    old_snaps = {}
     for essay_id in ids:
         essay = db.query(Essay).filter(Essay.id == essay_id).first()
         if not essay:
@@ -1607,6 +1641,7 @@ def batch_delete_essays(
         if "admin" not in current_user.role and essay.collected_by != current_user.id:
             errors.append({"id": essay_id, "detail": "无权限删除此作文"})
             continue
+        old_snaps[essay_id] = _snapshot_essay(essay)
         if delete_file:
             if "admin" not in current_user.role:
                 errors.append({"id": essay_id, "detail": "仅管理员可删除本地文件"})
@@ -1627,7 +1662,8 @@ def batch_delete_essays(
     if deleted_ids:
         _log_operation(db, None, current_user.id, "删除",
                        f"批量删除 {len(deleted_ids)} 篇", batch_id=batch_uuid,
-                       essay_ids=json.dumps(deleted_ids))
+                       essay_ids=json.dumps(deleted_ids),
+                       old_value=json.dumps(old_snaps, ensure_ascii=False, default=str))
     db.commit()
     return {"success": done, "errors": errors, "total": len(ids)}
 
@@ -1647,6 +1683,7 @@ async def upload_correction(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
+    old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
 
     # 至少提供文件或文字
     if not file and not corrected_text.strip():
@@ -1675,16 +1712,13 @@ async def upload_correction(
     if reviewer_note.strip():
         essay.reviewer_note = reviewer_note.strip()
 
-    old_corrected = essay.corrected_text or ""
-    old_status = essay.status
-    old_reviewer = essay.reviewer_id
     essay.reviewer_id = current_user.id
     if essay.status in ("pending", "rework") and essay.content_text and essay.content_text.strip():
         essay.status = "confirming"
     essay.corrected_at = datetime.now()
+    new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     _log_operation(db, essay.id, current_user.id, "修改", essay.student_name,
-                   old_value=json.dumps({"corrected_text": {"old": old_corrected}, "status": {"old": old_status}, "reviewer_id": {"old": old_reviewer}}),
-                   new_value=json.dumps({"corrected_text": {"new": essay.corrected_text}, "status": {"new": essay.status}, "reviewer_id": {"new": current_user.id}}))
+                   old_value=old_snap, new_value=new_snap)
     db.commit()
 
     return {"message": "修改上传成功", "file": corr_name, "corrected_text": essay.corrected_text}
@@ -1927,15 +1961,15 @@ async def ocr_essay(
     essay_dir = os.path.dirname(os.path.join(get_upload_dir(), essay.content_file))
     meta = {}
     try:
-        old_content = essay.content_text or ""
+        old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         text = await ocr_essay_images_with_fallback(db, essay.id, essay_dir, xfyun_cfg, meta=meta)
         essay.content_text = text
         op_text = "OCR 识别完成"
         if meta.get("image_corrected"):
             op_text += f"（图片矫正 {meta['image_corrected']} 张，最大旋转 {meta['max_rotation']:.1f}°）"
+        new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         _log_operation(db, essay.id, current_user.id, "OCR", op_text,
-                       old_value=json.dumps({"content_text": {"old": old_content}}),
-                       new_value=json.dumps({"content_text": {"new": text}}))
+                       old_value=old_snap, new_value=new_snap)
         db.commit()
         db.refresh(essay)
         return {
@@ -1983,7 +2017,7 @@ async def ai_correct_essay(
             "teaching_mode": essay.teaching_mode,
             "task_name": essay.task.name if essay.task else None,
         }
-        old_content = essay.content_text or ""
+        old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         result = await ai_correct_text(essay.content_text, llm_cfg, essay_info=essay_info)
         corrected_text = result.get("修改后内容", essay.content_text)
         essay.content_text = corrected_text
@@ -1991,9 +2025,9 @@ async def ai_correct_essay(
             title = result.get("作文标题", "")
             if title and title != "未知":
                 essay.corrected_title = title.strip()
+        new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         _log_operation(db, essay.id, current_user.id, "编辑", "AI 错别字修正",
-                       old_value=json.dumps({"content_text": {"old": old_content}}),
-                       new_value=json.dumps({"content_text": {"new": corrected_text}}))
+                       old_value=old_snap, new_value=new_snap)
         db.commit()
         db.refresh(essay)
         return {
@@ -2047,8 +2081,7 @@ async def ai_rewrite_essay(
         except: count_max = None
 
     try:
-        old_corrected = essay.corrected_text or ""
-        old_status = essay.status
+        old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         rewritten = await ai_rewrite_text(
             essay.content_text, llm_cfg,
             prompt_template=llm_cfg.get("prompt"),
@@ -2059,9 +2092,9 @@ async def ai_rewrite_essay(
             essay.status = "confirming"
         essay.corrected_at = datetime.now()
         essay.reviewer_id = current_user.id
+        new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
         _log_operation(db, essay.id, current_user.id, "批改", "AI 改写",
-                       old_value=json.dumps({"corrected_text": {"old": old_corrected}, "status": {"old": old_status}}),
-                       new_value=json.dumps({"corrected_text": {"new": rewritten}, "status": {"new": essay.status}}))
+                       old_value=old_snap, new_value=new_snap)
         db.commit()
         db.refresh(essay)
         return {"corrected_text": rewritten, "char_count": count_cjk_chars(rewritten)}
@@ -2083,13 +2116,13 @@ def confirm_essay(
         raise HTTPException(status_code=404, detail="作文不存在")
     if essay.status != "confirming":
         raise HTTPException(status_code=400, detail="当前状态不是待确认，无法确认")
-    old_status = essay.status
+    old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     essay.status = "corrected"
     essay.corrected_at = datetime.now()
     essay.reviewer_id = current_user.id
+    new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     _log_operation(db, essay.id, current_user.id, "批改", "确认修改",
-                   old_value=json.dumps({"status": {"old": old_status}}),
-                   new_value=json.dumps({"status": {"new": "corrected"}}))
+                   old_value=old_snap, new_value=new_snap)
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -2109,12 +2142,12 @@ def rework_essay(
         raise HTTPException(status_code=404, detail="作文不存在")
     if essay.status != "confirming":
         raise HTTPException(status_code=400, detail="当前状态不是待确认，无法标记为重改")
-    old_status = essay.status
+    old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     essay.status = "rework"
     essay.reviewer_id = current_user.id
+    new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     _log_operation(db, essay.id, current_user.id, "批改", "标记为重改",
-                   old_value=json.dumps({"status": {"old": old_status}}),
-                   new_value=json.dumps({"status": {"new": "rework"}}))
+                   old_value=old_snap, new_value=new_snap)
     db.commit()
     db.refresh(essay)
     return _essay_to_out(essay, db)
@@ -2133,6 +2166,7 @@ def batch_update_essays(
     if not essay_ids:
         raise HTTPException(status_code=400, detail="未选中任何作文")
     essays = db.query(Essay).filter(Essay.id.in_(essay_ids)).all()
+    old_snaps = {e.id: _snapshot_essay(e) for e in essays}
     updated = 0
     skipped = 0
     update_fields = []
@@ -2195,24 +2229,12 @@ def batch_update_essays(
         update_fields.append("任务")
     if updated:
         batch_uuid = uuid.uuid4().hex[:12]
-        batch_changes = {}
-        if "collected_by" in data and data["collected_by"]:
-            batch_changes["collected_by"] = {"old": essays[0].collected_by if essays else None, "new": data["collected_by"]}
-        if "grade" in data and data["grade"]:
-            batch_changes["grade"] = {"old": essays[0].grade if essays else "", "new": data["grade"]}
-        if "essay_number" in data and data["essay_number"] is not None:
-            batch_changes["essay_number"] = {"old": essays[0].essay_number if essays else 0, "new": int(data["essay_number"])}
-        if "teaching_mode" in data and data["teaching_mode"]:
-            batch_changes["teaching_mode"] = {"old": essays[0].teaching_mode if essays else "", "new": data["teaching_mode"]}
-        if "is_supplement" in data:
-            batch_changes["is_supplement"] = {"old": essays[0].is_supplement if essays else False, "new": bool(data["is_supplement"])}
-        if "task_id" in data:
-            batch_changes["task_id"] = {"old": essays[0].task_id if essays else None, "new": data["task_id"] if data["task_id"] else None}
+        new_snaps = {e.id: _snapshot_essay(e) for e in essays}
         _log_operation(db, None, current_user.id, "编辑",
                        f"批量修改 {','.join(update_fields)} 共 {updated} 篇", batch_id=batch_uuid,
                        essay_ids=json.dumps(essay_ids),
-                       old_value=json.dumps({k: {"old": v["old"]} for k, v in batch_changes.items()}, ensure_ascii=False) if batch_changes else "",
-                       new_value=json.dumps({k: {"new": v["new"]} for k, v in batch_changes.items()}, ensure_ascii=False) if batch_changes else "")
+                       old_value=json.dumps(old_snaps, ensure_ascii=False, default=str),
+                       new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
     db.commit()
     msg = f"已更新 {updated} 条记录，{skipped} 条略过（重复冲突）" if skipped else f"已更新 {updated} 条记录"
     return {"message": msg, "count": updated, "skipped": skipped}
@@ -2492,10 +2514,12 @@ def batch_ocr_essays(
     success = 0
     errors = []
     ocr_ids = []
+    old_snaps = {}
     for e in essays:
         if e.file_type != "image" or not e.content_file:
             errors.append({"id": e.id, "student": e.student_name, "reason": "非图片类型或无文件"})
             continue
+        old_snaps[e.id] = _snapshot_essay(e)
         try:
             essay_dir = os.path.dirname(os.path.join(get_upload_dir(), e.content_file))
             meta = {}
@@ -2506,11 +2530,12 @@ def batch_ocr_essays(
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
     if ocr_ids:
+        new_snaps = {e.id: _snapshot_essay(e) for e in essays if e.id in ocr_ids}
         _log_operation(db, None, current_user.id, "OCR",
                        f"批量 OCR 识别 {len(ocr_ids)} 篇", batch_id=batch_uuid,
                        essay_ids=json.dumps(ocr_ids),
-                       old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                       new_value=json.dumps({"content_text": {"new": "[OCR识别结果]"}}))
+                       old_value=json.dumps({k: old_snaps[k] for k in ocr_ids}, ensure_ascii=False, default=str),
+                       new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2545,10 +2570,12 @@ def batch_ai_correct_essays(
     success = 0
     errors = []
     corrected_ids = []
+    old_snaps = {}
     for e in essays:
         if not e.content_text or not e.content_text.strip():
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
             continue
+        old_snaps[e.id] = _snapshot_essay(e)
         try:
             result = asyncio.run(ai_correct_text(e.content_text, llm_cfg))
             corrected_text = result.get("修改后内容", e.content_text)
@@ -2558,11 +2585,12 @@ def batch_ai_correct_essays(
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
     if corrected_ids:
+        new_snaps = {e.id: _snapshot_essay(e) for e in essays if e.id in corrected_ids}
         _log_operation(db, None, current_user.id, "编辑",
                        f"批量 AI 错别字修正 {len(corrected_ids)} 篇", batch_id=batch_uuid,
                        essay_ids=json.dumps(corrected_ids),
-                       old_value=json.dumps({"content_text": {"old": "[已替换]"}}),
-                       new_value=json.dumps({"content_text": {"new": "[AI错别字修正结果]"}}))
+                       old_value=json.dumps({k: old_snaps[k] for k in corrected_ids}, ensure_ascii=False, default=str),
+                       new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2598,10 +2626,12 @@ def batch_ai_rewrite_essays(
     success = 0
     errors = []
     rewrite_ids = []
+    old_snaps = {}
     for e in essays:
         if not e.content_text or not e.content_text.strip():
             errors.append({"id": e.id, "student": e.student_name, "reason": "无文字内容"})
             continue
+        old_snaps[e.id] = _snapshot_essay(e)
         try:
             rewritten = asyncio.run(ai_rewrite_text(e.content_text, llm_cfg, prompt_template=llm_cfg.get("prompt")))
             e.corrected_text = rewritten
@@ -2614,11 +2644,12 @@ def batch_ai_rewrite_essays(
         except Exception as ex:
             errors.append({"id": e.id, "student": e.student_name, "reason": str(ex)})
     if rewrite_ids:
+        new_snaps = {e.id: _snapshot_essay(e) for e in essays if e.id in rewrite_ids}
         _log_operation(db, None, current_user.id, "批改",
                        f"批量 AI 改写 {len(rewrite_ids)} 篇", batch_id=batch_uuid,
                        essay_ids=json.dumps(rewrite_ids),
-                       old_value=json.dumps({"corrected_text": {"old": "[已替换]"}, "status": {"old": "pending/rework"}}),
-                       new_value=json.dumps({"corrected_text": {"new": "[AI改写结果]"}, "status": {"new": "confirming"}}))
+                       old_value=json.dumps({k: old_snaps[k] for k in rewrite_ids}, ensure_ascii=False, default=str),
+                       new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
     db.commit()
     return {"success": success, "errors": errors, "total": len(essays)}
 
@@ -2641,19 +2672,22 @@ def batch_confirm_essays(
     batch_uuid = uuid.uuid4().hex[:12]
     count = 0
     confirmed_ids = []
+    old_snaps = {}
     for e in essays:
         if e.status == "confirming":
+            old_snaps[e.id] = _snapshot_essay(e)
             e.status = "corrected"
             e.corrected_at = datetime.now()
             e.reviewer_id = current_user.id
             confirmed_ids.append(e.id)
             count += 1
     if confirmed_ids:
+        new_snaps = {e.id: _snapshot_essay(e) for e in essays if e.id in confirmed_ids}
         _log_operation(db, None, current_user.id, "批改",
                        f"批量确认修改 {len(confirmed_ids)} 篇", batch_id=batch_uuid,
                        essay_ids=json.dumps(confirmed_ids),
-                       old_value=json.dumps({"status": {"old": "confirming"}}),
-                       new_value=json.dumps({"status": {"new": "corrected"}}))
+                       old_value=json.dumps({k: old_snaps[k] for k in confirmed_ids}, ensure_ascii=False, default=str),
+                       new_value=json.dumps(new_snaps, ensure_ascii=False, default=str))
     db.commit()
     return {"success": count, "total": len(essays)}
 
@@ -2703,7 +2737,7 @@ def start_batch_ocr(
     task = create_task(task_id, "ocr", len(essays))
     thread = threading.Thread(target=run_batch_ocr, args=(
         task_id, batch_id, essay_ids, current_user.id, ocr_cfg,
-        get_db, Essay, _log_operation,
+        get_db, Essay, _log_operation, _snapshot_essay,
     ), daemon=True)
     thread.start()
     return {"task_id": task_id, "total": len(essays)}
@@ -2733,7 +2767,7 @@ def start_batch_ai_correct(
     create_task(task_id, "ai_correct", len(essays))
     thread = threading.Thread(target=run_batch_ai_correct, args=(
         task_id, batch_id, essay_ids, current_user.id, llm_cfg,
-        get_db, Essay, _log_operation,
+        get_db, Essay, _log_operation, _snapshot_essay,
     ), daemon=True)
     thread.start()
     return {"task_id": task_id, "total": len(essays)}
@@ -2763,7 +2797,7 @@ def start_batch_ai_rewrite(
     create_task(task_id, "ai_rewrite", len(essays))
     thread = threading.Thread(target=run_batch_ai_rewrite, args=(
         task_id, batch_id, essay_ids, current_user.id, llm_cfg,
-        get_db, Essay, _log_operation,
+        get_db, Essay, _log_operation, _snapshot_essay,
     ), daemon=True)
     thread.start()
     return {"task_id": task_id, "total": len(essays)}
@@ -2811,7 +2845,7 @@ def start_batch_pipeline(
     thread = threading.Thread(target=run_batch_pipeline, args=(
         ocr_task_id, correct_task_id, rewrite_task_id, batch_id, pending_ids,
         current_user.id, ocr_cfg, typo_cfg, editor_cfg,
-        get_db, Essay, _log_operation,
+        get_db, Essay, _log_operation, _snapshot_essay,
     ), daemon=True)
     thread.start()
     return {
@@ -2895,48 +2929,24 @@ def undo_operation(
                            f"撤回上传操作", batch_id=log.batch_id)
             undone_count += 1
 
-        elif action_str in ("修改", "UPDATE", "批改", "CORRECT"):
+        elif action_str in ("修改", "UPDATE", "批改", "CORRECT", "编辑", "EDIT", "OCR"):
             if not log.old_value:
                 continue
             try:
                 data = json.loads(log.old_value)
-                if "corrected_text" in data:
-                    essay.corrected_text = data["corrected_text"].get("old", "")
-                if "status" in data:
-                    essay.status = data["status"].get("old", "pending")
-                if "reviewer_id" in data:
-                    essay.reviewer_id = data["reviewer_id"].get("old")
-                essay.corrected_at = None
+                if log.essay_ids:
+                    snaps = data
+                    snap = snaps.get(str(eid), snaps.get(eid))
+                else:
+                    snap = data
+                if not snap:
+                    continue
+                _restore_from_snapshot(essay, snap)
                 _log_operation(db, eid, current_user.id, "恢复",
-                               f"撤回修改操作", batch_id=log.batch_id)
+                               f"撤回{action_str}操作", batch_id=log.batch_id)
                 undone_count += 1
             except Exception as e:
-                logger.warning("撤回修改操作解析 old_value 失败: id=%s error=%s", log_id, e)
-
-        elif action_str in ("编辑", "EDIT"):
-            if not log.old_value:
-                continue
-            try:
-                data = json.loads(log.old_value)
-                for field, val in data.items():
-                    if hasattr(essay, field) and isinstance(val, dict) and "old" in val:
-                        val_old = val["old"]
-                        if isinstance(getattr(essay, field, None), bool) and isinstance(val_old, str):
-                            val_old = val_old.lower() in ("true", "1", "yes")
-                        setattr(essay, field, val_old)
-                _log_operation(db, eid, current_user.id, "恢复",
-                               f"撤回编辑操作", batch_id=log.batch_id)
-                undone_count += 1
-            except Exception as e:
-                logger.warning("撤回编辑操作解析 old_value 失败: id=%s error=%s", log_id, e)
-
-        elif action_str in ("OCR",):
-            if not log.old_value:
-                continue
-            essay.content_text = ""
-            _log_operation(db, eid, current_user.id, "恢复",
-                           f"撤回OCR操作", batch_id=log.batch_id)
-            undone_count += 1
+                logger.warning("撤回操作解析 old_value 失败: id=%s error=%s", log_id, e)
 
     db.commit()
     return {"message": f"已撤回 {undone_count} 条", "undone_count": undone_count}
@@ -3164,6 +3174,7 @@ def update_essay(
     essay = db.query(Essay).filter(Essay.id == essay_id).first()
     if not essay:
         raise HTTPException(status_code=404, detail="作文不存在")
+    old_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
     # 收集者可修改大部分字段，批改者可修改 reviewer_note，修改后内容仅批改者/管理员可改
     can_edit = "admin" in current_user.role or essay.collected_by == current_user.id
     can_edit_review_note = can_edit or essay.reviewer_id == current_user.id
@@ -3269,11 +3280,10 @@ def update_essay(
     if is_supplement is not None and is_supplement != essay.is_supplement:
         changes["is_supplement"] = {"old": essay.is_supplement, "new": is_supplement}
 
-    old_value = json.dumps({k: {"old": v["old"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
-    new_value = json.dumps({k: {"new": v["new"]} for k, v in changes.items()}, ensure_ascii=False) if changes else ""
     changed_fields = "、".join({"grade": "年级", "essay_number": "第几次", "student_name": "姓名", "teaching_mode": "提交方式", "essay_title": "标题", "corrected_title": "修改后标题", "remark": "备注", "is_supplement": "补交标记"}.get(k, k) for k in changes.keys())
     detail_text = f"{essay.student_name}（修改{changed_fields}）" if changed_fields else essay.student_name
-    _log_operation(db, essay.id, current_user.id, "编辑", detail_text, old_value=old_value, new_value=new_value)
+    new_snap = json.dumps(_snapshot_essay(essay), ensure_ascii=False, default=str)
+    _log_operation(db, essay.id, current_user.id, "编辑", detail_text, old_value=old_snap, new_value=new_snap)
     try:
         db.commit()
     except Exception as e:

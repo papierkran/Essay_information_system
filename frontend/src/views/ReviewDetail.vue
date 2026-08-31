@@ -193,6 +193,7 @@
                   </button>
                 </div>
                 <div style="display:flex;gap:4px">
+                  <button class="btn-mini" @click="copyFullText('original')" v-if="essay.content_text" :disabled="copyingText">📋 复制全文</button>
                   <button class="btn-mini" @click="toggleEditOriginal" v-if="essay.content_text && canEdit">{{ editingOriginal ? '✕ 取消' : '✏️ 编辑' }}</button>
                   <button class="btn-mini" @click="toggleFullscreen('original')">{{ fullscreenMode === 'original' ? '⛶ 退出' : '⛶ 全屏' }}</button>
                 </div>
@@ -259,6 +260,7 @@
                 </button>
               </div>
               <div style="display:flex;gap:4px">
+                <button class="btn-mini" @click="copyFullText('corrected')" v-if="essay.corrected_text" :disabled="copyingText">📋 复制全文</button>
                 <button class="btn-mini" @click="toggleEditCorrected" v-if="canReview">{{ editingCorrected ? '✕ 取消' : '✏️ 编辑' }}</button>
                 <button class="btn-mini" @click="toggleFullscreen('corrected')">{{ fullscreenMode === 'corrected' ? '⛶ 退出' : '⛶ 全屏' }}</button>
               </div>
@@ -611,6 +613,7 @@ function resetDocxSettings() {
   docxSettings.value = { ...defaultDocxSettings }
 }
 const reuploadFileList = ref([])
+const copyingText = ref(false)
 const reuploadText = ref('')
 const reuploading = ref(false)
 const showReupload = ref(false)
@@ -906,6 +909,25 @@ function toggleEditOriginal() {
     editingOriginal.value = true
     nextTick(() => originalContentRef.value?.focus())
   }
+}
+
+async function copyFullText(pane) {
+  const text = pane === 'original' ? essay.value.content_text : essay.value.corrected_text
+  if (!text) return
+  copyingText.value = true
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast('已复制全文')
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    showToast('已复制全文')
+  }
+  copyingText.value = false
 }
 
 function cancelOriginalEdit() {

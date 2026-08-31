@@ -272,9 +272,12 @@ function parseChange(op, side) {
   const key = side === 'old' ? 'old_value' : 'new_value'
   try {
     const data = op[key] ? JSON.parse(op[key]) : {}
+    const isBatch = Object.keys(data).some(k => /^\d+$/.test(k))
+    if (isBatch) return `批量操作（${Object.keys(data).length} 篇）`
     const parts = []
     for (const [k, v] of Object.entries(data)) {
       const val = v?.[side] ?? v ?? ''
+      if (val === '' || val == null) continue
       const label = fieldLabel(k)
       const s = String(val).substring(0, 30)
       parts.push(`${label}: ${s}${String(val).length > 30 ? '…' : ''}`)
@@ -312,13 +315,20 @@ function formatValue(val) {
 function showChange(op) {
   const fields = []
   try {
-    const oldData = op.old_value ? JSON.parse(op.old_value) : {}
-    const newData = op.new_value ? JSON.parse(op.new_value) : {}
-    for (const key of Object.keys({ ...oldData, ...newData })) {
-      const oldVal = oldData[key]?.old ?? oldData[key] ?? ''
-      const newVal = newData[key]?.new ?? newData[key] ?? ''
-      if (oldVal !== newVal) {
-        fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
+    const oldRaw = op.old_value ? JSON.parse(op.old_value) : {}
+    const newRaw = op.new_value ? JSON.parse(op.new_value) : {}
+    // 判断是否为批量快照格式（key 是数字 essay_id）
+    const isBatch = Object.keys(oldRaw).some(k => /^\d+$/.test(k))
+    if (isBatch) {
+      const count = Object.keys(oldRaw).length
+      fields.push({ name: '批量操作', old: `${count} 篇作文`, new: `${count} 篇作文` })
+    } else {
+      for (const key of Object.keys({ ...oldRaw, ...newRaw })) {
+        const oldVal = oldRaw[key]?.old ?? oldRaw[key] ?? ''
+        const newVal = newRaw[key]?.new ?? newRaw[key] ?? ''
+        if (String(oldVal) !== String(newVal)) {
+          fields.push({ name: key, old: formatValue(String(oldVal)), new: formatValue(String(newVal)) })
+        }
       }
     }
   } catch {}
